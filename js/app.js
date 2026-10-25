@@ -249,6 +249,10 @@
     UI.renderChat(Store.active()); UI.renderChatHead(Store.active()); refreshCtx();
     openChat();
   };
+  App.goPath = goPath;
+  App.openFile = openFile;
+  App.retry = retry;
+  App.refreshCtx = refreshCtx;
 
   /* ================= compaction ================= */
   function transcript(s) {
