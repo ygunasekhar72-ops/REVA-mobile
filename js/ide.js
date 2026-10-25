@@ -1,10 +1,10 @@
 /* Mono Harness — Workspace IDE: full-window overlay with file tree, editor,
    live preview (sandboxed iframe for HTML), and the harness console. */
 (function () {
-  var $, curPath = null, dirty = false;
+  var $ = H.$;
+  var curPath = null, dirty = false;
 
   function open(path) {
-    $ = window.H ? H.$ : function (s) { return document.querySelector(s); };
     var ide = $('#ide');
     if (!ide) return;
     ide.style.display = 'grid';

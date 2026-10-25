@@ -4,18 +4,18 @@ A minimal, local-first, mobile-styled AI harness that runs entirely in your brow
 
 ## Features
 
-- **Chat with any OpenAI-compatible provider** — streaming or buffered replies, per-session model choice, stop/retry, markdown + code blocks in replies.
-- **Sessions** — autosaved to `localStorage`, resumable, with per-session token estimates.
-- **Context management** — live context meter, auto-compaction at a configurable threshold, model-made or local summaries, full checkpoint snapshots of compacted transcripts.
-- **Memory** — private notes (user / feedback / project / reference) injected into the system prompt every turn.
-- **Skills** — your own capability definitions, announced to the model by name and description.
-- **Plugins** — small instruction packs shipped in `js/registry.js`. Install from the marketplace, toggle per need; enabled packs extend the system prompt.
-- **Permissions** — five agent modes (Plan / Build / Edit / Yolo / Guard) that reshape the system prompt, plus user-defined allow-rules.
-- **Files** — a virtual workspace stored locally, file import, text previews, and read-only mounting of a real device folder via the File System Access API (Chromium browsers).
-- **MCP servers** — real Model Context Protocol handshake over Streamable HTTP: `initialize` → `tools/list`, with tool counts surfaced in the UI. (Tool *execution* needs a desktop bridge — the browser sandbox can't spawn local processes.)
-- **Hooks** — POST JSON webhooks on session start, user prompt, assistant done, and compaction.
-- **Automations** — scheduled prompts that run while the app is open, each creating its own session.
-- **Fallback provider** — if the primary provider fails, the request is retried once through a configured fallback.
+- **Agent with real tools** — the model writes/reads/lists/deletes workspace files (`write_file`, `read_file`, `list_files`, `delete_file`), saves memories (`save_memory`), installs plugins for you (`add_plugin`), and runs a harness console (`run_command`) in a loop until the task is done. Tool calls render as compact cards ("Writing pomodoro.html · 3.1 KB") instead of code dumps.
+- **Thinking display** — reasoning models' thought streams (`reasoning_content`) are captured and shown in a collapsible "Thinking" block per reply.
+- **Chat with any OpenAI-compatible provider** — streaming, stop/retry, per-session model choice, fallback provider, markdown with syntax-highlighted code (long code blocks collapse).
+- **Workspace IDE** — full-window overlay with file tree, code editor (Ctrl+S), sandboxed live preview for HTML apps, and a harness terminal shared with the model.
+- **Sessions** — autosaved, resumable, deletable, with per-session token estimates.
+- **Context management** — live context meter, auto-compaction with model or local summaries, checkpoint snapshots.
+- **Memory** — manual notes plus AI-saved memories (`save_memory`), all injected into the system prompt every turn.
+- **Skills & plugins** — user-authored skills and plugin instruction packs; the AI can build and install plugins on request.
+- **Permissions** — five agent modes (Plan / Build / Edit / Yolo / Guard) plus user-defined allow-rules.
+- **Files** — virtual workspace, file/folder/image upload, image previews, and read-only mounting of a real folder via the File System Access API (Chromium).
+- **MCP servers** — real Model Context Protocol handshake over Streamable HTTP (`initialize` → `tools/list`) with tool counts.
+- **Hooks & automations** — JSON webhooks on session start / prompt / done / compaction; scheduled prompts.
 - **Three monochrome themes**, 3D depth / radius / text-size controls, reduced-motion support, installable as a PWA.
 
 ## Quick start
@@ -55,8 +55,9 @@ Settings → MCP servers accepts any MCP server speaking the [Streamable HTTP tr
 
 ## Plugins & skills
 
-- **Plugins** live in `js/registry.js`. Each entry has an `id`, display name, version, icon, and a `prompt` block injected into the system prompt while installed + enabled. Add an entry to publish a plugin to your fork.
-- **Skills** are user-authored at runtime (AI Workspace → Skills → +): a name and a description that are announced to the model every turn.
+- **Plugins** are instruction packs (name + description + prompt block) injected into the system prompt while enabled. Add your own on the Plugins screen (+), or ask the model — it installs them for you via its `add_plugin` tool.
+- **Skills** are user-authored at runtime (Settings → Skills → +): a name and description announced to the model every turn.
+- **Tools** are built in (`js/tools.js`): workspace file operations, memory, plugin installation, and the harness console. They operate on the app's virtual workspace only — there is no OS shell.
 
 ## Privacy
 
@@ -67,15 +68,16 @@ Settings → MCP servers accepts any MCP server speaking the [Streamable HTTP tr
 ## Project structure
 
 ```
-index.html          — the whole UI (screens, overlays, sheets)
-css/app.css         — monochrome neumorphic design system, 3 themes
-js/util.js          — helpers: escaping, mini-markdown, navigation, toasts
-js/store.js         — localStorage store + defaults
-js/registry.js      — plugin registry (edit to add plugins)
-js/ai.js            — OpenAI-compatible client (list models, chat, SSE stream)
+index.html          — the whole UI (screens, overlays, sheets, IDE)
+css/app.css         — monochrome design system, 3 themes, IDE styles
+js/util.js          — helpers: escaping, mini-markdown + syntax highlighter, navigation
+js/store.js         — localStorage store + defaults (v3, migrates v2)
+js/tools.js         — built-in agent tools + harness console commands
+js/ai.js            — OpenAI-compatible client: streaming, reasoning, tool calls
 js/mcp.js           — MCP Streamable HTTP client (initialize, tools/list)
-js/ui.js            — per-screen renderers
-js/app.js           — application controller and event wiring
+js/ui.js            — per-screen renderers (incl. tool cards, thinking blocks)
+js/ide.js           — workspace IDE (tree, editor, preview, terminal)
+js/app.js           — application controller, agent loop, event wiring
 js/vendor/          — vendored lucide icons (fully offline)
 assets/icon.svg     — app icon
 ```

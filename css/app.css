@@ -146,7 +146,7 @@
 #mono-harness #ov-chat .ctxchip{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;background:var(--sur);box-shadow:3px 3px 8px var(--sd),-2px -2px 5px var(--sl),inset 0 1px 0 var(--hi);font-size:12px;font-weight:500}
 #mono-harness #ov-chat .ctxchip .m{width:30px;height:4px;border-radius:99px;background:var(--fld);overflow:hidden}
 #mono-harness #ov-chat .ctxchip .m b{display:block;height:100%;background:var(--ink);transition:width .7s var(--ez)}
-#mono-harness #ov-chat .pills{display:flex;gap:7px;margin-top:10px}
+#mono-harness #ov-chat .pills{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
 #mono-harness #ov-chat .msgs{flex:1;overflow-y:auto;padding:16px 14px 12px;scrollbar-width:none}
 #mono-harness #ov-chat .msgs::-webkit-scrollbar{display:none}
 #mono-harness .msg{max-width:82%;margin-bottom:12px;animation:msgin .4s var(--ez)}

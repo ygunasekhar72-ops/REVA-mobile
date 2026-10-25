@@ -443,7 +443,12 @@
     <div class="acts"><button class="btnX" id="nfSave">Create file</button></div>
   </div>
 
-  <!-- ============ WORKSPACE IDE (full window) ============ -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="p-homebar"></div>
+</div>
+</div></div>
+
+  <!-- ============ WORKSPACE IDE (full window, outside the phone) ============ -->
   <div id="ide" style="display:none">
     <div class="ide-head">
       <span class="ide-logo"><i data-lucide="monitor"></i></span>
@@ -467,11 +472,6 @@
       <div class="ide-in"><span class="ide-prompt">❯</span><input id="ideCmd" placeholder="harness console — try help, ls, tree, cat, status" autocomplete="off" spellcheck="false"/></div>
     </div>
   </div>
-
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <div class="p-homebar"></div>
-</div>
-</div></div>
 
 <script src="js/vendor/lucide.min.js"></script>
 <script src="js/util.js"></script>

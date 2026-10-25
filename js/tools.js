@@ -5,6 +5,7 @@
 (function () {
   function normPath(p) {
     p = String(p || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    if (p === 'workspace') return p;
     if (p.indexOf('workspace/') !== 0) p = 'workspace/' + p;
     var parts = p.split('/'), out = [];
     for (var i = 0; i < parts.length; i++) {
