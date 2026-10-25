@@ -83,25 +83,28 @@ public class MainActivity extends Activity {
             }
         });
 
-        // Real terminal bridge: ONE interactive /system/bin/sh process whose
-        // streams are piped to the page. Full shell semantics (pipes, redirects,
-        // chaining, env) are interpreted by the shell itself — the app execs a
-        // fixed argv and only ever forwards bytes, so there is no command
-        // string to inject.
-        web.addJavascriptInterface(new ShellStream(), "REVAShell");
+        // Real terminal bridge. Two independently-owned sessions:
+        //   REVAShell — the user's interactive PTY terminal (busybox script + sh -i)
+        //   REVAAgent — the AI agent's private non-pty shell for shell_exec
+        // They never share state. All exec argv are constants; user/agent input
+        // only ever travels as bytes through the streams.
+        web.addJavascriptInterface(new ShellStream("window.__revaTermOut", true), "REVAShell");
+        web.addJavascriptInterface(new ShellStream("window.__revaAgentOut", false), "REVAAgent");
 
         web.loadUrl("file:///android_asset/index.html");
     }
 
-    /** Interactive shell session wired to the on-page terminal.
-     *  Preferred path: busybox `script` gives the shell a REAL pty (proper
-     *  Ctrl+C, colors, vim, job control) while our pipes feed it. Falls back
-     *  to plain `sh -i` when busybox is absent. All exec argv are constants —
-     *  user input only ever travels as bytes through the stream. */
+    /** One persistent shell session emitting output to a JS collector.
+     *  pty=true (user terminal) wraps sh in busybox `script` for a real pty;
+     *  pty=false (agent channel) runs a plain hidden sh for marker-protocol exec. */
     private class ShellStream {
+        private final String emitTarget;
+        private final boolean pty;
         private Process proc;
         private java.io.OutputStream stdin;
         private String busybox;
+
+        ShellStream(String emitTarget, boolean pty) { this.emitTarget = emitTarget; this.pty = pty; }
 
         private String busyboxPath() {
             if (busybox != null) return busybox;
@@ -114,7 +117,7 @@ public class MainActivity extends Activity {
 
         private void emit(String chunk) {
             final String payload = chunk.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "");
-            final String js = "window.__revaTermOut && window.__revaTermOut('" + payload + "')";
+            final String js = emitTarget + " && " + emitTarget + "('" + payload + "')";
             web.post(new Runnable() {
                 public void run() { web.evaluateJavascript(js, null); }
             });
@@ -161,6 +164,19 @@ public class MainActivity extends Activity {
                     sb.append("    *) echo \"pkg install <url-of-static-binary>... | pkg list\";;").append('\n');
                     sb.append("  esac").append('\n');
                     sb.append("}").append('\n');
+                    // proot Linux userspace (TermFold mechanism, Apache-2.0; bundled libproot)
+                    sb.append("ND=$(dirname \"").append(bb).append("\")").append('\n');
+                    sb.append("PRO=$HOME/linux; case $(uname -m) in aarch64) AL=3.20.3; AU=aarch64;; *) AL=3.20.3; AU=x86_64;; esac").append('\n');
+                    sb.append("AT=alpine-minirootfs-$AL-$AU.tar.gz").append('\n');
+                    sb.append("lx() {").append('\n');
+                    sb.append("  if [ ! -d $PRO/bin ]; then").append('\n');
+                    sb.append("    echo 'lx: first run downloads Alpine Linux (~4MB) into $HOME/linux'").append('\n');
+                    sb.append("    mkdir -p $PRO $HOME/.prova && bb wget -q -O $HOME/$AT https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/$AU/$AT || { echo download failed; return 1; }").append('\n');
+                    sb.append("    bb mkdir -p $PRO && cd $PRO && bb tar -xf $HOME/$AT && cd $HOME && rm $HOME/$AT && echo 'lx: installed — apk add git nodejs python3 inside'").append('\n');
+                    sb.append("  fi").append('\n');
+                    sb.append("  PROOT_LOADER=$ND/libproot-loader.so LD_LIBRARY_PATH=$ND PROOT_TMP_DIR=$HOME/.proot PROOT_F2FS_WORKAROUND=0 \\").append('\n');
+                    sb.append("    $ND/libproot.so -r $PRO -b /dev -b /proc -b /sys -b $HOME:/host -w /root /bin/sh -l").append('\n');
+                    sb.append("}").append('\n');
                     java.io.FileOutputStream fos = new java.io.FileOutputStream(rc);
                     fos.write(sb.toString().getBytes());
                     fos.close();
@@ -171,10 +187,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public synchronized void start() {
             stop();
-            writeProfile();
+            if (pty) writeProfile();
             String bb = busyboxPath();
             try {
-                if (!bb.isEmpty()) {
+                if (pty && !bb.isEmpty()) {
                     // real pty: busybox script runs `sh -i` on a pseudo-terminal
                     proc = launch(new String[]{bb, "script", "-qfc", "/system/bin/sh -i", "/dev/null"});
                 }

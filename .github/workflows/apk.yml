@@ -27,13 +27,28 @@ jobs:
         run: |
           cd /tmp
           curl -sL -o bb.zip https://github.com/meefik/busybox/releases/download/1.34.1/busybox-v1_34_1.zip
-          unzip -o -q bb.zip
-          find . -name busybox -exec ls -la {} \;
+          unzip -o -q bb.zip 'arm/bin/busybox' 'arm64/bin/busybox' 'x86_64/bin/busybox'
           JNIDIR="$GITHUB_WORKSPACE/android/app/src/main/jniLibs"
           mkdir -p "$JNIDIR/arm64-v8a" "$JNIDIR/armeabi-v7a" "$JNIDIR/x86_64"
-          [ -f arm64/bin/busybox ]  && cp arm64/bin/busybox  "$JNIDIR/arm64-v8a/libbusybox.so"   && echo "bundled arm64"
-          [ -f arm/bin/busybox ]    && cp arm/bin/busybox    "$JNIDIR/armeabi-v7a/libbusybox.so" && echo "bundled arm"
-          [ -f x86_64/bin/busybox ] && cp x86_64/bin/busybox "$JNIDIR/x86_64/libbusybox.so"      && echo "bundled x86_64"
+          for pair in "arm64 arm64-v8a" "arm armeabi-v7a" "x86_64 x86_64"; do
+            set -- $pair
+            if [ -f "$1/bin/busybox" ]; then
+              cp "$1/bin/busybox" "$JNIDIR/$2/libbusybox.so"
+              echo "bundled $2"
+            fi
+          done
+          ls -la "$JNIDIR"/*/libbusybox.so
+
+      - name: Bundle proot (Linux userspace support, from TermFold, Apache-2.0)
+        run: |
+          JNIDIR="$GITHUB_WORKSPACE/android/app/src/main/jniLibs"
+          BASE="https://raw.githubusercontent.com/Bibarud/TermFold/HEAD/app/src/main/jniLibs"
+          for abi in arm64-v8a x86_64; do
+            mkdir -p "$JNIDIR/$abi"
+            curl -sL -o "$JNIDIR/$abi/libproot.so" "$BASE/$abi/libproot.so"
+            curl -sL -o "$JNIDIR/$abi/libproot-loader.so" "$BASE/$abi/libproot-loader.so"
+            ls -la "$JNIDIR/$abi"
+          done
 
       - name: Bundle web app into Android assets
         run: |

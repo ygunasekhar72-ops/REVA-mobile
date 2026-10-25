@@ -404,8 +404,9 @@
       if (!toolsOn) return undefined;
       return Tools.schemas.filter(function (t) {
         var n = t.function.name;
+        if (n === 'shell_exec') return !!window.REVAShell; // real device shell — Android builds only
         if (mode === 'Plan') return ['read_file', 'list_files', 'save_memory', 'add_plugin'].indexOf(n) >= 0;
-        if (mode === 'Guard') return ['delete_file', 'run_command'].indexOf(n) < 0;
+        if (mode === 'Guard') return ['delete_file', 'run_command', 'shell_exec'].indexOf(n) < 0;
         return true;
       });
     }
@@ -445,8 +446,16 @@
           try { args = JSON.parse(tc.function.arguments || '{}'); } catch (e) {}
           var info = Tools.brief(tc.function.name, args, 'ok');
           setStatus(info.label + '…');
-          var result = Tools.run(tc.function.name, args);
+          var result, ex = null;
+          if (tc.function.name === 'shell_exec' && window.REVAAgent) {
+            ex = await AgentExec.exec(String(args.command || ''), { cwd: args.cwd, timeoutMs: (args.timeout_seconds || 120) * 1000 });
+            result = (ex.timedOut ? 'TIMEOUT — process killed. Partial output:\n' + (ex.out || '') :
+              (ex.out || '') + (ex.out ? '\n' : '') + '[exit ' + ex.exit + ']');
+          } else {
+            result = Tools.run(tc.function.name, args);
+          }
           info = Tools.brief(tc.function.name, args, result);
+          if (ex && (ex.timedOut || ex.exit !== 0)) info.ok = false;
           info.name = tc.function.name;
           toolResults.push(info);
           addToolRow(info, result);
