@@ -42,11 +42,29 @@
   /* --- list models from {base}/models --- */
   async function listModels(p) {
     if (p.type === 'echo') return p.models.slice();
-    var res = await fetch(baseUrl(p) + '/models', { headers: headers(p) });
+    var res = await fetchWithRetry(baseUrl(p) + '/models', { headers: headers(p) });
     if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + (await res.text().catch(function () { return ''; })).slice(0, 160));
     var j = await res.json();
     var arr = (j.data || j.models || []).map(function (m) { return m.id || m.name; }).filter(Boolean);
     return arr.sort();
+  }
+
+  /* transient rate limits (429/503) are common on shared endpoints — back off
+     and retry instead of surfacing an error to the user */
+  function sleep(ms, signal) {
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(resolve, ms);
+      if (signal) signal.addEventListener('abort', function () { clearTimeout(t); resolve(); }, { once: true });
+    });
+  }
+  async function fetchWithRetry(url, init, opts) {
+    var retries = (opts && opts.retries) != null ? opts.retries : 3;
+    for (var attempt = 0; ; attempt++) {
+      var res = await fetch(url, init);
+      if (res.status !== 429 && res.status !== 503) return res;
+      if (attempt >= retries) return res;
+      await sleep(1000 * Math.pow(2, attempt) + attempt * 250, init.signal);
+    }
   }
 
   function buildBody(opts) {
@@ -127,15 +145,9 @@
       return echoResult(lastUser, onDelta, onReasoning, signal);
     }
 
-    var res;
-    try {
-      res = await fetch(baseUrl(p) + '/chat/completions', {
-        method: 'POST', headers: headers(p), body: JSON.stringify(buildBody(opts)), signal: signal
-      });
-    } catch (e) {
-      if (signal && signal.aborted) throw e;
-      throw e;
-    }
+    var res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
+      method: 'POST', headers: headers(p), body: JSON.stringify(buildBody(opts)), signal: signal
+    });
     // if this endpoint rejects the reasoning_effort parameter, remember and retry without it
     if (!res.ok && res.status === 400 && opts.effort && !opts.provider.noEffort) {
       var errText = await res.text().catch(function () { return ''; });
@@ -143,7 +155,7 @@
         opts.provider.noEffort = true;
         var body2 = buildBody(opts);
         delete body2.reasoning_effort;
-        res = await fetch(baseUrl(p) + '/chat/completions', {
+        res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
           method: 'POST', headers: headers(p), body: JSON.stringify(body2), signal: signal
         });
       }
@@ -225,11 +237,11 @@
     var ctrl = ('AbortController' in window) ? new AbortController() : null;
     var to = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
     try {
-      var res = await fetch(baseUrl(p) + '/chat/completions', {
+      var res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
         method: 'POST', headers: headers(p),
         body: JSON.stringify({ model: model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false }),
         signal: ctrl ? ctrl.signal : undefined
-      });
+      }, { retries: 1 });
       if (res.ok) return 'ok';
       if (res.status === 404) return 'dead';
       var t = await res.text().catch(function () { return ''; });

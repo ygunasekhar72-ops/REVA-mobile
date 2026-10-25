@@ -78,7 +78,6 @@
     $('#rngFont').value = s.font; $('#valFont').textContent = s.font + 'px';
     $('#tglMotion').checked = !s.motion;
     $$('#icoSeg button').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-ico') === s.icons); });
-    $('#valTok').textContent = s.maxTokens + 'k'; $('#rngTok').value = s.maxTokens;
     $$('#effSeg button').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-eff') === s.effort); });
     $('#swStream').checked = s.stream; $('#swThink').checked = !!s.think;
     $('#selCtxK').value = String(s.ctxK);
@@ -781,10 +780,12 @@
         $('#pvStatus').textContent = '✓ ' + p.models.length + ' models';
         return;
       }
-      // verify every model actually serves chat before offering it — dead catalog entries are removed
+      // verify every model actually serves chat before offering it — dead catalog entries are removed.
+      // Two workers with a gap: 85+ concurrent probes trip provider rate limits.
       p.modelStatus = p.modelStatus || {};
       var queue = p.models.filter(function (m) { return !p.modelStatus[m]; });
       var done = 0, dead = 0;
+      function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
       async function worker() {
         while (queue.length) {
           var m = queue.shift();
@@ -793,10 +794,11 @@
           if (st === 'dead') dead++;
           done++;
           $('#pvStatus').textContent = 'verifying ' + done + '/' + (done + queue.length) + ' models…';
+          await delay(150);
         }
       }
       var workers = [];
-      for (var k = 0; k < Math.min(6, queue.length); k++) workers.push(worker());
+      for (var k = 0; k < Math.min(2, queue.length); k++) workers.push(worker());
       await Promise.all(workers);
       p.models = p.models.filter(function (m) { return p.modelStatus[m] !== 'dead'; });
       Store.save(); UI.renderModels(); UI.renderSettingsSubs();
@@ -1205,7 +1207,6 @@
   $('#swThink').addEventListener('change', function (e) { db.settings.think = e.target.checked; Store.save(); refreshCtx(); });
   $('#selCtxK').addEventListener('change', function (e) { db.settings.ctxK = +e.target.value; Store.save(); $('#ringTotal').textContent = 'of ' + db.settings.ctxK + 'k'; refreshCtx(); });
   $('#selFallback').addEventListener('change', function (e) { db.settings.fallbackId = e.target.value; Store.save(); });
-  $('#rngTok').addEventListener('input', function (e) { db.settings.maxTokens = +e.target.value; $('#valTok').textContent = db.settings.maxTokens + 'k'; Store.save(); });
 
   // general
   $('#swAutosave').addEventListener('change', function (e) { db.settings.autosave = e.target.checked; Store.save(); H.toast(e.target.checked ? 'Sessions persist across reloads' : 'Sessions kept in memory only'); });
