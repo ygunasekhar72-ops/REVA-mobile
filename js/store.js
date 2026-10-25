@@ -90,6 +90,28 @@
   var db = load();
   var listeners = [];
 
+  function leanCopy(db) {
+    var lean = JSON.parse(JSON.stringify(db));
+    // keep the active + 2 most recent chats fully intact; older ones lose
+    // heavy payloads first (file contents, reasoning, activity, snapshots)
+    var keepIds = {};
+    keepIds[db.activeId || ''] = true;
+    lean.sessions.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; }).slice(0, 3)
+      .forEach(function (s) { keepIds[s.id] = true; });
+    lean.sessions = lean.sessions.map(function (s) {
+      if (keepIds[s.id]) return s;
+      var slim = Object.assign({}, s, { vfsContent: {} });
+      if (slim.compactions) slim.compactions = slim.compactions.map(function (c) { return Object.assign({}, c, { snapshot: undefined }); });
+      if (slim.messages && slim.messages.length > 6) {
+        slim.messages = slim.messages.slice(-6).map(function (m) {
+          return Object.assign({}, m, { reasoning: undefined, activity: undefined });
+        });
+      }
+      return slim;
+    });
+    return lean;
+  }
+
   function persist() {
     try {
       var out = db;
@@ -98,12 +120,16 @@
       }
       localStorage.setItem(KEY, JSON.stringify(out));
     } catch (e) {
-      // quota exceeded — drop the heaviest payload (per-chat file contents) and retry once
-      try {
-        var lean = JSON.parse(JSON.stringify(db));
-        lean.sessions = (lean.sessions || []).map(function (s) { return Object.assign({}, s, { vfsContent: {} }); });
-        localStorage.setItem(KEY, JSON.stringify(lean));
-      } catch (e2) { /* storage full; app keeps working in memory */ }
+      // quota exceeded — progressively trim old chats, never the active one's files
+      var attempts = [leanCopy(db), (function () {
+        var l = leanCopy(db);
+        l.sessions = l.sessions.map(function (s) { return Object.assign({}, s, { messages: s.messages.slice(-4) }); });
+        return l;
+      })()];
+      for (var i = 0; i < attempts.length; i++) {
+        try { localStorage.setItem(KEY, JSON.stringify(attempts[i])); if (window.H && H.toast) H.toast('Storage full — older chats were trimmed'); return; } catch (e2) {}
+      }
+      /* storage full even lean; app keeps working in memory */
     }
     listeners.forEach(function (fn) { try { fn(db); } catch (e) {} });
   }

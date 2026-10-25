@@ -1345,6 +1345,8 @@
     if (e.key !== 'Escape') return;
     var ide = document.getElementById('ide');
     if (ide && ide.style.display !== 'none') { IDE.close(); return; }
+    var termEl = document.getElementById('terminal');
+    if (termEl && termEl.style.display !== 'none') { Term.close(); return; }
     if ($('.sheet.on')) { H.closeSheets(); return; }
     if ($('.ov.on')) H.pop();
   });
@@ -1387,6 +1389,82 @@
     db.settings.effort = order[(order.indexOf(db.settings.effort) + 1) % order.length];
     Store.save(); applyAppearance(); renderEffortPill(); refreshCtx();
     H.toast('Effort → ' + db.settings.effort + ' (' + EFFORT_LINE[db.settings.effort] + ')');
+  });
+
+  /* ================= built-in browser ================= */
+  var wbHist = [], wbPos = -1, wbTimer = null;
+  var KNOWN_BLOCKED = ['google.com/search', 'github.com', 'x.com', 'twitter.com', 'youtube.com', 'facebook.com', 'instagram.com', 'reddit.com'];
+  function wbNormalize(q) {
+    q = q.trim();
+    if (!q) return '';
+    if (/^https?:\/\//i.test(q)) return q;
+    if (/^[\w-]+(\.[\w-]+)+([\/?#].*)?$/.test(q)) return 'https://' + q;
+    return 'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(q);
+  }
+  function wbShow(url, push) {
+    var frame = $('#wbFrame'), blocked = $('#wbBlocked');
+    blocked.style.display = 'none';
+    $('#wbUrl').value = url === 'about:workspace' ? '' : url;
+    if (url === 'about:workspace') {
+      var s = Store.ws();
+      var files = [];
+      if (s) Object.keys(s.vfs).forEach(function (d) { (s.vfs[d] || []).forEach(function (f) { if (f.t !== 'dir' && /\.html?$/i.test(f.n)) files.push(d + '/' + f.n); }); });
+      var list = files.length ? files.map(function (p) {
+        return '<div style="padding:9px 0;border-bottom:1px dashed rgba(255,255,255,.08)"><a href="#" data-wbws="' + H.esc(p) + '" style="color:#9ecbff;text-decoration:none;font-family:monospace;font-size:13px">▸ ' + H.esc(p) + '</a></div>';
+      }).join('') : '<p style="opacity:.6">No HTML files in this chat\'s workspace yet — ask the agent to build a page.</p>';
+      frame.srcdoc = '<body style="font-family:system-ui;background:#101013;color:#e8e8ee;margin:0;padding:18px"><h3 style="margin:0 0 4px">Workspace pages</h3><small style="opacity:.55">built by your agent — tap to open</small><div style="margin-top:12px">' + list + '</div>' +
+        '<script>document.addEventListener("click",function(e){var a=e.target.closest("[data-wbws]");if(a){e.preventDefault();parent.postMessage({revaWbOpen:a.getAttribute("data-wbws")},"*")}});<\/script></body>';
+      frame.style.display = '';
+      return;
+    }
+    frame.srcdoc = '';
+    frame.style.display = '';
+    clearTimeout(wbTimer);
+    // frames that never load within 7s and are known-strict hosts → show the blocked card
+    var isKnown = KNOWN_BLOCKED.some(function (h) { return url.indexOf(h) > -1; });
+    frame.onload = function () { clearTimeout(wbTimer); };
+    frame.src = url;
+    if (isKnown) {
+      wbTimer = setTimeout(function () {
+        try {
+          var d = frame.contentDocument; // same-origin only succeeds for real loads of permissive pages
+          if (!d || !d.body || d.body.childElementCount === 0) blocked.style.display = '';
+        } catch (e) { blocked.style.display = ''; }
+      }, 7000);
+    }
+    if (push !== false) { wbHist = wbHist.slice(0, wbPos + 1); wbHist.push(url); wbPos = wbHist.length - 1; }
+  }
+  $('#wbGo').addEventListener('click', function () { var u = wbNormalize($('#wbUrl').value); if (u) wbShow(u); });
+  $('#wbUrl').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); var u = wbNormalize($('#wbUrl').value); if (u) wbShow(u); } });
+  $('#wbBack').addEventListener('click', function () { if (wbPos > 0) { wbPos--; wbShow(wbHist[wbPos], false); } });
+  $('#wbFwd').addEventListener('click', function () { if (wbPos < wbHist.length - 1) { wbPos++; wbShow(wbHist[wbPos], false); } });
+  $('#wbReload').addEventListener('click', function () { if (wbPos >= 0) wbShow(wbHist[wbPos], false); });
+  $('#wbHome').addEventListener('click', function () { wbShow('about:workspace'); });
+  $('#wbExternal').addEventListener('click', function () { var u = wbHist[wbPos]; if (u && u !== 'about:workspace' && window.open) window.open(u, '_blank'); });
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-wblink]');
+    if (t) { wbShow(t.getAttribute('data-wblink')); return; }
+  });
+  // workspace page previews postMessage from the sandboxed frame
+  window.addEventListener('message', function (ev) {
+    if (ev.data && ev.data.revaWbOpen) {
+      var s = Store.ws();
+      var code = s ? s.vfsContent[ev.data.revaWbOpen] : null;
+      if (code != null) {
+        $('#wbFrame').srcdoc = code;
+        $('#wbUrl').value = ev.data.revaWbOpen;
+      }
+    }
+  });
+  $('#browserBtn').addEventListener('click', function () { H.push('ov-browser'); wbShow('about:workspace'); });
+  $('#webPill').addEventListener('click', function () { H.push('ov-browser'); wbShow('about:workspace'); });
+
+  /* ================= real terminal ================= */
+  $('#termBtn').addEventListener('click', function () { Term.open(); });
+  $('#termPill').addEventListener('click', function () { Term.open(); });
+  $('#termClose').addEventListener('click', function () { Term.close(); });
+  $('#termClear').addEventListener('click', function () {
+    if (window.__termInst) window.__termInst.clear();
   });
 
   /* ================= start ================= */

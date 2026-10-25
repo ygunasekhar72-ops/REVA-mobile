@@ -8,6 +8,7 @@
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/vendor/xterm.css">
 <style>
   html,body{margin:0;padding:0}
   body{background:#101013;min-height:100vh;transition:background .45s ease}
@@ -56,6 +57,8 @@
     <!-- ================= FILES ================= -->
     <section class="screen tab-scr" id="scr-files">
       <div class="shead"><h2>Files</h2>
+        <button class="iconb" id="termBtn" aria-label="Terminal"><i data-lucide="square-terminal"></i></button>
+        <button class="iconb" id="browserBtn" aria-label="Browser"><i data-lucide="globe"></i></button>
         <button class="iconb" id="ideBtn" aria-label="Open workspace IDE"><i data-lucide="monitor"></i></button>
         <button class="iconb" id="newFileBtn" aria-label="New file"><i data-lucide="file-plus-2"></i></button>
         <button class="iconb" id="folderBtn" aria-label="Upload folder"><i data-lucide="folder-up"></i></button>
@@ -154,6 +157,8 @@
           <button class="pill" data-sheet="sheet-model" id="modelPillBtn" aria-label="Choose model"><i data-lucide="brain-circuit" style="width:13px;height:13px"></i><span id="modelPill">echo-1</span><i data-lucide="chevron-down" style="width:13px;height:13px"></i></button>
           <button class="pill" id="modePill" aria-label="Cycle permission mode"><i data-lucide="shield-check" style="width:13px;height:13px"></i><span id="modeTxt">Build</span></button>
           <button class="pill" id="toolsPill" aria-label="Toggle tools"><i data-lucide="wrench" style="width:13px;height:13px"></i><span id="toolsTxt">Tools</span></button>
+          <button class="pill" id="termPill" aria-label="Terminal"><i data-lucide="square-terminal" style="width:13px;height:13px"></i><span>Term</span></button>
+          <button class="pill" id="webPill" aria-label="Browser"><i data-lucide="globe" style="width:13px;height:13px"></i><span>Web</span></button>
           <button class="pill" id="idePill" aria-label="Open IDE"><i data-lucide="monitor" style="width:13px;height:13px"></i><span>IDE</span></button>
           <button class="pill" data-tab="ai" style="margin-left:auto" aria-label="AI workspace"><i data-lucide="brain" style="width:13px;height:13px"></i></button>
         </div>
@@ -274,6 +279,42 @@
       </div>
       <div class="sec">All plugins</div>
       <div id="mktList"></div>
+    </section>
+
+    <!-- ================= BROWSER ================= -->
+    <section class="screen ov with-tabs" id="ov-browser">
+      <div class="shead">
+        <button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button>
+        <h2>Browser</h2>
+        <span style="flex:1"></span>
+        <button class="iconb" id="wbBack" aria-label="Previous page" style="width:32px;height:32px"><i data-lucide="chevron-left" style="width:15px;height:15px"></i></button>
+        <button class="iconb" id="wbFwd" aria-label="Next page" style="width:32px;height:32px"><i data-lucide="chevron-right" style="width:15px;height:15px"></i></button>
+        <button class="iconb" id="wbReload" aria-label="Reload" style="width:32px;height:32px"><i data-lucide="rotate-cw" style="width:14px;height:14px"></i></button>
+      </div>
+      <div class="wb-bar">
+        <i data-lucide="lock" style="width:13px;height:13px;color:var(--ink3)"></i>
+        <input id="wbUrl" placeholder="Search or enter address" autocomplete="off" spellcheck="false"/>
+        <button class="iconb" id="wbGo" aria-label="Go" style="width:32px;height:32px"><i data-lucide="arrow-right" style="width:15px;height:15px"></i></button>
+      </div>
+      <div class="wb-frame-wrap">
+        <iframe id="wbFrame" title="Built-in browser" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+        <div id="wbBlocked" style="display:none">
+          <div class="wb-blocked-card">
+            <i data-lucide="shield-off" style="width:22px;height:22px"></i>
+            <b>This site refuses to be embedded</b>
+            <small>Many sites (Google, GitHub…) send X-Frame-Options. Try its mobile-friendly version, or open it in your system browser.</small>
+            <button class="btnGhost" id="wbExternal" style="margin-top:6px"><i data-lucide="external-link" style="width:13px;height:13px"></i>Open externally</button>
+          </div>
+        </div>
+      </div>
+      <div class="wb-links">
+        <button class="chip" data-wblink="https://duckduckgo.com/?kae=d">DuckDuckGo</button>
+        <button class="chip" data-wblink="https://lite.duckduckgo.com/lite/">DDG Lite</button>
+        <button class="chip" data-wblink="https://en.m.wikipedia.org/">Wikipedia</button>
+        <button class="chip" data-wblink="https://news.ycombinator.com/">Hacker News</button>
+        <button class="chip" data-wblink="https://example.com/">Example</button>
+        <button class="chip" id="wbHome">workspace</button>
+      </div>
     </section>
 
     <!-- ================= APPEARANCE ================= -->
@@ -474,7 +515,21 @@
     </div>
   </div>
 
+  <!-- ============ REAL TERMINAL (full window, outside the phone) ============ -->
+  <div id="terminal" style="display:none">
+    <div class="ide-head">
+      <span class="ide-logo"><i data-lucide="square-terminal"></i></span>
+      <b>REVA Terminal</b>
+      <span class="ide-path kbd" id="termBackend">—</span>
+      <span style="flex:1"></span>
+      <button class="ide-btn" id="termClear"><i data-lucide="eraser"></i>Clear</button>
+      <button class="ide-btn" id="termClose"><i data-lucide="x"></i>Close</button>
+    </div>
+    <div id="termHost"></div>
+  </div>
+
 <script src="js/vendor/lucide.min.js"></script>
+<script src="js/vendor/xterm.js"></script>
 <script src="js/util.js"></script>
 <script src="js/store.js"></script>
 <script src="js/tools.js"></script>
@@ -482,6 +537,7 @@
 <script src="js/mcp.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/ide.js"></script>
+<script src="js/term.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

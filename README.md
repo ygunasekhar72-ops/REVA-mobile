@@ -10,6 +10,8 @@ In the APK, API calls go out directly — no CORS proxy needed. Point a custom p
 
 ## Features
 
+- **Real terminal** — a full-window xterm.js terminal (line editing, history, Ctrl+C). In the **Android APK** it runs a real device shell via a native bridge (commands exec as argv in the app sandbox — injection-safe, no shell-string eval); in the browser it fronts the harness console until a WASM backend is bundled.
+- **Built-in browser** — URL bar with search fallback (DuckDuckGo Lite), back/forward/reload, quick links, a workspace home listing pages your agent built (tap to run them), and an honest "site refuses embedding" card with an open-externally escape for X-Frame-Options sites.
 - **Live agent activity feed** — a ZCode-style feed in every reply: Thinking rows with durations, tool calls as they happen (Writing `index.html` · 6.8 KB), terminal commands with their output, and a spinner while the model works. Navigating away mid-build is safe — coming back re-attaches the live stream.
 - **Agent with real tools** — the model writes/reads/lists/deletes workspace files, saves memories, installs plugins for you, and runs a harness console — in a loop until the task is done.
 - **Per-chat workspaces** — every new chat starts with its own empty workspace; the IDE, Files tab, attachments and tools all scope to the active chat.
