@@ -13,11 +13,6 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
-
 public class MainActivity extends Activity {
 
     private static final int FILE_CHOOSER_REQUEST = 100;
@@ -88,48 +83,84 @@ public class MainActivity extends Activity {
             }
         });
 
-        // Real shell bridge for the terminal: commands run in the app's own
-        // sandbox. The page sends a pre-tokenized argv array (JSON); commands
-        // are exec'd directly — there is no shell string anywhere to inject.
-        web.addJavascriptInterface(new Shell(), "REVAShell");
+        // Real terminal bridge: ONE interactive /system/bin/sh process whose
+        // streams are piped to the page. Full shell semantics (pipes, redirects,
+        // chaining, env) are interpreted by the shell itself — the app execs a
+        // fixed argv and only ever forwards bytes, so there is no command
+        // string to inject.
+        web.addJavascriptInterface(new ShellStream(), "REVAShell");
 
         web.loadUrl("file:///android_asset/index.html");
     }
 
-    /** Runs one command given as a JSON argv array (never a shell string) and
-     *  calls back with its output. Tokenization happens in the page; the
-     *  command is exec'd directly, so there is no shell to inject into. */
-    private class Shell {
-        @JavascriptInterface
-        public void execArgv(final String argvJson, final String callback) {
+    /** Interactive shell session wired to the on-page terminal. */
+    private class ShellStream {
+        private Process proc;
+        private java.io.OutputStream stdin;
+
+        private void emit(String chunk) {
+            final String payload = chunk.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "");
+            final String js = "window.__revaTermOut && window.__revaTermOut('" + payload + "')";
+            web.post(new Runnable() {
+                public void run() { web.evaluateJavascript(js, null); }
+            });
+        }
+
+        private void pump(final java.io.InputStream is) {
             new Thread(new Runnable() {
                 public void run() {
-                    String out;
+                    byte[] b = new byte[4096];
+                    int n;
                     try {
-                        org.json.JSONArray arr = new org.json.JSONArray(argvJson);
-                        List<String> argvList = new ArrayList<>();
-                        for (int i = 0; i < arr.length(); i++) argvList.add(arr.getString(i));
-                        if (argvList.isEmpty()) argvList.add("true");
-                        StringBuilder sb = new StringBuilder();
-                        Process p = Runtime.getRuntime().exec(argvList.toArray(new String[0]));
-                        BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
-                        String l;
-                        while ((l = r.readLine()) != null) sb.append(l).append('\n');
-                        BufferedReader e = new BufferedReader(new InputStreamReader(p.getErrorStream()));
-                        while ((l = e.readLine()) != null) sb.append(l).append('\n');
-                        p.waitFor();
-                        out = sb.toString();
-                    } catch (Exception ex) {
-                        out = "error: " + ex.getMessage() + "\n";
-                    }
-                    if (out.length() > 200000) out = out.substring(0, 200000);
-                    final String payload = out.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "");
-                    final String js = callback + "('" + payload + "')";
-                    web.post(new Runnable() {
-                        public void run() { web.evaluateJavascript(js, null); }
-                    });
+                        while ((n = is.read(b)) > 0) emit(new String(b, 0, n));
+                    } catch (Exception ignored) { }
                 }
             }).start();
+        }
+
+        @JavascriptInterface
+        public synchronized void start() {
+            stop();
+            try {
+                proc = Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-i"});
+                stdin = proc.getOutputStream();
+                pump(proc.getInputStream());
+                pump(proc.getErrorStream());
+            } catch (Exception e) {
+                emit("shell error: " + e.getMessage() + "\n");
+            }
+        }
+
+        @JavascriptInterface
+        public void write(final String line) {
+            final java.io.OutputStream s = stdin;
+            if (s == null) return;
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        s.write((line + "\n").getBytes());
+                        s.flush();
+                    } catch (Exception e) {
+                        emit("\n[shell closed — tap a key to restart via Term.open]\n");
+                    }
+                }
+            }).start();
+        }
+
+        /** Ctrl-C equivalent: kill the current process tree and start fresh. */
+        @JavascriptInterface
+        public synchronized void interrupt() {
+            stop();
+            emit("\n^C — shell restarted (cwd/env reset)\n");
+            start();
+        }
+
+        private synchronized void stop() {
+            if (proc != null) {
+                try { proc.destroy(); } catch (Exception ignored) { }
+                proc = null;
+                stdin = null;
+            }
         }
     }
 
