@@ -15,8 +15,8 @@ android {
         // exec-from-app-home allowed, so the terminal can run downloaded
         // static binaries (pkg install). Play Store would require 34+.
         targetSdk 28
-        versionCode 16
-        versionName "1.2.3"
+        versionCode 17
+        versionName "1.2.4"
     }
 
     signingConfigs {

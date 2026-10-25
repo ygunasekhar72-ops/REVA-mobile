@@ -133,9 +133,10 @@
     var packs = db.plugins.filter(function (p) { return p.on; });
     packs.forEach(function (r) { p.push('Plugin ' + r.name + ':\n' + r.prompt); });
     if (db.settings.tools !== false) {
-      p.push('You have tools: write_file, read_file, list_files, delete_file, save_memory, add_plugin, run_command. ' +
+      p.push('You have tools: write_file, read_file, list_files, delete_file, save_memory, add_plugin, run_command, shell_exec (device builds), web_search, web_read. ' +
         'When asked to build or change anything, DO IT with write_file instead of pasting large code blocks in chat — ' +
         'the harness renders your tool calls as file cards and the user can run the result. ' +
+        'Use web_search for anything current, factual, or uncertain — then web_read the best result before citing it. ' +
         'Use save_memory to remember durable facts about the user or project.');
     }
     if (db.allowRules.length) {
@@ -404,7 +405,8 @@
       return Tools.schemas.filter(function (t) {
         var n = t.function.name;
         if (n === 'shell_exec') return !!window.REVAShell; // real device shell — Android builds only
-        if (mode === 'Plan') return ['read_file', 'list_files', 'save_memory', 'add_plugin'].indexOf(n) >= 0;
+        if (n === 'web_search' || n === 'web_read') return true; // read-only, allowed everywhere incl. Plan
+        if (mode === 'Plan') return ['read_file', 'list_files', 'save_memory', 'add_plugin', 'web_search', 'web_read'].indexOf(n) >= 0;
         if (mode === 'Guard') return ['delete_file', 'run_command', 'shell_exec'].indexOf(n) < 0;
         return true;
       });
@@ -446,14 +448,23 @@
           var info = Tools.brief(tc.function.name, args, 'ok');
           setStatus(info.label + '…');
           var result, ex = null;
-          if (tc.function.name === 'shell_exec' && window.REVAAgent) {
+          if (tc.function.name === 'web_search' && window.WebSearch) {
+            var ws = await WebSearch.search(String(args.query || ''));
+            result = (ws.text || '') + '\n\nResults:\n' + ws.results.map(function (r, i) { return (i + 1) + '. ' + r.title + ' — ' + r.url; }).join('\n');
+            info = Tools.brief('web_search', { query: (ws.results.length ? ws.results.length + ' results' : args.query) }, result);
+            info.label = 'Search · ' + String(args.query || '').slice(0, 40);
+            info.meta = ws.results.length ? ws.results.length + ' results' : (ws.via || '');
+          } else if (tc.function.name === 'web_read' && window.WebSearch) {
+            result = await WebSearch.read(String(args.url || ''));
+            if (String(result).indexOf('Error') === 0) ex = { exit: 1, out: result };
+          } else if (tc.function.name === 'shell_exec' && window.REVAAgent) {
             ex = await AgentExec.exec(String(args.command || ''), { cwd: args.cwd, timeoutMs: (args.timeout_seconds || 120) * 1000 });
             result = (ex.timedOut ? 'TIMEOUT — process killed. Partial output:\n' + (ex.out || '') :
               (ex.out || '') + (ex.out ? '\n' : '') + '[exit ' + ex.exit + ']');
           } else {
             result = Tools.run(tc.function.name, args);
           }
-          info = Tools.brief(tc.function.name, args, result);
+          if (!info.meta) info = Tools.brief(tc.function.name, args, result);
           if (ex && (ex.timedOut || ex.exit !== 0)) info.ok = false;
           info.name = tc.function.name;
           toolResults.push(info);
