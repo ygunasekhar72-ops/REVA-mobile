@@ -214,6 +214,31 @@
 
     /* ---- live activity feed (ZCode-style): rows appear as the agent works ---- */
     var actEl = null, spinRow = null, thoughtRow = null, thoughtStart = 0, activity = [];
+    var runStart = Date.now(), spinTxtBase = '', hbTimer = null;
+    var pendRow = null, pendBytes = 0, pendName = '';
+    function fmtKB(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
+    /* heartbeat: ticking seconds on the open Thinking row, elapsed time on the
+       spinner, and live arg size on an in-flight tool row */
+    function startHb() {
+      if (hbTimer) return;
+      hbTimer = setInterval(function () {
+        if (thoughtRow) {
+          var secs = Math.max(1, Math.round((Date.now() - thoughtStart) / 1000));
+          var m = thoughtRow.querySelector('.meta');
+          if (m) m.textContent = secs + 's…';
+        }
+        if (spinRow) {
+          var el = Math.round((Date.now() - runStart) / 1000);
+          var st = spinRow.querySelector('.stxt');
+          if (st) st.textContent = spinTxtBase ? spinTxtBase + ' ' + el + 's' : el + 's';
+        }
+        if (pendRow && pendBytes) {
+          var pm = pendRow.querySelector('.meta');
+          if (pm) pm.textContent = fmtKB(pendBytes);
+        }
+      }, 400);
+    }
+    function stopHb() { if (hbTimer) { clearInterval(hbTimer); hbTimer = null; } }
     function ensureAct() {
       var b = ensureBubble();
       if (!actEl) {
@@ -230,6 +255,7 @@
       return row;
     }
     function setStatus(txt) { /* spinner row rides at the bottom of the feed */
+      spinTxtBase = txt || '';
       if (!txt) { if (spinRow) { spinRow.remove(); spinRow = null; } return; }
       var act = ensureAct();
       if (!spinRow) spinRow = H.el('<div class="act-row spin-row"><span class="spin"></span><span class="stxt"></span></div>');
@@ -237,12 +263,33 @@
       act.appendChild(spinRow);
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
+    /* in-flight tool row: appears the instant the model starts streaming a tool
+       call's arguments, with a live byte counter while it generates */
+    function onToolCallDelta(name, argsLen) {
+      if (!name) return;
+      if (!pendRow || pendName !== name) {
+        if (pendRow) pendRow.remove();
+        var act = ensureAct();
+        pendRow = H.el('<div class="act-row pend-row"><span class="spin"></span><b>' + H.esc(name) + '</b><span class="meta"></span></div>');
+        if (spinRow && spinRow.parentNode === act) act.insertBefore(pendRow, spinRow);
+        else act.appendChild(pendRow);
+        pendName = name; pendBytes = 0;
+      }
+      pendBytes = argsLen;
+      var pm = pendRow.querySelector('.meta');
+      if (pm && argsLen) pm.textContent = fmtKB(argsLen);
+      if (stick) scroller.scrollTop = scroller.scrollHeight;
+    }
+    function clearPend() {
+      if (pendRow) { pendRow.remove(); pendRow = null; }
+      pendName = ''; pendBytes = 0;
+    }
     function beginThought() {
       if (thoughtRow) return;
       thoughtStart = Date.now();
       var act = ensureAct();
       thoughtRow = H.el('<div class="act-row"><i data-lucide="brain"></i><b>Thinking</b><span class="meta">…</span></div>');
-      act.insertBefore(thoughtRow, spinRow || null);
+      act.insertBefore(thoughtRow, pendRow || spinRow || null);
       H.icons();
     }
     function endThought() {
@@ -253,6 +300,7 @@
       thoughtRow = null;
     }
     function addToolRow(info, out) {
+      clearPend();
       endThought();
       if (info.cmd) {
         actRow('terminal', '❯ ' + info.cmd, info.meta || '');
@@ -295,10 +343,17 @@
     }
     function onDeltaFn(d) {
       setStatus(null);
+      clearPend();
       endThought();
       ensureContent(); acc += d;
       if (stick) stick = atBottom();
-      contentEl.innerHTML = H.mdLite(acc);
+      // a textual tool-call protocol is streaming as content — hide it until lifted
+      if (/<tool_call>|^\]<\]/m.test(acc)) {
+        contentEl.style.display = 'none';
+      } else {
+        contentEl.style.display = '';
+        contentEl.innerHTML = H.mdLite(acc);
+      }
       H.icons();
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
@@ -337,8 +392,9 @@
         tools: toolSchemas(),
         onDelta: onDeltaFn,
         onReasoning: onReasoningFn,
+        onToolCall: onToolCallDelta,
         onDeltaClean: function (clean) {
-          if (contentEl) contentEl.innerHTML = H.mdLite(clean);
+          if (contentEl) { contentEl.style.display = ''; contentEl.innerHTML = H.mdLite(clean); }
           H.icons();
         }
       });
@@ -355,7 +411,8 @@
     }
 
     var apiMsgs = apiMessages();
-    var toolResults = [], failed = null, stopped = false, usedFallback = false, iters = 0, nudged = false, retriedNS = false, res = null;
+    var toolResults = [], failed = null, stopped = false, usedFallback = false, fbName = '', iters = 0, nudged = false, retriedNS = false, res = null;
+    startHb();
 
     while (true) {
       iters++;
@@ -370,6 +427,7 @@
           try {
             res = await callAI(fb);
             usedFallback = true;
+            fbName = fb.name;
             H.toast('Replied via fallback ' + fb.name);
           } catch (e2) {
             if (aborted(e2)) { stopped = true; break; }
@@ -438,6 +496,12 @@
       break;
     }
     setStatus(null);
+    stopHb();
+    clearPend();
+    /* persistent fallback marker — a toast is not enough */
+    if (usedFallback && !failed) {
+      activity.push({ k: 'note', icon: 'cloud-off', text: 'Primary provider failed — answered via fallback', meta: fbName });
+    }
 
     if (failed) {
       typing.remove();

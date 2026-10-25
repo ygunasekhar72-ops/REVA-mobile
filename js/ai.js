@@ -168,7 +168,11 @@
       if (lifted) content0 = content0.replace(/(?:\]<\][a-z0-9._-]*\[>\[)?<tool_call>[\s\S]*?<\/tool_call>/gi, '').trim();
       if (content0) onDelta(content0);
       var tc0 = (m.tool_calls && m.tool_calls.length) ? cleanToolCalls(m.tool_calls.slice()) : null;
-      return { content: content0, reasoning: reas0, toolCalls: tc0 || lifted };
+      if (!tc0 && lifted) tc0 = lifted;
+      if (opts.onToolCall && tc0) {
+        for (var q = 0; q < tc0.length; q++) opts.onToolCall(tc0[q].function.name, (tc0[q].function.arguments || '').length);
+      }
+      return { content: content0, reasoning: reas0, toolCalls: tc0 };
     }
 
     var reader = res.body.getReader();
@@ -194,7 +198,14 @@
           var reas = delta.reasoning_content || delta.reasoning;
           if (reas) { reasoning += reas; onReasoning(reas); }
           if (delta.tool_calls) {
-            for (var k = 0; k < delta.tool_calls.length; k++) mergeToolCall(tcAcc, delta.tool_calls[k]);
+            for (var k = 0; k < delta.tool_calls.length; k++) {
+              mergeToolCall(tcAcc, delta.tool_calls[k]);
+              var t = delta.tool_calls[k];
+              var ix = t.index || 0;
+              if (opts.onToolCall && tcAcc[ix]) {
+                opts.onToolCall(tcAcc[ix].function.name, (tcAcc[ix].function.arguments || '').length);
+              }
+            }
           }
         } catch (e) { /* keepalive or partial json — ignore */ }
       }
