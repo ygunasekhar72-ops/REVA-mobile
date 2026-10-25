@@ -83,7 +83,7 @@
         REVAAgent.writeRaw(String(opts.cwd).replace(/\n/g, ' '));
         REVAAgent.writeRaw('\n');
       }
-      REVAAgent.writeRaw(String(cmd).replace(/\n+$/, ''));
+      REVAAgent.writeRaw(String(task).replace(/\n+$/, ''));
       REVAAgent.writeRaw('\n');
       REVAAgent.writeRaw('echo __REVA_DONE__$?__');
       REVAAgent.writeRaw(id);
