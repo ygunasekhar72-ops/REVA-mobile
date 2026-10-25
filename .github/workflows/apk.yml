@@ -51,6 +51,17 @@ jobs:
             ls -la "$JNIDIR/$abi"
           done
 
+      - name: Bundle REVA Linux rootfs (Alpine minirootfs, extracted in-app at first launch)
+        run: |
+          mkdir -p android/app/src/main/assets/linux
+          for abi in aarch64 x86_64; do
+            mkdir -p "android/app/src/main/assets/linux/$abi"
+            # rootfs.bin (not .tar.gz): aapt2 decompresses/renames *.gz assets,
+            # which would break the in-app extraction path
+            curl -sL -o "android/app/src/main/assets/linux/$abi/rootfs.bin" \
+              "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/$abi/alpine-minirootfs-3.20.3-$abi.tar.gz"
+          done
+
       - name: Bundle web app into Android assets
         run: |
           mkdir -p android/app/src/main/assets

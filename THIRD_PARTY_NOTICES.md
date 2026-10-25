@@ -33,6 +33,17 @@ third-party components:
 ## Android shell (mksh / toybox)
 - Used from the device system image (`/system/bin/sh`); not redistributed.
 
+## Alpine Linux minirootfs — multiple licenses (aggregated distribution)
+- Files: bundled at build time as `android/app/…/assets/linux/<arch>/rootfs.bin`
+  (Alpine minirootfs 3.20.3 tarball, aarch64 + x86_64)
+- Source: https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/ (build recipe:
+  https://gitlab.alpinelinux.org/alpine/aports/-/tree/master/scripts)
+- Distributed unmodified as a separate aggregated work; REVA's own code does
+  not link against it. It contains many packages under their own licenses
+  (musl libc — MIT, BusyBox — GPL-2.0, apk-tools — GPL-2.0, zlib — zlib
+  license, plus everything installed at runtime via `apk`). Package sources:
+  https://gitlab.alpinelinux.org/alpine/aports
+
 ## Reference projects (architecture references only — no code copied)
 - TermFold (Apache-2.0): https://github.com/Bibarud/TermFold — proot bundling
   layout and environment invocation were adapted from its documented approach.

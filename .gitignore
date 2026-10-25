@@ -1,4 +1,12 @@
 .mimosa/
+.zcode/
 .DS_Store
 Thumbs.db
 *.log
+
+# local-only Android build inputs — fetched by scripts/prepare-android.sh / CI
+android/app/src/main/jniLibs/
+android/app/src/main/assets/
+android/local.properties
+android/.gradle/
+android/app/build/

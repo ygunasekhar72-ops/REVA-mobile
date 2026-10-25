@@ -15,8 +15,8 @@ android {
         // exec-from-app-home allowed, so the terminal can run downloaded
         // static binaries (pkg install). Play Store would require 34+.
         targetSdk 28
-        versionCode 19
-        versionName "1.2.6"
+        versionCode 20
+        versionName "1.3.0"
     }
 
     packaging {
@@ -54,7 +54,9 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        // 17: REVA Linux state (LINUX_LOCK/linuxReady) lives as statics in the
+        // inner ShellStream class — legal only since Java 16
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 }

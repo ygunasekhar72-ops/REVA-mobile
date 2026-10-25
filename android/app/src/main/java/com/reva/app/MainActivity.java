@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
 import android.webkit.JsResult;
@@ -93,8 +94,14 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new ShellStream("window.__revaTermOut", true), "REVAShell");
         web.addJavascriptInterface(new ShellStream("window.__revaAgentOut", false), "REVAAgent");
 
-        // Prepare the shell environment at launch: busybox copy + ~/.mkshrc
-        try { new ShellStream("none", true).setupEnv(); } catch (Exception ignored) { }
+        // Prepare the shell environment at launch: busybox copy + ~/.mkshrc +
+        // REVA Linux rootfs. Background thread — first-run extraction of the
+        // rootfs is far too heavy for the UI thread.
+        new Thread(new Runnable() {
+            public void run() {
+                try { new ShellStream("none", true).setupEnv(); } catch (Exception ignored) { }
+            }
+        }).start();
 
         web.loadUrl("file:///android_asset/index.html");
     }
@@ -156,10 +163,181 @@ public class MainActivity extends Activity {
         }
 
         /** mksh profile: pkg installer + busybox helper on PATH */
-        /** busybox copy + shell profile — idempotent, safe at every launch */
+        /** busybox copy + shell profile + REVA Linux rootfs — idempotent */
         void setupEnv() {
             busyboxPath();
             writeProfile();
+            ensureLinux();
+        }
+
+        /** REVA Linux: extract the bundled Alpine rootfs once (pure Java, no
+         *  subprocess). Terminal + agent sessions prefer it. State is shared
+         *  across session instances + the launch-time setup thread: extraction
+         *  runs exactly once and a session opened mid-extract waits for it. */
+        private static final Object LINUX_LOCK = new Object();
+        private static volatile Boolean linuxReady = null;
+        /** rootfs generation: bump when shipping a new Alpine build so the
+         *  marker no longer matches and extraction re-runs */
+        private static final String ROOTFS_VER = "alpine-3.20.3.2";
+
+        private String prootBin() {
+            File p = new File(getApplicationInfo().nativeLibraryDir, "libproot.so");
+            return p.exists() ? p.getAbsolutePath() : "";
+        }
+
+        /** bundled-rootfs dir name for this device (64-bit ABIs only) */
+        private String assetAbi() {
+            String a = Build.SUPPORTED_ABIS[0];
+            if ("arm64-v8a".equals(a)) return "aarch64";
+            if ("x86_64".equals(a)) return "x86_64";
+            return null;
+        }
+
+        private void ensureLinux() {
+            synchronized (LINUX_LOCK) {
+                if (linuxReady != null) return;
+                try {
+                    String aabi = assetAbi();
+                    File nd = new File(prootBin()).getParentFile();
+                    if (aabi == null || nd == null
+                            || !new File(nd, "libproot-loader.so").exists()) {
+                        linuxReady = false;
+                        return;
+                    }
+                    File root = new File(getFilesDir(), "linux");
+                    File marker = new File(root, ".reva-ok-" + ROOTFS_VER);
+                    if (!marker.exists()) {
+                        root.mkdirs();
+                        // The asset is a tar.gz stored as rootfs.bin: aapt2
+                        // decompresses *.gz assets (renaming them), which would
+                        // break the .tar.gz path — a non-gz name is left alone,
+                        // and AssetManager.open inflates it back transparently.
+                        try (java.util.zip.GZIPInputStream gz = new java.util.zip.GZIPInputStream(
+                                getAssets().open("linux/" + aabi + "/rootfs.bin"))) {
+                            untar(gz, root);
+                        }
+                        // DNS + a friendly guest profile (pkg → apk)
+                        writeSmall(new File(root, "etc/resolv.conf"),
+                                "nameserver 1.1.1.1\nnameserver 8.8.8.8\n");
+                        File profDir = new File(root, "etc/profile.d");
+                        profDir.mkdirs();
+                        writeSmall(new File(profDir, "reva.sh"),
+                                "export PS1='reva $ '\n" +
+                                "pkg() { case \"$1\" in i|install) shift; apk add \"$@\";; u|update) apk update;; upgrade) apk upgrade;; s|search) shift; apk search \"$@\";; *) echo 'pkg install|update|upgrade|search (apk)';; esac; }\n");
+                        marker.createNewFile();
+                    }
+                    writeShellWrapper();
+                    linuxReady = true;
+                } catch (Exception e) { linuxReady = false; }
+            }
+        }
+
+        /** executable launcher the pty runs via SHELL= — paths baked at write time */
+        private void writeShellWrapper() throws Exception {
+            String nd = new File(prootBin()).getParent();
+            new File(getFilesDir(), ".proot").mkdirs(); // proot's PROOT_TMP_DIR must exist before first exec
+            StringBuilder sb = new StringBuilder();
+            sb.append("#!/system/bin/sh\n");
+            sb.append("PROOT_LOADER='").append(new File(nd, "libproot-loader.so").getAbsolutePath()).append("'\n");
+            sb.append("LD_LIBRARY_PATH='").append(nd).append("'\n");
+            sb.append("PROOT_TMP_DIR='").append(new File(getFilesDir(), ".proot").getAbsolutePath()).append("'\n");
+            sb.append("PROOT_F2FS_WORKAROUND=0\n");
+            sb.append("PROOT_NO_SECCOMP=1\n");
+            sb.append("export PROOT_LOADER LD_LIBRARY_PATH PROOT_TMP_DIR PROOT_F2FS_WORKAROUND PROOT_NO_SECCOMP\n");
+            // NB: `apk add` installs and runs packages fine but reports a
+            // cosmetic "1 error" at commit under proot (known apk/proot
+            // accounting quirk); exit code 1 does not mean failure.
+            sb.append("exec '").append(prootBin()).append("' -0 -r '").append(new File(getFilesDir(), "linux").getAbsolutePath())
+              .append("' -b /dev -b /proc -b /sys -b '").append(getFilesDir().getAbsolutePath())
+              // guest shells must NOT inherit LD_LIBRARY_PATH: Android's libz
+              // shadows musl's and breaks apk (relocation errors). The inner
+              // busybox sh survives it, clears it, then execs the real shell.
+              .append("':/host -w /root /bin/sh -c 'unset LD_LIBRARY_PATH; exec /bin/sh -l'\n");
+            File w = new File(getFilesDir(), "bin/revash");
+            writeSmall(w, sb.toString());
+            w.setExecutable(true, false);
+        }
+
+        private static void writeSmall(File f, String s) throws Exception {
+            f.getParentFile().mkdirs();
+            java.io.FileOutputStream fo = new java.io.FileOutputStream(f);
+            fo.write(s.getBytes()); fo.close();
+        }
+
+        /** minimal tar reader: dirs, files, symlinks, hardlinks (as symlinks) */
+        private static void untar(java.io.InputStream in, File root) throws Exception {
+            byte[] hdr = new byte[512];
+            java.nio.file.Path rootP = root.toPath();
+            while (true) {
+                int off = 0;
+                while (off < 512) { int n = in.read(hdr, off, 512 - off); if (n < 0) return; off += n; }
+                String name = new String(hdr, 0, 100, "UTF-8").trim();
+                if (name.isEmpty()) continue;
+                String prefix = new String(hdr, 345, 155, "UTF-8").trim();
+                if (!prefix.isEmpty()) name = prefix + "/" + name;
+                long sz = size(hdr);
+                char type = (char) hdr[156];
+                String link = new String(hdr, 157, 100, "UTF-8").trim();
+                java.nio.file.Path p = rootP.resolve(name).normalize();
+                if (!p.startsWith(rootP)) { skip(in, sz); continue; }
+                if (type == '5') {
+                    java.nio.file.Files.createDirectories(p);
+                } else if (type == '2' || type == '1') {
+                    java.nio.file.Files.createDirectories(p.getParent());
+                    try { java.nio.file.Files.deleteIfExists(p); } catch (Exception ignored) { }
+                    try {
+                        if (type == '2') {
+                            // store the link target VERBATIM: POSIX resolves
+                            // relative targets against the link's own dir;
+                            // resolving from the root broke e.g. lib/libz.so.1
+                            java.nio.file.Files.createSymbolicLink(p, java.nio.file.Paths.get(link));
+                        } else {
+                            // hardlink targets are archive-root-relative
+                            String hl = link.startsWith("/") ? link.substring(1) : link;
+                            java.nio.file.Files.createSymbolicLink(p, rootP.resolve(hl).normalize());
+                        }
+                    } catch (Exception ignored) { }
+                } else if (type == '0' || type == 0 || type == '7') {
+                    java.nio.file.Files.createDirectories(p.getParent());
+                    java.io.FileOutputStream fo = new java.io.FileOutputStream(p.toFile());
+                    byte[] b = new byte[65536]; long left = sz;
+                    while (left > 0) {
+                        int n = in.read(b, 0, (int) Math.min(b.length, left));
+                        if (n < 0) break;
+                        fo.write(b, 0, n); left -= n;
+                    }
+                    fo.close();
+                    // app-created files default to non-exec; restore the exec
+                    // bit from the tar mode or proot refuses to run /bin/sh
+                    if ((mode(hdr) & 0100) != 0) p.toFile().setExecutable(true, false);
+                }
+                if (sz > 0) skip(in, (512 - (sz % 512)) % 512);
+            }
+        }
+        private static long size(byte[] h) {
+            String s = new String(h, 124, 12, java.nio.charset.StandardCharsets.UTF_8).trim().replaceAll("[^0-7]", "");
+            try { return Long.parseLong(s, 8); } catch (Exception e) { return 0; }
+        }
+        private static int mode(byte[] h) {
+            String s = new String(h, 100, 8, java.nio.charset.StandardCharsets.UTF_8).trim().replaceAll("[^0-7]", "");
+            try { return (int) Long.parseLong(s, 8); } catch (Exception e) { return 0; }
+        }
+        private static void skip(java.io.InputStream in, long n) throws Exception {
+            long left = n; byte[] b = new byte[65536];
+            while (left > 0) {
+                int r = in.read(b, 0, (int) Math.min(b.length, left));
+                if (r < 0) return;
+                left -= r;
+            }
+        }
+
+        /** argv-free entry into REVA Linux: the wrapper written by
+         *  writeShellWrapper(). Sessions exec this file directly — no command
+         *  strings are ever assembled. Empty when Linux isn't ready. */
+        private String revashPath() {
+            if (linuxReady == null || !linuxReady) return "";
+            File w = new File(getFilesDir(), "bin/revash");
+            return w.canExecute() ? w.getAbsolutePath() : "";
         }
 
         private void writeProfile() {
@@ -190,18 +368,10 @@ public class MainActivity extends Activity {
                     sb.append("    *) echo \"pkg install <url-of-static-binary>... | pkg list\";;").append('\n');
                     sb.append("  esac").append('\n');
                     sb.append("}").append('\n');
-                    // proot Linux userspace (TermFold mechanism, Apache-2.0; bundled libproot)
-                    sb.append("ND=\"").append(getApplicationInfo().nativeLibraryDir).append("\"").append('\n');
-                    sb.append("PRO=$HOME/linux; case $(uname -m) in aarch64) AL=3.20.3; AU=aarch64;; *) AL=3.20.3; AU=x86_64;; esac").append('\n');
-                    sb.append("AT=alpine-minirootfs-$AL-$AU.tar.gz").append('\n');
+                    // REVA Linux launcher (bundled Alpine rootfs + revash wrapper)
+                    sb.append("RS=\"").append(new File(getFilesDir(), "bin/revash").getAbsolutePath()).append("\"").append('\n');
                     sb.append("lx() {").append('\n');
-                    sb.append("  if [ ! -d $PRO/bin ]; then").append('\n');
-                    sb.append("    echo 'lx: first run downloads Alpine Linux (~4MB) into $HOME/linux'").append('\n');
-                    sb.append("    mkdir -p $PRO $HOME/.prova && bb wget -q -O $HOME/$AT https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/$AU/$AT || { echo download failed; return 1; }").append('\n');
-                    sb.append("    bb mkdir -p $PRO && cd $PRO && bb tar -xf $HOME/$AT && cd $HOME && rm $HOME/$AT && echo 'lx: installed — apk add git nodejs python3 inside'").append('\n');
-                    sb.append("  fi").append('\n');
-                    sb.append("  PROOT_LOADER=$ND/libproot-loader.so LD_LIBRARY_PATH=$ND PROOT_TMP_DIR=$HOME/.proot PROOT_F2FS_WORKAROUND=0 \\").append('\n');
-                    sb.append("    $ND/libproot.so -r $PRO -b /dev -b /proc -b /sys -b $HOME:/host -w /root /bin/sh -l").append('\n');
+                    sb.append("  if [ -x \"$RS\" ]; then exec \"$RS\"; else echo 'REVA Linux not ready yet — reopen in a moment'; return 1; fi").append('\n');
                     sb.append("}").append('\n');
                     java.io.FileOutputStream fos = new java.io.FileOutputStream(rc);
                     fos.write(sb.toString().getBytes());
@@ -214,6 +384,28 @@ public class MainActivity extends Activity {
         public synchronized void start() {
             stop();
             setupEnv();
+            // Preferred: REVA Linux (proot Alpine) — real /bin/sh, apk, packages.
+            // Both sessions exec the revash wrapper file directly (fixed argv,
+            // direct variable arguments); the pty session wraps it in busybox
+            // script for a real pseudo-terminal.
+            try {
+                String rs = revashPath();
+                if (!rs.isEmpty() && (!pty || !busyboxPath().isEmpty())) {
+                    if (pty) {
+                        proc = launchLinux(new String[]{ busyboxPath(), "script", "-qfc", rs, "/dev/null" });
+                    } else {
+                        proc = launchLinux(new String[]{ rs });
+                    }
+                    stdin = proc.getOutputStream();
+                    pump(proc.getInputStream());
+                    pump(proc.getErrorStream());
+                    if (pty) emit("\r\n\u001b[2mREVA Linux (Alpine, proot) \u2014 pkg install adds packages\u001b[0m\r\n");
+                    return;
+                }
+            } catch (Exception e) {
+                emit("(linux unavailable: " + e.getMessage() + " — host shell instead)\n");
+                proc = null;
+            }
             String bb = busyboxPath();
             try {
                 if (pty && !bb.isEmpty()) {
@@ -244,6 +436,26 @@ public class MainActivity extends Activity {
             pb.environment().put("PATH", new File(getFilesDir(), "bin").getAbsolutePath()
                     + (bb.isEmpty() ? "" : ":" + new File(bb).getParent())
                     + ":" + (path == null ? "/system/bin" : path));
+            return pb.start();
+        }
+
+        /** REVA Linux launch: same env revash bakes in, set on the process so
+         *  it reaches proot under busybox script too. HOME/PATH are guest
+         *  paths — the rootfs is the world this process sees. */
+        private Process launchLinux(String[] argv) throws Exception {
+            File nd = new File(prootBin()).getParentFile();
+            File tmp = new File(getFilesDir(), ".proot");
+            tmp.mkdirs();
+            ProcessBuilder pb = new ProcessBuilder(argv);
+            pb.directory(getFilesDir());
+            pb.environment().put("HOME", "/root");
+            pb.environment().put("TERM", "xterm-256color");
+            pb.environment().put("PATH",
+                    "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+            pb.environment().put("PROOT_LOADER", new File(nd, "libproot-loader.so").getAbsolutePath());
+            pb.environment().put("LD_LIBRARY_PATH", nd.getAbsolutePath());
+            pb.environment().put("PROOT_TMP_DIR", tmp.getAbsolutePath());
+            pb.environment().put("PROOT_F2FS_WORKAROUND", "0");
             return pb.start();
         }
 
