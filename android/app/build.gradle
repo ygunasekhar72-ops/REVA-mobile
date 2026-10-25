@@ -37,6 +37,14 @@ android {
         }
     }
 
+    lint {
+        // targetSdk 28 is intentional (exec-from-home for the terminal, like
+        // Termux) and lint treats it as a Play-store release error; we ship
+        // via GitHub Releases, not Play.
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
