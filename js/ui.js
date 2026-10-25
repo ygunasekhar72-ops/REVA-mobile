@@ -257,11 +257,17 @@
     /* ---------- CHAT ---------- */
     renderChat: function (sess) {
       var flow = $('#msgFlow'), scroller = $('#chatMsgs');
+      var live = (window.App && App.takeLiveEl) ? App.takeLiveEl(sess) : null;
       flow.innerHTML = '';
       var empty = $('#chatEmpty');
-      if (!sess || !sess.messages.length) { empty.style.display = 'flex'; UI.renderTodoCard(sess); H.icons(); return; }
+      if (!sess || !sess.messages.length) {
+        empty.style.display = 'flex';
+        if (live) flow.appendChild(live); // a run started in this empty session — keep it visible
+        UI.renderTodoCard(sess); H.icons(); return;
+      }
       empty.style.display = 'none';
       sess.messages.forEach(function (m) { flow.appendChild(UI.msgEl(m)); });
+      if (live) flow.appendChild(live); // re-attach the in-flight stream after navigating back
       UI.renderTodoCard(sess);
       scroller.scrollTop = scroller.scrollHeight;
       H.icons();

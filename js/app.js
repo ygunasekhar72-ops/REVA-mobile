@@ -178,7 +178,7 @@
   }
 
   async function send(text) {
-    if (state.streaming) return;
+    if (state.streaming) { H.toast('The agent is still working — stop it or wait'); return; }
     text = (text !== undefined ? text : $('#chatInput').value).trim();
     if (!text) { H.toast('Type a message first'); return; }
     $('#chatInput').value = '';
@@ -195,7 +195,7 @@
   async function streamReply(s) {
     var prov = Store.activeProvider();
     var flow = $('#msgFlow'), scroller = $('#chatMsgs');
-    var typing = H.el('<div class="typing"><i></i><i></i><i></i></div>');
+    var typing = H.el('<div class="typing" data-live="1"><i></i><i></i><i></i></div>');
     flow.appendChild(typing);
     scroller.scrollTop = scroller.scrollHeight;
     var bubble = null, thinkEl = null, contentEl = null, statusEl = null, acc = '', accRe = '';
@@ -209,7 +209,7 @@
       if (!txt) { if (statusEl) { statusEl.remove(); statusEl = null; } return; }
       var b = ensureBubble();
       if (!statusEl) {
-        statusEl = H.el('<div class="agent-status"><span class="dots"><i></i><i></i><i></i></span><span class="stxt"></span></div>');
+        statusEl = H.el('<div class="agent-status" data-live="1"><span class="dots"><i></i><i></i><i></i></span><span class="stxt"></span></div>');
       }
       statusEl.querySelector('.stxt').textContent = txt;
       b.appendChild(statusEl);
@@ -221,7 +221,7 @@
     function ensureBubble() {
       if (!bubble) {
         typing.remove();
-        bubble = H.el('<div class="msg ai"></div>');
+        bubble = H.el('<div class="msg ai" data-live="1"></div>');
         flow.appendChild(bubble);
       }
       return bubble;
@@ -270,6 +270,16 @@
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
     function aborted(e) { return e && (e.aborted || e.name === 'AbortError'); }
+    /* while this run is streaming, renderChat() can re-attach the live elements
+       after the user navigates away and comes back */
+    App.takeLiveEl = function (sess) {
+      if (!state.streaming || sess !== s || !flow) return null;
+      var els = Array.prototype.slice.call(flow.querySelectorAll('[data-live]'));
+      if (!els.length) return null;
+      var frag = document.createDocumentFragment();
+      els.forEach(function (el) { frag.appendChild(el); });
+      return frag;
+    };
     function callAI(provider) {
       return AI.chat({
         provider: provider,
@@ -346,7 +356,8 @@
     s.updatedAt = Date.now();
     Store.save();
     state.streaming = false; setSendStop(false); state.ctrl = null;
-    UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); UI.renderHome(); UI.renderSettingsSubs();
+    if (Store.active() === s) { UI.renderChat(s); UI.renderChatHead(s); } // don't repaint if the user switched sessions mid-run
+    refreshCtx(); UI.renderHome(); UI.renderSettingsSubs();
     fireHook('Assistant done', { model: s.model });
     notify('Reply finished', s.title);
     // auto-compact
@@ -678,7 +689,11 @@
     var t;
     if ((t = e.target.closest('[data-tab]'))) { H.setTab(t.getAttribute('data-tab')); return; }
     if ((t = e.target.closest('[data-go]'))) { H.push(t.getAttribute('data-go')); return; }
-    if ((t = e.target.closest('[data-back]'))) { H.pop(); return; }
+    if ((t = e.target.closest('[data-back]'))) {
+      if (state.streaming) H.toast('REVA keeps building — Resume last to watch live');
+      H.pop();
+      return;
+    }
     if ((t = e.target.closest('[data-sheet]'))) {
       var sheetId = t.getAttribute('data-sheet');
       if (sheetId === 'sheet-model') UI.renderModelSheet(db.settings.providerId);
