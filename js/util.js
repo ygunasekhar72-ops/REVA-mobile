@@ -42,6 +42,14 @@
       out += esc(raw.slice(last));
       return out;
     },
+    /* file extension → highlighter language */
+    extLang: function (name) {
+      var m = /\.([a-z0-9]+)$/i.exec(String(name || ''));
+      var ext = m ? m[1].toLowerCase() : '';
+      return ({ html: 'html', htm: 'html', svg: 'html', xml: 'html', vue: 'html',
+        css: 'css', js: 'js', mjs: 'js', cjs: 'js', jsx: 'js', ts: 'js', tsx: 'js', json: 'js',
+        py: 'py', rb: 'rb', sh: 'sh', bash: 'sh', zsh: 'sh', yml: 'yaml', yaml: 'yaml', toml: 'toml', conf: 'conf' })[ext] || '';
+    },
     mdLite: function (s) {
       function inline(t) {
         var e = H.esc(t);

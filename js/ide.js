@@ -54,9 +54,19 @@
     $('#ideEditor').value = c === undefined ? '' : String(c);
     dirty = false;
     $('#idePath').textContent = path;
+    refreshHl();
     refreshTree();
     if (/\.html?$/.test(path)) showPreview(path);
     else showPreview(null);
+  }
+
+  /* transparent-textarea-over-highlighted-pre keeps editing simple and code colored */
+  function refreshHl() {
+    var pre = $('#ideHl'), ta = $('#ideEditor');
+    if (!pre || !ta) return;
+    pre.innerHTML = H.hi(ta.value, H.extLang(curPath)) + '\n';
+    pre.scrollTop = ta.scrollTop;
+    pre.scrollLeft = ta.scrollLeft;
   }
 
   function showPreview(path) {
@@ -109,7 +119,12 @@
     $('#ideClose').addEventListener('click', close);
     $('#ideSave').addEventListener('click', save);
     $('#ideRun').addEventListener('click', function () { if (curPath) showPreview(curPath); });
-    $('#ideEditor').addEventListener('input', function () { dirty = true; });
+    $('#ideEditor').addEventListener('input', function () { dirty = true; refreshHl(); });
+    $('#ideEditor').addEventListener('scroll', function () {
+      var pre = $('#ideHl');
+      pre.scrollTop = $('#ideEditor').scrollTop;
+      pre.scrollLeft = $('#ideEditor').scrollLeft;
+    });
     $('#ideEditor').addEventListener('keydown', function (e) {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
     });

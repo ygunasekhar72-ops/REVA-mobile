@@ -162,11 +162,23 @@
     var typing = H.el('<div class="typing"><i></i><i></i><i></i></div>');
     flow.appendChild(typing);
     scroller.scrollTop = scroller.scrollHeight;
-    var bubble = null, thinkEl = null, contentEl = null, acc = '', accRe = '';
+    var bubble = null, thinkEl = null, contentEl = null, statusEl = null, acc = '', accRe = '';
     state.streaming = true; setSendStop(true);
     state.ctrl = new AbortController();
     var toolsOn = db.settings.tools !== false;
     var MAX_ITERS = 8;
+
+    /* live activity chip so the user can see what the agent is doing */
+    function setStatus(txt) {
+      if (!txt) { if (statusEl) { statusEl.remove(); statusEl = null; } return; }
+      var b = ensureBubble();
+      if (!statusEl) {
+        statusEl = H.el('<div class="agent-status"><span class="dots"><i></i><i></i><i></i></span><span class="stxt"></span></div>');
+      }
+      statusEl.querySelector('.stxt').textContent = txt;
+      b.appendChild(statusEl);
+      if (stick) scroller.scrollTop = scroller.scrollHeight;
+    }
 
     function atBottom() { return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 90; }
     var stick = true;
@@ -196,6 +208,7 @@
       return contentEl;
     }
     function onDeltaFn(d) {
+      setStatus(null);
       ensureContent(); acc += d;
       if (stick) stick = atBottom();
       contentEl.innerHTML = H.mdLite(acc);
@@ -204,6 +217,7 @@
     }
     function onReasoningFn(d) {
       var body = ensureThink();
+      setStatus('Thinking…');
       accRe += d;
       body.textContent = accRe.slice(-4000);
       body.scrollTop = body.scrollHeight;
@@ -239,6 +253,7 @@
 
     while (true) {
       iters++;
+      setStatus(iters === 1 ? 'Connecting…' : 'Working…');
       try {
         res = await callAI(prov);
       } catch (e) {
@@ -264,8 +279,10 @@
           var tc = res.toolCalls[i];
           var args = {};
           try { args = JSON.parse(tc.function.arguments || '{}'); } catch (e) {}
+          var info = Tools.brief(tc.function.name, args, 'ok');
+          setStatus(info.label + '…');
           var result = Tools.run(tc.function.name, args);
-          var info = Tools.brief(tc.function.name, args, result);
+          info = Tools.brief(tc.function.name, args, result);
           info.name = tc.function.name;
           toolResults.push(info);
           appendToolCard(info);
@@ -277,6 +294,7 @@
       }
       break;
     }
+    setStatus(null);
 
     if (failed) {
       typing.remove();
@@ -464,7 +482,7 @@
     } else {
       $('#fsImg').style.display = 'none';
       var tc2 = $('#fsCode').closest('.toolcard'); if (tc2) tc2.style.display = '';
-      $('#fsCode').textContent = content;
+      $('#fsCode').innerHTML = H.hi(String(content), H.extLang(f.n));
     }
     H.openSheet('sheet-file');
   }
