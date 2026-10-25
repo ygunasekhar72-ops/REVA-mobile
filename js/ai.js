@@ -85,6 +85,35 @@
     return arr.length ? arr : null;
   }
 
+  /* some providers (e.g. minimax) leak tool calls as TEXT inside content
+     instead of the tool_calls field. Detect and lift them out. */
+  function liftTextToolCalls(content, acc) {
+    if (!content) return null;
+    // minimax's textual protocol often has no closing tag — match to one or EOL
+    var re = /(?:\]<\][a-z0-9._-]*\[>\[)?<tool_call>\s*(?:name=["']([\w.-]+)["']\s*>?)?\s*([\s\S]*?)(?:<\/tool_call>|$)/gi;
+    var m, calls = [], out = content, idx = 0;
+    while ((m = re.exec(content)) !== null) {
+      if (m[0].indexOf('<tool_call>') < 0) continue;
+      var name = m[1], argsRaw = m[2].trim();
+      if (!argsRaw) continue;
+      if (!name) {
+        try {
+          var j = JSON.parse(argsRaw);
+          name = j.name || j.function || j.function_name;
+          if (j.arguments && typeof j.arguments !== 'string') argsRaw = JSON.stringify(j.arguments);
+          if (typeof j.arguments === 'string') argsRaw = j.arguments;
+        } catch (e) {}
+      }
+      if (!name) continue;
+      try { JSON.parse(argsRaw); } catch (e) { argsRaw = '{}'; }
+      calls.push({ id: 'call-txt-' + (idx++), type: 'function', function: { name: name, arguments: argsRaw } });
+      out = out.split(m[0]).join('');
+    }
+    if (!calls.length) return null;
+    if (acc) acc.out = out.trim();
+    return calls;
+  }
+
   /* --- chat completion, streaming or not --- */
   async function chat(opts) {
     var p = opts.provider, msgs = opts.messages;
@@ -133,10 +162,13 @@
       var j = await res.json();
       var m = (j.choices && j.choices[0] && j.choices[0].message) || {};
       var content0 = m.content || '';
-      if (content0) onDelta(content0);
       var reas0 = m.reasoning_content || m.reasoning || '';
       if (reas0) onReasoning(reas0);
-      return { content: content0, reasoning: reas0, toolCalls: (m.tool_calls && m.tool_calls.length) ? cleanToolCalls(m.tool_calls.slice()) : null };
+      var lifted = liftTextToolCalls(content0);
+      if (lifted) content0 = content0.replace(/(?:\]<\][a-z0-9._-]*\[>\[)?<tool_call>[\s\S]*?<\/tool_call>/gi, '').trim();
+      if (content0) onDelta(content0);
+      var tc0 = (m.tool_calls && m.tool_calls.length) ? cleanToolCalls(m.tool_calls.slice()) : null;
+      return { content: content0, reasoning: reas0, toolCalls: tc0 || lifted };
     }
 
     var reader = res.body.getReader();
@@ -167,7 +199,14 @@
         } catch (e) { /* keepalive or partial json — ignore */ }
       }
     }
-    return { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) };
+    var acc2 = {};
+    var lifted = liftTextToolCalls(full, acc2);
+    if (lifted) {
+      // re-render the content without the textual protocol block
+      full = acc2.out || '';
+      if (opts.onDeltaClean && full) opts.onDeltaClean(full);
+    }
+    return { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) || lifted };
   }
 
   /* --- model verification: does this model actually serve chat on this endpoint? --- */

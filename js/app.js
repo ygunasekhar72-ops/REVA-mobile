@@ -325,18 +325,22 @@
       els.forEach(function (el) { frag.appendChild(el); });
       return frag;
     };
-    function callAI(provider) {
+    function callAI(provider, forceNonStream) {
       return AI.chat({
         provider: provider,
         model: db.settings.model,
         messages: apiMsgs,
-        stream: db.settings.stream,
+        stream: forceNonStream ? false : db.settings.stream,
         maxTokens: db.settings.maxTokens,
         effort: db.settings.effort,
         signal: state.ctrl.signal,
         tools: toolSchemas(),
         onDelta: onDeltaFn,
-        onReasoning: onReasoningFn
+        onReasoning: onReasoningFn,
+        onDeltaClean: function (clean) {
+          if (contentEl) contentEl.innerHTML = H.mdLite(clean);
+          H.icons();
+        }
       });
     }
     /* the mode really gates what the agent can do */
@@ -351,7 +355,7 @@
     }
 
     var apiMsgs = apiMessages();
-    var toolResults = [], failed = null, stopped = false, usedFallback = false, iters = 0, res = null;
+    var toolResults = [], failed = null, stopped = false, usedFallback = false, iters = 0, nudged = false, retriedNS = false, res = null;
 
     while (true) {
       iters++;
@@ -392,6 +396,43 @@
         }
         acc = ''; contentEl = null;
         refreshCtx(); UI.renderHome();
+        continue;
+      }
+      // some providers (seen: minimax on NVIDIA) truncate STREAMING responses
+      // after a tool round — reasoning arrives, then nothing. Retry once
+      // non-streaming, which returns the full tool call.
+      if (!res.toolCalls && !(res.content || '').trim() && toolResults.length && !retriedNS) {
+        retriedNS = true;
+        setStatus('Re-syncing…');
+        try {
+          res = await callAI(prov, true);
+          if (res.toolCalls && res.toolCalls.length && iters < MAX_ITERS) {
+            apiMsgs.push({ role: 'assistant', content: res.content || '', tool_calls: res.toolCalls });
+            for (var j2 = 0; j2 < res.toolCalls.length; j2++) {
+              var tc2 = res.toolCalls[j2];
+              var args2 = {};
+              try { args2 = JSON.parse(tc2.function.arguments || '{}'); } catch (e) {}
+              var result2 = Tools.run(tc2.function.name, args2);
+              var info2 = Tools.brief(tc2.function.name, args2, result2);
+              info2.name = tc2.function.name;
+              toolResults.push(info2);
+              addToolRow(info2, result2);
+              apiMsgs.push({ role: 'tool', tool_call_id: tc2.id, content: String(result2).slice(0, 4000) });
+            }
+            acc = ''; contentEl = null;
+            refreshCtx(); UI.renderHome();
+            continue;
+          }
+          if ((res.content || '').trim()) break; // got a real answer
+        } catch (e3) { /* fall through to nudge */ }
+      }
+      // a post-tool round that ends empty is a provider hiccup, not a finished
+      // task — nudge once instead of giving up with "(empty reply)"
+      if (!res.toolCalls && !(res.content || '').trim() && toolResults.length && iters < MAX_ITERS && !nudged) {
+        nudged = true;
+        setStatus('Continuing…');
+        acc = ''; contentEl = null;
+        apiMsgs.push({ role: 'user', content: 'Continue and complete the task using your tools. Do not reply with empty content.' });
         continue;
       }
       break;
