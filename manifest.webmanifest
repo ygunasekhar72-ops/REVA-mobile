@@ -1,0 +1,12 @@
+{
+  "name": "Mono Harness",
+  "short_name": "Mono Harness",
+  "description": "A minimal, local-first, mobile-styled AI harness for any OpenAI-compatible provider.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#070708",
+  "theme_color": "#070708",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

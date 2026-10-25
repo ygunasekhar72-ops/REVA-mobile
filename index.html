@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070708">
+<title>Mono Harness</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  html,body{margin:0;padding:0}
+  body{background:#101013;min-height:100vh;transition:background .45s ease}
+  body[data-page-theme="graphite"]{background:#0d0d10}
+  body[data-page-theme="porcelain"]{background:#d7d7dc}
+</style>
+</head>
+<body data-page-theme="obsidian">
+<div id="mono-harness">
+<div class="stage"><div class="scaler" id="scaler">
+<div class="phone" id="phone" data-theme="obsidian" data-ico="line">
+  <div class="p-island"></div>
+  <div class="p-status"><span id="clock">9:41</span><span class="stic"><i data-lucide="signal"></i><i data-lucide="wifi"></i><i data-lucide="battery-full"></i></span></div>
+
+  <div class="p-body">
+    <!-- ================= HOME ================= -->
+    <section class="screen tab-scr on" id="scr-home">
+      <div class="greet">
+        <div class="ava"><i data-lucide="user-round"></i></div>
+        <div><h1 id="greetTxt">Good evening</h1><small id="greetSub">Mono Harness · local-first</small></div>
+      </div>
+      <div class="card banner" id="setupBanner" style="display:none">
+        <span class="bx"><i data-lucide="plug-zap"></i></span>
+        <span class="rtxt"><b>Connect an AI provider</b><small>Add any OpenAI-compatible endpoint + key</small></span>
+        <button class="btnX" id="setupGo" style="padding:9px 14px;font-size:12.5px;border-radius:11px">Set up</button>
+        <button class="iconb" id="setupDismiss" style="width:30px;height:30px" aria-label="Dismiss"><i data-lucide="x" style="width:15px;height:15px"></i></button>
+      </div>
+      <div class="hero">
+        <button class="hcard" id="hero">
+          <span class="plus"><i data-lucide="plus"></i></span>
+          <span style="flex:1"><h3>New chat</h3><p>Start a fresh session with the agent</p></span>
+          <span class="sheen"></span>
+        </button>
+      </div>
+      <div class="qrow">
+        <button class="chip" id="qResume"><i data-lucide="history" style="width:14px;height:14px"></i>Resume last</button>
+        <button class="chip" id="qPlan"><i data-lucide="compass" style="width:14px;height:14px"></i>Plan mode</button>
+        <button class="chip" data-tab="ai"><i data-lucide="brain" style="width:14px;height:14px"></i>Memory</button>
+      </div>
+      <div class="sec">Recent sessions</div>
+      <div id="sessList"></div>
+      <div class="sec">All time</div>
+      <div class="card" style="display:flex;padding:14px 16px;gap:0;text-align:left" id="statsRow"></div>
+    </section>
+
+    <!-- ================= FILES ================= -->
+    <section class="screen tab-scr" id="scr-files">
+      <div class="shead"><h2>Files</h2>
+        <button class="iconb" id="newFileBtn" aria-label="New file"><i data-lucide="file-plus-2"></i></button>
+        <button class="iconb" id="mountBtn" aria-label="Mount device folder"><i data-lucide="folder-open"></i></button>
+      </div>
+      <input class="inp" id="fileSearch" placeholder="Search files…" style="margin-bottom:12px" />
+      <div class="crumbs" id="fileCrumbs"></div>
+      <div id="filesList"></div>
+      <input type="file" id="fileImport" multiple style="display:none" />
+    </section>
+
+    <!-- ================= PLUGINS ================= -->
+    <section class="screen tab-scr" id="scr-plugins">
+      <div class="shead"><h2>Plugins</h2><button class="iconb" data-go="ov-market" aria-label="Marketplace"><i data-lucide="store"></i></button></div>
+      <div class="card" style="display:flex;align-items:center;gap:12px;padding:14px;margin-bottom:14px">
+        <span class="tile"><i data-lucide="store"></i></span>
+        <span class="rtxt"><b>Plugin marketplace</b><small id="mktCount"></small></span>
+        <button class="btnGhost" style="padding:8px 13px;font-size:12.5px;border-radius:11px" data-go="ov-market">Browse</button>
+      </div>
+      <div class="sec">Installed</div>
+      <div id="plugList"></div>
+    </section>
+
+    <!-- ================= AI WORKSPACE ================= -->
+    <section class="screen tab-scr" id="scr-ai">
+      <div class="shead"><h2>AI Workspace</h2><button class="iconb" id="memAdd" aria-label="New memory"><i data-lucide="plus"></i></button></div>
+      <div class="lockban"><i data-lucide="shield"></i><span>Private to the assistant. Memories and pre-compaction context live here — the model reads them every turn.</span></div>
+      <div class="sec">Context · live</div>
+      <div class="card ringwrap">
+        <div class="ring">
+          <svg width="112" height="112" viewBox="0 0 112 112" role="img" aria-label="Context usage ring">
+            <circle cx="56" cy="56" r="47" fill="none" stroke="var(--fld)" stroke-width="9"/>
+            <circle id="ringArc" cx="56" cy="56" r="47" fill="none" stroke="var(--ink)" stroke-width="9" stroke-linecap="round" stroke-dasharray="295.3" stroke-dashoffset="295.3" style="transition:stroke-dashoffset .9s var(--ez)"/>
+          </svg>
+          <div class="cen"><b id="ringPct">0%</b><small id="ringTotal">of 128k</small></div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div class="segbar" id="segBar"></div>
+          <div class="lgd" id="segLgd"></div>
+        </div>
+      </div>
+      <div class="sec">Memory</div>
+      <div class="card buf" style="margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--ink3);margin-bottom:8px"><i data-lucide="book-marked" style="width:13px;height:13px"></i>MEMORY.md · index</div>
+        <p style="font-size:12.5px;color:var(--ink2);line-height:1.6" class="kbd" id="memIndex"></p>
+      </div>
+      <div id="memList"></div>
+      <div class="sec">Pre-compaction buffer</div>
+      <div class="card buf">
+        <div style="display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--ink3);margin-bottom:4px"><i data-lucide="waves" style="width:13px;height:13px"></i>Live transcript · <span id="bufTok" style="letter-spacing:.2px">0 tok</span></div>
+        <div id="bufList"></div>
+      </div>
+      <div class="sec">Past compactions</div>
+      <div id="compactList"></div>
+    </section>
+
+    <!-- ================= SETTINGS ROOT ================= -->
+    <section class="screen tab-scr" id="scr-settings">
+      <div class="shead"><h2>Settings</h2></div>
+      <div class="card acct">
+        <div class="ava" style="width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:var(--sur2);box-shadow:3px 3px 8px var(--sd);font-weight:600"><i data-lucide="user-round"></i></div>
+        <div class="rtxt">
+          <b style="font-size:15px">Local account</b>
+          <small style="font-size:12px;color:var(--ink3)">Data stays on this device</small>
+          <div class="usage meter"><b id="storeMeter" style="width:12%"></b></div>
+          <small style="font-size:11px;color:var(--ink3);display:block;margin-top:5px" id="storeUse">— of ~5 MB localStorage used</small>
+        </div>
+      </div>
+      <div class="sec">Agent</div>
+      <button class="row" data-go="ov-model"><span class="tile"><i data-lucide="brain-circuit"></i></span><span class="rtxt"><b>Model</b><small id="setModelSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-skills"><span class="tile"><i data-lucide="zap"></i></span><span class="rtxt"><b>Skills system</b><small id="setSkillSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-perms"><span class="tile"><i data-lucide="shield-check"></i></span><span class="rtxt"><b>Permissions</b><small id="setPermSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <div class="sec">Extensions</div>
+      <button class="row" data-go="ov-market"><span class="tile"><i data-lucide="store"></i></span><span class="rtxt"><b>Plugin marketplace</b><small id="setPlugSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-mcp"><span class="tile"><i data-lucide="server"></i></span><span class="rtxt"><b>MCP servers</b><small id="setMcpSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-hooks"><span class="tile"><i data-lucide="webhook"></i></span><span class="rtxt"><b>Hooks</b><small id="setHookSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <div class="sec">App</div>
+      <button class="row" data-go="ov-general"><span class="tile"><i data-lucide="sliders-horizontal"></i></span><span class="rtxt"><b>General</b><small>Sessions, compaction, language</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-cron"><span class="tile"><i data-lucide="calendar-clock"></i></span><span class="rtxt"><b>Automations</b><small id="setAutoSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-appearance"><span class="tile"><i data-lucide="contrast"></i></span><span class="rtxt"><b>Appearance</b><small id="setAppSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-toast="Mono Harness 1.0.0 — local build"><span class="tile"><i data-lucide="info"></i></span><span class="rtxt"><b>About</b><small>Version 1.0.0 · local-first</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+    </section>
+
+    <!-- ================= CHAT ================= -->
+    <section class="screen ov ov-up" id="ov-chat" aria-label="Chat">
+      <div class="chead">
+        <div class="chrow">
+          <button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button>
+          <div class="tt"><b id="chatTitle">New chat</b><small id="chatSub">fresh context</small></div>
+          <button class="ctxchip" data-sheet="sheet-ctx" aria-label="Context usage"><i data-lucide="gauge" style="width:13px;height:13px"></i><span class="m"><b id="ctxBarFill" style="width:0%"></b></span><span id="ctxPct1">0%</span></button>
+        </div>
+        <div class="pills">
+          <button class="pill" data-sheet="sheet-model" id="modelPillBtn" aria-label="Choose model"><i data-lucide="brain-circuit" style="width:13px;height:13px"></i><span id="modelPill">echo-1</span><i data-lucide="chevron-down" style="width:13px;height:13px"></i></button>
+          <button class="pill" id="modePill" aria-label="Cycle permission mode"><i data-lucide="shield-check" style="width:13px;height:13px"></i><span id="modeTxt">Build</span></button>
+          <button class="pill" data-tab="ai" style="margin-left:auto" aria-label="AI workspace"><i data-lucide="brain" style="width:13px;height:13px"></i></button>
+        </div>
+      </div>
+      <div class="msgs" id="chatMsgs">
+        <div class="empty-wrap" id="chatEmpty">
+          <div class="orb"><i data-lucide="sparkles"></i></div>
+          <p>Fresh context window.<br>Everything you send goes to your configured provider.</p>
+          <div class="suggs">
+            <button class="chip" data-sugg="Explain how the context meter and compaction work in this app">Explain how this app works</button>
+            <button class="chip" data-sugg="Write a TypeScript function that debounces an async call">Write a debounce function</button>
+            <button class="chip" data-sugg="Draft a short release note for v1.0 of a minimal AI harness">Draft a release note</button>
+          </div>
+        </div>
+        <div class="tcard" id="todoCard" style="display:none"></div>
+        <div id="msgFlow"></div>
+      </div>
+      <div class="composer">
+        <div class="cbox">
+          <button class="iconb" style="width:34px;height:34px" id="attachBtn" aria-label="Attach file"><i data-lucide="paperclip"></i></button>
+          <button class="iconb" style="width:34px;height:34px" id="slashBtn" aria-label="Slash commands"><i data-lucide="terminal"></i></button>
+          <button class="iconb" style="width:34px;height:34px" id="todoBtn" aria-label="Session todos"><i data-lucide="list-todo"></i></button>
+          <input id="chatInput" placeholder="Message… try / for commands" autocomplete="off" />
+          <button class="send" id="sendBtn" aria-label="Send"><i data-lucide="arrow-up"></i></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= GENERAL ================= -->
+    <section class="screen ov with-tabs" id="ov-general">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>General</h2></div>
+      <div class="sec">Sessions</div>
+      <div class="row"><span class="rtxt"><b>Autosave sessions</b><small>Keep history across reloads</small></span><label class="sw"><input type="checkbox" id="swAutosave" checked/><i></i></label></div>
+      <div class="row"><span class="rtxt"><b>Checkpoints</b><small>Keep full snapshot on compaction</small></span><label class="sw"><input type="checkbox" id="swCheckpoints" checked/><i></i></label></div>
+      <div class="row"><span class="rtxt"><b>Auto-compact at</b><small>Free context when passing threshold</small></span><button class="pill" id="compactAt" style="min-width:56px;justify-content:center">80%</button></div>
+      <div class="sec">System</div>
+      <div class="row"><span class="rtxt"><b>Notifications</b><small>Alert when a reply finishes in background</small></span><label class="sw"><input type="checkbox" id="swNotify"/><i></i></label></div>
+      <div class="row"><span class="rtxt"><b>Language</b></span><select class="inp" id="selLang"><option value="en">English</option><option value="hi">हिन्दी</option><option value="de">Deutsch</option></select></div>
+      <div class="row" id="dirRow" style="cursor:pointer"><span class="rtxt"><b>Working directory</b><small id="dirSub">Virtual workspace (mount a folder)</small></span><i data-lucide="folder-open" class="chev" style="width:16px;height:16px"></i></div>
+      <div class="sec">Privacy</div>
+      <div class="row"><span class="rtxt"><b>Clear all session data</b><small>Chats, memory and buffers</small></span><button class="btnGhost" style="padding:8px 13px;font-size:12.5px;border-radius:11px" id="clearData">Clear</button></div>
+    </section>
+
+    <!-- ================= MODEL ================= -->
+    <section class="screen ov with-tabs" id="ov-model">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Model</h2></div>
+      <div class="sec">Provider · custom supported</div>
+      <div id="provCards"></div>
+      <div class="sec">Default model · <span id="provNameLbl"></span></div>
+      <div id="modelCards"></div>
+      <div class="row" style="gap:8px">
+        <input class="inp" id="addModelIn" placeholder="Add model id manually…" style="flex:1"/>
+        <button class="btnGhost" id="addModelBtn" style="padding:10px 14px;font-size:12.5px">Add</button>
+      </div>
+      <div class="sec">Reasoning</div>
+      <div class="row"><span class="rtxt" style="flex:none;width:70px"><b style="font-size:14px">Effort</b></span><div class="seg" id="effSeg" style="flex:1"><button data-eff="Low">Low</button><button data-eff="High">High</button><button data-eff="Max">Max</button></div></div>
+      <div class="row"><span class="rtxt"><b>Extended thinking</b><small>Ask for step-by-step reasoning</small></span><label class="sw"><input type="checkbox" id="swThink"/><i></i></label></div>
+      <div class="ctlrow"><span class="rtxt" style="flex:none;width:104px"><b style="font-size:14px">Max tokens</b></span><input type="range" id="rngTok" min="4" max="32" step="1" value="16"/><span class="rval" id="valTok">16k</span></div>
+      <div class="sec">Runtime</div>
+      <div class="row"><span class="rtxt"><b>Stream responses</b><small>Tokens appear as they arrive</small></span><label class="sw"><input type="checkbox" id="swStream" checked/><i></i></label></div>
+      <div class="row"><span class="rtxt"><b>Context window</b><small>Used by the context meter</small></span><select class="inp" id="selCtxK"><option>32</option><option>64</option><option selected>128</option><option>200</option></select></div>
+      <div class="row"><span class="rtxt"><b>Fallback provider</b><small>On connection failure</small></span><select class="inp" id="selFallback"></select></div>
+    </section>
+
+    <!-- ================= SKILLS ================= -->
+    <section class="screen ov with-tabs" id="ov-skills">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Skills</h2><button class="iconb" id="addSkill" aria-label="New skill"><i data-lucide="plus"></i></button></div>
+      <div class="row"><span class="rtxt"><b>Skills system</b><small>Enabled skills are announced to the model</small></span><label class="sw"><input type="checkbox" id="skillMaster" checked/><i></i></label></div>
+      <div class="sec">Available · toggle on/off</div>
+      <div id="skillList"></div>
+    </section>
+
+    <!-- ================= PERMISSIONS ================= -->
+    <section class="screen ov with-tabs" id="ov-perms">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Permissions</h2><button class="iconb" id="addRule" aria-label="Add allow-rule"><i data-lucide="plus"></i></button></div>
+      <div class="sec">Default mode</div>
+      <div class="seg" id="pmodeSeg">
+        <button data-pm="Plan">Plan</button><button data-pm="Build">Build</button><button data-pm="Edit">Edit</button><button data-pm="Yolo">Yolo</button><button data-pm="Guard">Guard</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--ink3);margin:10px 4px 16px;line-height:1.5" id="pmodeDesc"></p>
+      <div class="sec">Mode shapes the system prompt</div>
+      <div class="lockban"><i data-lucide="wand-2"></i><span>Plan asks for a proposal first · Build is pragmatic · Edit prefers minimal diffs · Yolo is fast and direct · Guard calls out risks.</span></div>
+      <div class="sec">Session allow-rules</div>
+      <div id="ruleList"></div>
+    </section>
+
+    <!-- ================= HOOKS ================= -->
+    <section class="screen ov with-tabs" id="ov-hooks">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Hooks</h2><button class="iconb" id="addHook" aria-label="Add hook"><i data-lucide="plus"></i></button></div>
+      <div class="lockban"><i data-lucide="webhook"></i><span>Webhooks that fire on app events — Session start, User prompt, Assistant done, Compaction.</span></div>
+      <div id="hookList"></div>
+    </section>
+
+    <!-- ================= MCP ================= -->
+    <section class="screen ov with-tabs" id="ov-mcp">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>MCP servers</h2><button class="iconb" id="addMcp" aria-label="Add server"><i data-lucide="plus"></i></button></div>
+      <div class="lockban"><i data-lucide="server"></i><span>MCP servers over Streamable HTTP — the handshake and tool discovery run in the browser. Tool execution needs a desktop bridge.</span></div>
+      <div id="mcpList"></div>
+    </section>
+
+    <!-- ================= AUTOMATIONS ================= -->
+    <section class="screen ov with-tabs" id="ov-cron">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Automations</h2><button class="iconb" id="addAuto" aria-label="New automation"><i data-lucide="plus"></i></button></div>
+      <div class="lockban"><i data-lucide="calendar-clock"></i><span>Prompt schedules that run while the app is open — a session is created automatically for each run.</span></div>
+      <div id="autoList"></div>
+      <div class="sec">Run history</div>
+      <div id="autoHist"><p style="text-align:center;color:var(--ink3);font-size:12.5px;padding:6px 0 2px">No runs yet</p></div>
+    </section>
+
+    <!-- ================= MARKETPLACE ================= -->
+    <section class="screen ov with-tabs" id="ov-market">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Marketplace</h2></div>
+      <input class="inp" id="mktSearch" placeholder="Search plugins…" style="margin-bottom:12px" />
+      <div class="card" style="padding:15px;margin-bottom:14px;background:linear-gradient(145deg,var(--sur2),var(--sur))">
+        <div style="display:flex;gap:11px;align-items:center"><span class="tile" style="width:44px;height:44px;border-radius:15px" id="featTile"><i data-lucide="pen-tool"></i></span><div><b style="font-size:15px" id="featName">Featured</b><br><small style="font-size:12px;color:var(--ink3)" id="featDesc"></small></div></div>
+        <button class="btnX" style="width:100%;margin-top:13px" id="featInstall" data-install>Install</button>
+      </div>
+      <div class="sec">All plugins</div>
+      <div id="mktList"></div>
+    </section>
+
+    <!-- ================= APPEARANCE ================= -->
+    <section class="screen ov with-tabs" id="ov-appearance">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Appearance</h2></div>
+      <div class="sec">Theme</div>
+      <div class="thcards" id="thCards">
+        <button class="thc" data-theme="obsidian"><span class="prev" style="background:linear-gradient(145deg,#1d1d22,#0a0a0c)"></span><small>Obsidian</small></button>
+        <button class="thc" data-theme="graphite"><span class="prev" style="background:linear-gradient(145deg,#34343b,#1a1a1e)"></span><small>Graphite</small></button>
+        <button class="thc" data-theme="porcelain"><span class="prev" style="background:linear-gradient(145deg,#ffffff,#dcdce1)"></span><small>Porcelain</small></button>
+      </div>
+      <div class="sec">3D &amp; feel</div>
+      <div class="ctlrow"><span class="rtxt" style="flex:none;width:104px"><b style="font-size:14px">3D depth</b></span><input type="range" id="rngDepth" min="0" max="150" value="100"/><span class="rval" id="valDepth">100%</span></div>
+      <div class="ctlrow"><span class="rtxt" style="flex:none;width:104px"><b style="font-size:14px">Corner radius</b></span><input type="range" id="rngRad" min="6" max="26" value="18"/><span class="rval" id="valRad">18px</span></div>
+      <div class="ctlrow"><span class="rtxt" style="flex:none;width:104px"><b style="font-size:14px">Text size</b></span><input type="range" id="rngFont" min="13" max="17" value="15"/><span class="rval" id="valFont">15px</span></div>
+      <div class="row"><span class="rtxt"><b>Reduce motion</b><small>Instant transitions</small></span><label class="sw"><input type="checkbox" id="tglMotion"/><i></i></label></div>
+      <div class="row"><span class="rtxt" style="flex:none;width:96px"><b style="font-size:14px">Icon weight</b></span><div class="seg" id="icoSeg" style="flex:1"><button data-ico="line">Line</button><button data-ico="solid">Solid</button></div></div>
+    </section>
+  </div>
+
+  <!-- tab bar -->
+  <nav class="p-tabbar" id="tabbar" aria-label="Main navigation">
+    <button class="tb on" data-tab="home"><span class="tbi"><i data-lucide="home"></i></span><span>Home</span></button>
+    <button class="tb" data-tab="files"><span class="tbi"><i data-lucide="folder"></i></span><span>Files</span></button>
+    <button class="tb" data-tab="plugins"><span class="tbi"><i data-lucide="puzzle"></i></span><span>Plugins</span></button>
+    <button class="tb" data-tab="ai"><span class="tbi"><i data-lucide="sparkles"></i></span><span>AI</span></button>
+    <button class="tb" data-tab="settings"><span class="tbi"><i data-lucide="settings"></i></span><span>Settings</span></button>
+  </nav>
+
+  <div class="dim" id="dim"></div>
+
+  <!-- ============ SHEETS ============ -->
+  <div class="sheet" id="sheet-model" aria-label="Choose model">
+    <div class="grab"></div><h3><i data-lucide="brain-circuit" style="width:17px;height:17px"></i>Switch model</h3>
+    <div class="prow-scroll" id="provChips"></div>
+    <div id="modelSheetList"></div>
+  </div>
+
+  <div class="sheet" id="sheet-slash" aria-label="Slash commands">
+    <div class="grab"></div><h3><i data-lucide="terminal" style="width:17px;height:17px"></i>Commands</h3>
+    <button class="cmdrow" data-cmd="/compact"><span class="kb">/compact</span><span class="rtxt"><b style="font-size:13.5px;font-weight:500">Summarize &amp; free context</b><small style="font-size:11.5px;color:var(--ink3)">via provider or local</small></span></button>
+    <button class="cmdrow" data-cmd="/model"><span class="kb">/model</span><span class="rtxt"><b style="font-size:13.5px;font-weight:500">Switch model</b><small style="font-size:11.5px;color:var(--ink3)">pick per session</small></span></button>
+    <button class="cmdrow" data-cmd="/resume"><span class="kb">/resume</span><span class="rtxt"><b style="font-size:13.5px;font-weight:500">Resume a session</b><small style="font-size:11.5px;color:var(--ink3)">pick from history</small></span></button>
+    <button class="cmdrow" data-cmd="/memory"><span class="kb">/memory</span><span class="rtxt"><b style="font-size:13.5px;font-weight:500">Edit memory</b><small style="font-size:11.5px;color:var(--ink3)">AI workspace</small></span></button>
+    <button class="cmdrow" data-cmd="/todos"><span class="kb">/todos</span><span class="rtxt"><b style="font-size:13.5px;font-weight:500">Task list</b><small style="font-size:11.5px;color:var(--ink3)">current plan</small></span></button>
+    <button class="cmdrow" data-cmd="/hooks"><span class="kb">/hooks</span><span class="rtxt"><b style="font-size:13.5px;font-weight:500">Manage hooks</b><small style="font-size:11.5px;color:var(--ink3)">lifecycle webhooks</small></span></button>
+    <button class="cmdrow" data-cmd="/mcp"><span class="kb">/mcp</span><span class="rtxt"><b style="font-size:13.5px;font-weight:500">MCP servers</b><small style="font-size:11.5px;color:var(--ink3)">connected endpoints</small></span></button>
+    <button class="cmdrow" data-cmd="/clear"><span class="kb">/clear</span><span class="rtxt"><b style="font-size:13.5px;font-weight:500">New session</b><small style="font-size:11.5px;color:var(--ink3)">fresh context</small></span></button>
+  </div>
+
+  <div class="sheet" id="sheet-ctx" aria-label="Context usage">
+    <div class="grab"></div><h3><i data-lucide="gauge" style="width:17px;height:17px"></i>Context</h3>
+    <div class="segbar" id="segBar2" style="height:12px"></div>
+    <div class="lgd" id="segLgd2" style="margin-top:10px"></div>
+    <button class="btnX" style="width:100%;margin-top:16px" id="ctxCompactBtn"><i data-lucide="sparkles" style="width:15px;height:15px"></i>Compact now</button>
+  </div>
+
+  <div class="sheet" id="sheet-file" aria-label="File preview">
+    <div class="grab"></div><h3 id="fsTitle">file</h3>
+    <div class="toolcard" style="margin:0"><pre id="fsCode"></pre></div>
+  </div>
+
+  <div class="sheet" id="sheet-provider" aria-label="Edit provider">
+    <div class="grab"></div><h3 id="pvTitle"><i data-lucide="plug-zap" style="width:17px;height:17px"></i>Provider</h3>
+    <div class="fld"><label>Name</label><input class="inp" id="pvName" placeholder="My provider"/></div>
+    <div class="fld"><label>Base URL — OpenAI-compatible</label><input class="inp kbd" id="pvBase" placeholder="https://host/v1"/></div>
+    <div class="fld"><label>API key — stored only on this device</label><input class="inp" id="pvKey" type="password" placeholder="sk-…"/></div>
+    <p class="kbd" id="pvStatus" style="font-size:11.5px;color:var(--ink3);min-height:16px;margin:4px 2px 0"></p>
+    <div class="acts">
+      <button class="btnGhost" id="pvFetch"><i data-lucide="download" style="width:14px;height:14px"></i>Fetch models</button>
+      <button class="btnGhost" id="pvTest"><i data-lucide="plug" style="width:14px;height:14px"></i>Test</button>
+    </div>
+    <div class="acts">
+      <button class="btnGhost" id="pvDelete"><i data-lucide="trash-2" style="width:14px;height:14px"></i>Delete</button>
+      <button class="btnX" id="pvSave">Save provider</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-memory" aria-label="Edit memory">
+    <div class="grab"></div><h3 id="mmTitle"><i data-lucide="notebook-pen" style="width:17px;height:17px"></i>Memory</h3>
+    <div class="fld"><label>File name</label><input class="inp kbd" id="mmTitleIn" placeholder="topic.md"/></div>
+    <div class="fld"><label>Type</label><select class="inp" id="mmTag"><option>user</option><option>feedback</option><option>project</option><option>reference</option></select></div>
+    <div class="fld"><label>What the model should remember</label><textarea class="inp" id="mmBody"></textarea></div>
+    <div class="acts">
+      <button class="btnGhost" id="mmDelete"><i data-lucide="trash-2" style="width:14px;height:14px"></i>Delete</button>
+      <button class="btnX" id="mmSave">Save memory</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-skill" aria-label="Edit skill">
+    <div class="grab"></div><h3 id="skTitle"><i data-lucide="zap" style="width:17px;height:17px"></i>Skill</h3>
+    <div class="fld"><label>Name</label><input class="inp" id="skName" placeholder="TypeScript helper"/></div>
+    <div class="fld"><label>What the model should do differently</label><textarea class="inp" id="skDesc" placeholder="Prefer TypeScript examples and strict types"></textarea></div>
+    <div class="acts">
+      <button class="btnGhost" id="skDelete"><i data-lucide="trash-2" style="width:14px;height:14px"></i>Delete</button>
+      <button class="btnX" id="skSave">Save skill</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-auto" aria-label="Edit automation">
+    <div class="grab"></div><h3><i data-lucide="calendar-clock" style="width:17px;height:17px"></i>Automation</h3>
+    <div class="fld"><label>Title</label><input class="inp" id="auTitleIn" placeholder="Nightly review"/></div>
+    <div class="fld"><label>Prompt to run</label><textarea class="inp" id="auPrompt" placeholder="Summarize today's notes…"></textarea></div>
+    <div class="fld"><label>Schedule — runs while app is open</label><select class="inp" id="auSched">
+      <option value="once2">Once · in 2 minutes</option>
+      <option value="i15">Every 15 minutes</option>
+      <option value="i60">Every 60 minutes</option>
+      <option value="d0900">Daily · 09:00</option>
+    </select></div>
+    <div class="acts">
+      <button class="btnGhost" id="auDelete"><i data-lucide="trash-2" style="width:14px;height:14px"></i>Delete</button>
+      <button class="btnX" id="auSave">Save</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-hook" aria-label="Edit hook">
+    <div class="grab"></div><h3><i data-lucide="webhook" style="width:17px;height:17px"></i>Hook</h3>
+    <div class="fld"><label>Event</label><select class="inp" id="hkEvent">
+      <option>Session start</option><option>User prompt</option><option>Assistant done</option><option>Compaction</option>
+    </select></div>
+    <div class="fld"><label>Webhook URL — receives POST JSON</label><input class="inp kbd" id="hkUrl" placeholder="https://example.com/hook"/></div>
+    <div class="acts">
+      <button class="btnGhost" id="hkTest"><i data-lucide="send" style="width:14px;height:14px"></i>Test</button>
+      <button class="btnGhost" id="hkDelete"><i data-lucide="trash-2" style="width:14px;height:14px"></i>Delete</button>
+      <button class="btnX" id="hkSave">Save</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-mcp" aria-label="Add MCP server">
+    <div class="grab"></div><h3><i data-lucide="server" style="width:17px;height:17px"></i>MCP server</h3>
+    <div class="fld"><label>Name</label><input class="inp" id="mcName" placeholder="my-server"/></div>
+    <div class="fld"><label>URL</label><input class="inp kbd" id="mcUrl" placeholder="https://host/api"/></div>
+    <div class="acts"><button class="btnX" id="mcSave">Add server</button></div>
+  </div>
+
+  <div class="sheet" id="sheet-todo" aria-label="Session todos">
+    <div class="grab"></div><h3><i data-lucide="list-todo" style="width:17px;height:17px"></i>Session todos</h3>
+    <div class="fld"><label>One per line — "- [ ]" or "- [x]" also works</label><textarea class="inp" id="tdText" placeholder="Investigate flaky test&#10;Patch middleware&#10;Re-run suite"></textarea></div>
+    <div class="acts"><button class="btnX" id="tdSave">Save todos</button></div>
+  </div>
+
+  <div class="sheet" id="sheet-attach" aria-label="Attach file">
+    <div class="grab"></div><h3><i data-lucide="paperclip" style="width:17px;height:17px"></i>Attach from workspace</h3>
+    <div id="attList"></div>
+  </div>
+
+  <div class="sheet" id="sheet-rule" aria-label="Add allow-rule">
+    <div class="grab"></div><h3><i data-lucide="terminal" style="width:17px;height:17px"></i>Allow-rule</h3>
+    <div class="fld"><label>Command the agent may use without asking</label><input class="inp kbd" id="rlText" placeholder="git push"/></div>
+    <div class="acts"><button class="btnX" id="rlSave">Add rule</button></div>
+  </div>
+
+  <div class="sheet" id="sheet-newfile" aria-label="New file">
+    <div class="grab"></div><h3><i data-lucide="file-plus-2" style="width:17px;height:17px"></i>New file</h3>
+    <div class="fld"><label>File name</label><input class="inp kbd" id="nfName" placeholder="ideas.md"/></div>
+    <div class="acts"><button class="btnX" id="nfSave">Create file</button></div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="p-homebar"></div>
+</div>
+</div></div>
+
+<script src="js/vendor/lucide.min.js"></script>
+<script src="js/util.js"></script>
+<script src="js/store.js"></script>
+<script src="js/registry.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/mcp.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

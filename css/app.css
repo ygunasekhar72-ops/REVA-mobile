@@ -1,0 +1,268 @@
+/* Mono Harness — app styles (design carried over 1:1 from the approved mockup) */
+#mono-harness{
+  --ez:cubic-bezier(.22,1,.36,1);
+  font-family:-apple-system,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,Roboto,system-ui,sans-serif;
+  padding:22px 10px 26px;
+  -webkit-font-smoothing:antialiased;
+}
+#mono-harness *{box-sizing:border-box;margin:0;padding:0}
+#mono-harness button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#mono-harness input,select,textarea{font:inherit}
+#mono-harness i[data-lucide]{display:inline-block}
+#mono-harness svg{flex:none}
+
+/* ---------- stage / phone hardware ---------- */
+#mono-harness .stage{display:flex;justify-content:center}
+#mono-harness .scaler{position:relative}
+#mono-harness .phone{
+  position:relative;width:390px;height:800px;transform-origin:top left;
+  border-radius:44px;overflow:clip;isolation:isolate;
+  background:var(--bg);color:var(--ink);
+  box-shadow:0 0 0 5px #0c0c0e,0 0 0 6px rgba(255,255,255,.06),0 34px 70px rgba(0,0,0,.5),0 10px 24px rgba(0,0,0,.35);
+  transition:background .45s var(--ez),color .45s var(--ez);
+  font-size:var(--fs,15px);
+  --r:18px; --depth:1; --fs:15px;
+}
+/* themes — pure monochrome */
+#mono-harness .phone[data-theme="obsidian"]{
+  --bg:#070708;--sur:#121215;--sur2:#1a1a1f;--fld:#0d0d10;
+  --ink:#f4f4f6;--ink2:#a4a4b0;--ink3:#68686f;
+  --line:rgba(255,255,255,.09);
+  --sd:rgba(0,0,0,calc(.72*var(--depth)));--sl:rgba(255,255,255,calc(.05*var(--depth)));
+  --hi:rgba(255,255,255,.06);
+}
+#mono-harness .phone[data-theme="graphite"]{
+  --bg:#18181b;--sur:#212125;--sur2:#2a2a30;--fld:#1d1d21;
+  --ink:#f6f6f8;--ink2:#b0b0ba;--ink3:#7c7c86;
+  --line:rgba(255,255,255,.1);
+  --sd:rgba(0,0,0,calc(.55*var(--depth)));--sl:rgba(255,255,255,calc(.06*var(--depth)));
+  --hi:rgba(255,255,255,.07);
+}
+#mono-harness .phone[data-theme="porcelain"]{
+  --bg:#e9e9ec;--sur:#f1f1f4;--sur2:#fbfbfd;--fld:#e2e2e6;
+  --ink:#131316;--ink2:#5b5b64;--ink3:#91919a;
+  --line:rgba(0,0,0,.09);
+  --sd:rgba(0,0,0,calc(.18*var(--depth)));--sl:rgba(255,255,255,calc(.9*var(--depth)));
+  --hi:rgba(255,255,255,.7);
+}
+#mono-harness .phone.no-motion *,#mono-harness .phone.no-motion *::before,#mono-harness .phone.no-motion *::after{transition-duration:0s!important;animation-duration:0s!important}
+@media (prefers-reduced-motion:reduce){#mono-harness *{transition-duration:0s!important;animation-duration:0s!important}}
+
+#mono-harness .p-status{position:absolute;top:0;left:0;right:0;height:48px;z-index:25;display:flex;align-items:center;justify-content:space-between;padding:14px 26px 0;font-size:13px;font-weight:500;letter-spacing:.2px;background:var(--bg);transition:background .45s var(--ez)}
+#mono-harness .p-status .stic{display:flex;gap:5px;align-items:center;color:var(--ink)}
+#mono-harness .p-island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:116px;height:29px;border-radius:20px;background:#0b0b0d;z-index:26;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+#mono-harness .p-island::after{content:"";position:absolute;right:14px;top:50%;transform:translateY(-50%);width:9px;height:9px;border-radius:50%;background:#17171c;box-shadow:inset 0 0 2px 1px #000}
+#mono-harness .p-body{position:absolute;top:48px;bottom:0;left:0;right:0}
+#mono-harness .p-tabbar{position:absolute;bottom:0;left:0;right:0;height:76px;z-index:20;display:flex;align-items:flex-start;gap:2px;padding:9px 12px 0;background:var(--bg);transition:background .45s var(--ez),transform .46s var(--ez),opacity .46s var(--ez)}
+#mono-harness .phone.no-tabbar .p-tabbar{transform:translateY(100%);opacity:0;pointer-events:none}
+#mono-harness .p-tabbar::before{content:"";position:absolute;top:-14px;left:0;right:0;height:14px;background:linear-gradient(to top,var(--bg),transparent)}
+#mono-harness .tb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 0 6px;border-radius:16px;color:var(--ink3);transition:all .3s var(--ez);position:relative}
+#mono-harness .tb .tbi{width:44px;height:30px;display:grid;place-items:center;border-radius:999px;transition:all .3s var(--ez)}
+#mono-harness .tb span{font-size:11px;font-weight:500;letter-spacing:.1px}
+#mono-harness .tb.on{color:var(--ink)}
+#mono-harness .tb.on .tbi{background:var(--sur2);box-shadow:3px 3px 8px var(--sd),-2px -2px 6px var(--sl),inset 0 1px 0 var(--hi)}
+#mono-harness .tb .dot{position:absolute;top:8px;right:22%;width:7px;height:7px;border-radius:50%;background:var(--ink);opacity:0;transform:scale(0);transition:all .3s var(--ez)}
+#mono-harness .tb.mem .dot{opacity:1;transform:scale(1)}
+#mono-harness .p-homebar{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:126px;height:5px;border-radius:99px;background:var(--ink3);opacity:.6;z-index:30;pointer-events:none}
+
+/* ---------- screens & routing ---------- */
+#mono-harness .screen{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;opacity:0;pointer-events:none;scrollbar-width:none}
+#mono-harness .screen::-webkit-scrollbar{display:none}
+#mono-harness .tab-scr{padding:6px 15px 96px;transform:translateY(16px) scale(.992);visibility:hidden;transition:opacity .3s var(--ez),transform .38s var(--ez),visibility 0s .38s}
+#mono-harness .tab-scr.on{opacity:1;transform:none;pointer-events:auto;visibility:visible;transition:opacity .3s var(--ez),transform .38s var(--ez)}
+#mono-harness .ov{z-index:15;background:var(--bg);transform:translateX(104%);visibility:hidden;transition:transform .46s var(--ez),background .45s var(--ez),visibility 0s .46s}
+#mono-harness .ov.with-tabs{bottom:76px;padding:6px 15px 20px}
+#mono-harness .ov.ov-up{transform:translateY(104%);display:flex;flex-direction:column;padding:0}
+#mono-harness .ov.on{transform:none;pointer-events:auto;opacity:1;visibility:visible;transition:transform .46s var(--ez),background .45s var(--ez)}
+
+/* ---------- shared bits ---------- */
+#mono-harness .shead{position:sticky;top:0;z-index:6;background:var(--bg);padding:10px 2px 10px;display:flex;align-items:center;gap:10px;transition:background .45s var(--ez)}
+#mono-harness .shead h2{font-size:19px;font-weight:600;letter-spacing:-.2px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mono-harness .shead .sub{font-size:12px;color:var(--ink3);font-weight:400}
+#mono-harness .iconb{width:36px;height:36px;flex:none;display:grid;place-items:center;border-radius:13px;background:var(--sur);color:var(--ink2);box-shadow:3px 3px 8px var(--sd),-2px -2px 6px var(--sl),inset 0 1px 0 var(--hi);transition:transform .18s var(--ez),box-shadow .18s var(--ez)}
+#mono-harness .iconb:active{transform:scale(.92);box-shadow:inset 2px 2px 5px var(--sd),inset -2px -2px 4px var(--sl)}
+#mono-harness .card{background:var(--sur);border-radius:var(--r);box-shadow:5px 5px 12px var(--sd),-4px -4px 9px var(--sl),inset 0 1px 0 var(--hi)}
+#mono-harness .row{display:flex;align-items:center;gap:12px;padding:12px 13px;margin-bottom:10px;background:var(--sur);border-radius:calc(var(--r)*.9);box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl),inset 0 1px 0 var(--hi);transition:transform .18s var(--ez),box-shadow .18s var(--ez);width:100%;text-align:left}
+#mono-harness button.row:active{transform:translateY(1.5px) scale(.995);box-shadow:inset 2px 2px 6px var(--sd),inset -2px -2px 5px var(--sl)}
+#mono-harness .tile{width:38px;height:38px;flex:none;display:grid;place-items:center;border-radius:13px;background:var(--sur2);color:var(--ink);box-shadow:inset 0 1px 0 var(--hi),2px 2px 6px var(--sd),-2px -2px 5px var(--sl)}
+#mono-harness .tile.sm{width:30px;height:30px;border-radius:10px}
+#mono-harness .rtxt{flex:1;min-width:0}
+#mono-harness .rtxt b{display:block;font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mono-harness .rtxt small{display:block;font-size:12px;color:var(--ink3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mono-harness .chev{color:var(--ink3)}
+#mono-harness .sec{font-size:11.5px;font-weight:500;letter-spacing:1.1px;text-transform:uppercase;color:var(--ink3);margin:18px 4px 10px}
+#mono-harness .sw{position:relative;width:46px;height:27px;flex:none}
+#mono-harness .sw input{position:absolute;inset:0;opacity:0;margin:0}
+#mono-harness .sw i{position:absolute;inset:0;border-radius:99px;background:var(--fld);box-shadow:inset 2px 2px 5px var(--sd),inset -1px -1px 3px var(--sl);transition:background .3s var(--ez)}
+#mono-harness .sw i::after{content:"";position:absolute;top:2.5px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--sur2);box-shadow:1.5px 2px 5px var(--sd),inset 0 1px 0 var(--hi);transition:transform .3s var(--ez),background .3s var(--ez)}
+#mono-harness .sw input:checked+i{background:var(--ink)}
+#mono-harness .sw input:checked+i::after{transform:translateX(18px);background:var(--bg)}
+#mono-harness .chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;background:var(--sur);font-size:12.5px;font-weight:500;color:var(--ink2);box-shadow:3px 3px 7px var(--sd),-2px -2px 5px var(--sl),inset 0 1px 0 var(--hi);transition:transform .18s var(--ez)}
+#mono-harness button.chip:active{transform:translateY(1px) scale(.97)}
+#mono-harness .chip.solid{background:var(--ink);color:var(--bg);box-shadow:3px 3px 8px var(--sd)}
+#mono-harness .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:var(--sur2);font-size:12.5px;font-weight:500;color:var(--ink);box-shadow:2px 2px 6px var(--sd),-2px -2px 4px var(--sl),inset 0 1px 0 var(--hi);transition:transform .18s var(--ez)}
+#mono-harness button.pill:active{transform:scale(.95)}
+#mono-harness .btnX{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 16px;border-radius:14px;background:var(--ink);color:var(--bg);font-size:14px;font-weight:500;box-shadow:4px 4px 10px var(--sd),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .18s var(--ez),box-shadow .18s var(--ez)}
+#mono-harness .btnX:active{transform:translateY(2px);box-shadow:1px 1px 4px var(--sd)}
+#mono-harness .btnGhost{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 14px;border-radius:14px;background:var(--sur);color:var(--ink);font-size:13.5px;font-weight:500;box-shadow:3px 3px 8px var(--sd),-3px -3px 7px var(--sl),inset 0 1px 0 var(--hi);transition:transform .18s var(--ez)}
+#mono-harness .btnGhost:active{transform:translateY(1.5px);box-shadow:inset 2px 2px 5px var(--sd)}
+#mono-harness .inp{width:100%;background:var(--fld);border:0;border-radius:14px;padding:11px 13px;color:var(--ink);font-size:14px;box-shadow:inset 2px 2px 6px var(--sd),inset -2px -2px 5px var(--sl);outline:none}
+#mono-harness .inp::placeholder{color:var(--ink3)}
+#mono-harness textarea.inp{min-height:96px;resize:vertical;line-height:1.5}
+#mono-harness .seg{display:flex;gap:3px;padding:3.5px;border-radius:999px;background:var(--fld);box-shadow:inset 2px 2px 6px var(--sd),inset -2px -2px 5px var(--sl)}
+#mono-harness .seg button{flex:1;padding:7.5px 4px;border-radius:999px;font-size:12.5px;font-weight:500;color:var(--ink3);transition:all .25s var(--ez);white-space:nowrap}
+#mono-harness .seg button.sel{background:var(--ink);color:var(--bg);box-shadow:2px 2px 6px var(--sd)}
+#mono-harness input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent}
+#mono-harness input[type=range]::-webkit-slider-runnable-track{height:7px;border-radius:99px;background:var(--fld);box-shadow:inset 2px 2px 5px var(--sd),inset -1px -1px 3px var(--sl)}
+#mono-harness input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:21px;height:21px;margin-top:-7px;border-radius:50%;background:var(--ink);box-shadow:2px 3px 7px var(--sd),inset 0 1px 0 rgba(255,255,255,.3)}
+#mono-harness input[type=range]::-moz-range-track{height:7px;border-radius:99px;background:var(--fld)}
+#mono-harness input[type=range]::-moz-range-thumb{width:21px;height:21px;border:0;border-radius:50%;background:var(--ink);box-shadow:2px 3px 7px var(--sd)}
+#mono-harness .meter{height:6px;border-radius:99px;background:var(--fld);overflow:hidden;box-shadow:inset 1px 1px 3px var(--sd)}
+#mono-harness .meter b{display:block;height:100%;border-radius:99px;background:var(--ink);transition:width .8s var(--ez)}
+#mono-harness .kbd{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:12px}
+
+/* ---------- HOME ---------- */
+#mono-harness .greet{padding:8px 2px 2px;display:flex;align-items:center;gap:12px}
+#mono-harness .greet .ava{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--sur2);box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl),inset 0 1px 0 var(--hi);font-weight:600;font-size:15px}
+#mono-harness .greet h1{font-size:22px;font-weight:600;letter-spacing:-.3px}
+#mono-harness .greet small{display:block;font-size:13px;color:var(--ink3);font-weight:400;margin-top:1px}
+#mono-harness .hero{perspective:900px;margin-top:16px}
+#mono-harness .hero .hcard{position:relative;display:flex;align-items:center;gap:15px;width:100%;padding:20px;border-radius:calc(var(--r)*1.35);background:linear-gradient(145deg,var(--sur2),var(--sur));box-shadow:9px 9px 22px var(--sd),-6px -6px 14px var(--sl),inset 0 1px 0 var(--hi);transform-style:preserve-3d;transition:transform .25s ease-out,box-shadow .25s var(--ez);text-align:left}
+#mono-harness .hero .hcard:active{transform:translateY(2px) scale(.99)!important;box-shadow:4px 4px 10px var(--sd),inset 0 1px 0 var(--hi)}
+#mono-harness .hero .plus{width:54px;height:54px;flex:none;display:grid;place-items:center;border-radius:19px;background:var(--ink);color:var(--bg);transform:translateZ(34px);box-shadow:6px 6px 14px var(--sd)}
+#mono-harness .hero h3{font-size:18px;font-weight:600;transform:translateZ(22px)}
+#mono-harness .hero p{font-size:13px;color:var(--ink3);margin-top:3px;transform:translateZ(22px)}
+#mono-harness .hero .sheen{position:absolute;inset:0;border-radius:inherit;background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.07) 50%,transparent 58%);transform:translateZ(40px)}
+#mono-harness .qrow{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap}
+#mono-harness .sess .cbar{width:52px;height:4px;border-radius:99px;background:var(--fld);box-shadow:inset 1px 1px 2px var(--sd);overflow:hidden;flex:none}
+#mono-harness .sess .cbar b{display:block;height:100%;background:var(--ink2);border-radius:99px}
+
+/* ---------- CHAT ---------- */
+#mono-harness #ov-chat .chead{padding:8px 14px 10px;border-bottom:1px solid var(--line);background:var(--bg)}
+#mono-harness #ov-chat .chrow{display:flex;align-items:center;gap:10px}
+#mono-harness #ov-chat .chrow .tt{flex:1;min-width:0}
+#mono-harness #ov-chat .chrow .tt b{display:block;font-size:15.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mono-harness #ov-chat .chrow .tt small{font-size:11.5px;color:var(--ink3)}
+#mono-harness #ov-chat .ctxchip{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;background:var(--sur);box-shadow:3px 3px 8px var(--sd),-2px -2px 5px var(--sl),inset 0 1px 0 var(--hi);font-size:12px;font-weight:500}
+#mono-harness #ov-chat .ctxchip .m{width:30px;height:4px;border-radius:99px;background:var(--fld);overflow:hidden}
+#mono-harness #ov-chat .ctxchip .m b{display:block;height:100%;background:var(--ink);transition:width .7s var(--ez)}
+#mono-harness #ov-chat .pills{display:flex;gap:7px;margin-top:10px}
+#mono-harness #ov-chat .msgs{flex:1;overflow-y:auto;padding:16px 14px 12px;scrollbar-width:none}
+#mono-harness #ov-chat .msgs::-webkit-scrollbar{display:none}
+#mono-harness .msg{max-width:82%;margin-bottom:12px;animation:msgin .4s var(--ez)}
+@keyframes msgin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+#mono-harness .msg.user{margin-left:auto;background:var(--ink);color:var(--bg);padding:11px 14px;border-radius:19px 19px 6px 19px;font-size:14.5px;box-shadow:4px 4px 10px var(--sd);white-space:pre-wrap;word-break:break-word}
+#mono-harness .msg.ai{background:var(--sur);padding:12px 14px;border-radius:19px 19px 19px 6px;font-size:14.5px;line-height:1.5;box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl),inset 0 1px 0 var(--hi);word-break:break-word}
+#mono-harness .msg.ai code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var(--fld);padding:1.5px 6px;border-radius:6px;box-shadow:inset 1px 1px 2px var(--sd)}
+#mono-harness .msg.ai pre.msgcode{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:12px;line-height:1.55;background:var(--fld);border-radius:12px;padding:11px 12px;margin:8px 0;overflow-x:auto;box-shadow:inset 2px 2px 7px var(--sd),inset -2px -2px 5px var(--sl);white-space:pre}
+#mono-harness .msg.err{background:var(--sur);box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl),inset 0 0 0 1.5px var(--ink3)}
+#mono-harness .msg.err .etxt{font-size:13px;color:var(--ink2);line-height:1.5;word-break:break-word}
+#mono-harness .empty-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;padding:38px 12px;text-align:center}
+#mono-harness .empty-wrap .orb{width:64px;height:64px;border-radius:24px;display:grid;place-items:center;background:var(--sur);box-shadow:6px 6px 16px var(--sd),-5px -5px 12px var(--sl),inset 0 1px 0 var(--hi)}
+#mono-harness .empty-wrap p{font-size:13.5px;color:var(--ink3);line-height:1.5}
+#mono-harness .suggs{display:flex;flex-direction:column;gap:9px;width:100%}
+#mono-harness .suggs .chip{justify-content:center;padding:10px 12px}
+#mono-harness .toolcard{width:100%;max-width:100%;margin:6px 0 12px;padding:11px 13px;border-radius:15px;background:var(--fld);box-shadow:inset 2px 2px 7px var(--sd),inset -2px -2px 5px var(--sl);animation:msgin .4s var(--ez)}
+#mono-harness .toolcard .th{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:500;letter-spacing:1px;color:var(--ink3);text-transform:uppercase;margin-bottom:7px}
+#mono-harness .toolcard .th .st{margin-left:auto;letter-spacing:.2px;display:flex;align-items:center;gap:4px;color:var(--ink2)}
+#mono-harness .toolcard pre{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:12px;line-height:1.55;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+#mono-harness .toolcard pre .out{color:var(--ink3)}
+#mono-harness .tcard{width:100%;margin:6px 0 12px;padding:12px 13px;border-radius:15px;background:var(--sur);box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl),inset 0 1px 0 var(--hi);animation:msgin .4s var(--ez)}
+#mono-harness .tcard .th{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:500;letter-spacing:1px;text-transform:uppercase;color:var(--ink3);margin-bottom:9px}
+#mono-harness .tcard .ti{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:13.5px;color:var(--ink2);cursor:pointer}
+#mono-harness .tcard .ti .bx{width:19px;height:19px;flex:none;border-radius:7px;background:var(--fld);box-shadow:inset 1.5px 1.5px 4px var(--sd),inset -1px -1px 2px var(--sl);display:grid;place-items:center;color:var(--bg);transition:all .25s var(--ez)}
+#mono-harness .tcard .ti .bx svg{opacity:0;transform:scale(.4);transition:all .25s var(--ez)}
+#mono-harness .tcard .ti.done{color:var(--ink3);text-decoration:line-through}
+#mono-harness .tcard .ti.done .bx{background:var(--ink)}
+#mono-harness .tcard .ti.done .bx svg{opacity:1;transform:scale(1)}
+#mono-harness .typing{display:inline-flex;gap:5px;padding:14px 16px;background:var(--sur);border-radius:19px 19px 19px 6px;box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl)}
+#mono-harness .typing i{width:7px;height:7px;border-radius:50%;background:var(--ink3);animation:tp 1.1s infinite}
+#mono-harness .typing i:nth-child(2){animation-delay:.15s}
+#mono-harness .typing i:nth-child(3){animation-delay:.3s}
+@keyframes tp{0%,60%,100%{transform:none;opacity:.5}30%{transform:translateY(-5px);opacity:1}}
+#mono-harness .composer{padding:10px 12px 26px;background:var(--bg);border-top:1px solid var(--line)}
+#mono-harness .cbox{display:flex;align-items:center;gap:8px;padding:7px 8px 7px 6px;border-radius:26px;background:var(--sur);box-shadow:5px 5px 12px var(--sd),-4px -4px 9px var(--sl),inset 0 1px 0 var(--hi)}
+#mono-harness .cbox input{flex:1;min-width:0;background:transparent;border:0;outline:none;color:var(--ink);font-size:14.5px;padding:8px 2px}
+#mono-harness .cbox input::placeholder{color:var(--ink3)}
+#mono-harness .send{width:40px;height:40px;flex:none;display:grid;place-items:center;border-radius:50%;background:var(--ink);color:var(--bg);box-shadow:3px 3px 8px var(--sd);transition:transform .18s var(--ez)}
+#mono-harness .send:active{transform:scale(.88)}
+#mono-harness .send.stop{background:var(--sur2);color:var(--ink)}
+
+/* ---------- FILES ---------- */
+#mono-harness .crumbs{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:12.5px;color:var(--ink3);margin-bottom:12px;padding:0 2px}
+#mono-harness .crumbs button{color:var(--ink3);font-size:12.5px;padding:3px 5px;border-radius:8px}
+#mono-harness .crumbs button.cur{color:var(--ink);font-weight:500;background:var(--sur);box-shadow:2px 2px 5px var(--sd),-1px -1px 3px var(--sl)}
+
+/* ---------- AI WORKSPACE ---------- */
+#mono-harness .lockban{display:flex;gap:10px;align-items:center;padding:11px 13px;margin-bottom:14px;border-radius:calc(var(--r)*.9);background:var(--sur);box-shadow:inset 0 0 0 1.5px var(--line),3px 3px 9px var(--sd);font-size:12.5px;color:var(--ink2);line-height:1.45}
+#mono-harness .ringwrap{display:flex;align-items:center;gap:16px;padding:15px;margin-bottom:10px}
+#mono-harness .ring{position:relative;width:112px;height:112px;flex:none}
+#mono-harness .ring svg{transform:rotate(-90deg)}
+#mono-harness .ring .cen{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+#mono-harness .ring .cen b{font-size:21px;font-weight:600;letter-spacing:-.3px}
+#mono-harness .ring .cen small{font-size:11px;color:var(--ink3)}
+#mono-harness .segbar{display:flex;height:10px;border-radius:99px;overflow:hidden;gap:2px;margin:8px 0 10px}
+#mono-harness .segbar b{border-radius:99px;transition:width .8s var(--ez)}
+#mono-harness .lgd{display:flex;flex-direction:column;gap:6px;flex:1;font-size:12px;color:var(--ink2)}
+#mono-harness .lgd .li{display:flex;align-items:center;gap:7px}
+#mono-harness .lgd .sw2{width:9px;height:9px;border-radius:3px;flex:none}
+#mono-harness .lgd .li b{margin-left:auto;color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+#mono-harness .memrow .tag{font-size:11px;padding:3px 9px;border-radius:99px;color:var(--ink3);background:var(--fld);box-shadow:inset 1px 1px 3px var(--sd);flex:none}
+#mono-harness .buf{padding:13px;margin-bottom:10px}
+#mono-harness .buf .be{display:flex;gap:9px;padding:7px 0;font-size:12.5px;color:var(--ink2);border-bottom:1px dashed var(--line);line-height:1.45}
+#mono-harness .buf .be:last-child{border:0}
+#mono-harness .buf .be time{flex:none;font-size:11px;color:var(--ink3);padding-top:2px;font-variant-numeric:tabular-nums}
+#mono-harness .draft p{font-size:13px;line-height:1.55;color:var(--ink2)}
+#mono-harness .draft .dacts{display:flex;gap:8px;margin-top:12px}
+#mono-harness .draft .dacts .btnGhost{flex:1;padding:9px 6px;font-size:12.5px;border-radius:12px}
+
+/* ---------- SETTINGS ---------- */
+#mono-harness .acct{display:flex;align-items:center;gap:13px;padding:15px;margin-bottom:6px}
+#mono-harness .acct .usage{margin-top:9px}
+#mono-harness .mcard{position:relative;width:100%;text-align:left;padding:13px 14px;margin-bottom:10px;border-radius:calc(var(--r)*.9);background:var(--sur);box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl),inset 0 1px 0 var(--hi);transition:all .25s var(--ez)}
+#mono-harness .mcard.sel{box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl),inset 0 0 0 2px var(--ink)}
+#mono-harness .mcard .mrow{display:flex;align-items:center;gap:11px}
+#mono-harness .mcard .rad{width:20px;height:20px;flex:none;border-radius:50%;background:var(--fld);box-shadow:inset 1.5px 1.5px 4px var(--sd);display:grid;place-items:center}
+#mono-harness .mcard.sel .rad::after{content:"";width:9px;height:9px;border-radius:50%;background:var(--ink)}
+#mono-harness .mcard .mmeta{display:flex;gap:6px;margin-top:9px;padding-left:31px;flex-wrap:wrap}
+#mono-harness .mcard .mmeta span{font-size:11px;color:var(--ink3);background:var(--fld);padding:3px 8px;border-radius:99px;box-shadow:inset 1px 1px 2px var(--sd)}
+#mono-harness .thcards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:4px}
+#mono-harness .thc{padding:11px 8px 9px;border-radius:calc(var(--r)*.85);background:var(--sur);box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl),inset 0 1px 0 var(--hi);transition:all .25s var(--ez);text-align:center}
+#mono-harness .thc.sel{box-shadow:4px 4px 10px var(--sd),-3px -3px 8px var(--sl),inset 0 0 0 2px var(--ink)}
+#mono-harness .thc .prev{display:block;height:44px;border-radius:12px;margin-bottom:8px;box-shadow:inset 2px 2px 5px rgba(0,0,0,.3)}
+#mono-harness .thc small{font-size:12px;font-weight:500;color:var(--ink2)}
+#mono-harness .thc.sel small{color:var(--ink)}
+#mono-harness .ctlrow{display:flex;align-items:center;gap:12px;padding:11px 13px;margin-bottom:10px}
+#mono-harness .ctlrow .rtxt b{font-size:14px}
+#mono-harness .rval{font-size:12px;color:var(--ink3);font-variant-numeric:tabular-nums;min-width:44px;text-align:right}
+#mono-harness select.inp{appearance:none;width:auto;padding:8px 30px 8px 12px;font-size:13px}
+
+/* ---------- SHEETS / TOAST ---------- */
+#mono-harness .dim{position:absolute;inset:0;z-index:38;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .35s var(--ez);backdrop-filter:blur(2px)}
+#mono-harness .dim.on{opacity:1;pointer-events:auto}
+#mono-harness .sheet{position:absolute;left:9px;right:9px;bottom:12px;z-index:40;background:var(--sur);border-radius:26px;padding:8px 16px 18px;box-shadow:0 -12px 44px rgba(0,0,0,.55),6px 6px 18px var(--sd),inset 0 1px 0 var(--hi);transform:translateY(112%);visibility:hidden;transition:transform .44s var(--ez),visibility 0s .44s;max-height:74%;overflow-y:auto;scrollbar-width:none}
+#mono-harness .sheet::-webkit-scrollbar{display:none}
+#mono-harness .sheet.on{transform:none;visibility:visible;transition:transform .44s var(--ez)}
+#mono-harness .sheet .grab{width:40px;height:4.5px;border-radius:99px;background:var(--ink3);opacity:.55;margin:6px auto 12px}
+#mono-harness .sheet h3{font-size:16px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+#mono-harness .sheet .fld{margin-bottom:10px}
+#mono-harness .sheet .fld label{display:block;font-size:12px;font-weight:500;color:var(--ink3);margin:0 2px 6px;letter-spacing:.3px}
+#mono-harness .sheet .acts{display:flex;gap:8px;margin-top:14px}
+#mono-harness .sheet .acts .btnX,.sheet .acts .btnGhost{flex:1}
+#mono-harness .cmdrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 12px;margin-bottom:8px;border-radius:15px;background:var(--sur2);box-shadow:2px 2px 6px var(--sd),inset 0 1px 0 var(--hi);transition:transform .15s var(--ez)}
+#mono-harness .cmdrow:active{transform:scale(.98)}
+#mono-harness .cmdrow .kb{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;font-weight:500;color:var(--ink);background:var(--fld);padding:4px 9px;border-radius:8px;box-shadow:inset 1px 1px 3px var(--sd)}
+#mono-harness .toast{position:absolute;top:56px;left:50%;transform:translate(-50%,-16px);z-index:60;display:flex;align-items:center;gap:8px;max-width:82%;padding:9px 15px;border-radius:99px;background:var(--ink);color:var(--bg);font-size:12.5px;font-weight:500;box-shadow:0 10px 26px rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:all .35s var(--ez);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mono-harness .toast.on{opacity:1;transform:translate(-50%,0)}
+#mono-harness .mcpdot{width:10px;height:10px;border-radius:50%;flex:none;position:relative}
+#mono-harness .mcpdot.ok{background:var(--ink);box-shadow:0 0 0 3px color-mix(in srgb,var(--ink) 18%,transparent)}
+#mono-harness .mcpdot.err{background:transparent;box-shadow:inset 0 0 0 2px var(--ink3)}
+#mono-harness .mcpdot.ok::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:1.5px solid var(--ink3);animation:pulse 2.2s infinite}
+@keyframes pulse{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.6);opacity:0}}
+#mono-harness .phone[data-ico="solid"] svg{stroke-width:2.5}
+#mono-harness .prow-scroll{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none;margin-bottom:6px}
+#mono-harness .prow-scroll::-webkit-scrollbar{display:none}
+#mono-harness .prow-scroll .chip{white-space:nowrap}
+#mono-harness .prow-scroll .chip.sel{background:var(--ink);color:var(--bg)}
+#mono-harness .banner{display:flex;align-items:center;gap:12px;padding:13px;margin-top:14px}
+#mono-harness .banner .bx{width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:12px;background:var(--sur2);box-shadow:inset 0 1px 0 var(--hi),2px 2px 6px var(--sd)}
