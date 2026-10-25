@@ -111,8 +111,23 @@ public class MainActivity extends Activity {
         private String busyboxPath() {
             if (busybox != null) return busybox;
             try {
-                File f = new File(getApplicationInfo().nativeLibraryDir, "libbusybox.so");
-                busybox = (f.exists() && f.canExecute()) ? f.getAbsolutePath() : "";
+                File src = new File(getApplicationInfo().nativeLibraryDir, "libbusybox.so");
+                if (!src.exists()) { busybox = ""; return busybox; }
+                // busybox is a multicall binary: it must be NAMED "busybox" to
+                // dispatch applets — exec'ing it as libbusybox.so yields
+                // "applet not found". Copy once into the app's bin dir.
+                File bin = new File(getFilesDir(), "bin");
+                if (!bin.exists()) bin.mkdirs();
+                File dst = new File(bin, "busybox");
+                if (!dst.exists() || dst.length() != src.length()) {
+                    java.io.FileInputStream in = new java.io.FileInputStream(src);
+                    java.io.FileOutputStream outS = new java.io.FileOutputStream(dst);
+                    byte[] b = new byte[65536]; int n;
+                    while ((n = in.read(b)) > 0) outS.write(b, 0, n);
+                    in.close(); outS.close();
+                }
+                dst.setExecutable(true, false);
+                busybox = dst.canExecute() ? dst.getAbsolutePath() : "";
             } catch (Exception e) { busybox = ""; }
             return busybox;
         }
@@ -144,10 +159,10 @@ public class MainActivity extends Activity {
                 File bin = new File(home, "bin");
                 if (!bin.exists()) bin.mkdirs();
                 File rc = new File(home, ".mkshrc");
-                if (!rc.exists()) {
-                    String nl = System.getProperty("line.separator") != null ? "" : "";
-                    String bb = busyboxPath();
-                    StringBuilder sb = new StringBuilder();
+                { // regenerate every start: cheap, idempotent, picks up fixes
+                  String nl = System.getProperty("line.separator") != null ? "" : "";
+                  String bb = busyboxPath();
+                  StringBuilder sb = new StringBuilder();
                     sb.append("export PATH=$HOME/bin:").append(bb.isEmpty() ? "" : new File(bb).getParent() + ":").append("/system/bin:/system/xbin:$PATH").append('\n');
                     sb.append("export TERM=xterm-256color").append('\n');
                     sb.append("export PS1='$ '").append('\n');
@@ -167,7 +182,7 @@ public class MainActivity extends Activity {
                     sb.append("  esac").append('\n');
                     sb.append("}").append('\n');
                     // proot Linux userspace (TermFold mechanism, Apache-2.0; bundled libproot)
-                    sb.append("ND=$(dirname \"").append(bb).append("\")").append('\n');
+                    sb.append("ND=\"").append(getApplicationInfo().nativeLibraryDir).append("\"").append('\n');
                     sb.append("PRO=$HOME/linux; case $(uname -m) in aarch64) AL=3.20.3; AU=aarch64;; *) AL=3.20.3; AU=x86_64;; esac").append('\n');
                     sb.append("AT=alpine-minirootfs-$AL-$AU.tar.gz").append('\n');
                     sb.append("lx() {").append('\n');
