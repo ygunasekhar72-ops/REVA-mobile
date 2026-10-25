@@ -76,11 +76,16 @@ jobs:
       - name: Build release APK
         run: gradle -p android assembleRelease --no-daemon
 
+      - name: Build debug APK (device verification via adb run-as)
+        run: gradle -p android assembleDebug --no-daemon
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: REVA-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publish APK to GitHub Release
         env:
