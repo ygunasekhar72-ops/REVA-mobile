@@ -266,3 +266,62 @@
 #mono-harness .prow-scroll .chip.sel{background:var(--ink);color:var(--bg)}
 #mono-harness .banner{display:flex;align-items:center;gap:12px;padding:13px;margin-top:14px}
 #mono-harness .banner .bx{width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:12px;background:var(--sur2);box-shadow:inset 0 1px 0 var(--hi),2px 2px 6px var(--sd)}
+
+/* ---------- THINKING / TOOL CARDS / CODE CARDS ---------- */
+#mono-harness .msg.ai .think{margin:0 0 8px;border-radius:12px;background:var(--fld);box-shadow:inset 1.5px 1.5px 4px var(--sd),inset -1px -1px 3px var(--sl)}
+#mono-harness .msg.ai .think summary{list-style:none;display:flex;align-items:center;gap:7px;padding:8px 11px;font-size:11.5px;font-weight:500;letter-spacing:.8px;text-transform:uppercase;color:var(--ink3);cursor:pointer}
+#mono-harness .msg.ai .think summary::-webkit-details-marker{display:none}
+#mono-harness .msg.ai .think summary svg{width:13px;height:13px}
+#mono-harness .msg.ai .think-body{padding:2px 12px 10px;font-size:12px;line-height:1.55;color:var(--ink3);white-space:pre-wrap;word-break:break-word;max-height:180px;overflow-y:auto;scrollbar-width:none}
+#mono-harness .msg.ai .think-body::-webkit-scrollbar{display:none}
+#mono-harness .msg.ai .ai-seg{display:block}
+#mono-harness .msg.ai .ai-seg + .ai-seg{margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
+#mono-harness .msg.ai .toolcard{cursor:default}
+#mono-harness .msg.ai .toolcard[data-toolpath]{cursor:pointer}
+#mono-harness .toolcard.terr{box-shadow:inset 0 0 0 1.5px var(--ink3),4px 4px 10px var(--sd)}
+#mono-harness details.codecard{margin:8px 0;border-radius:12px;background:var(--fld);box-shadow:inset 2px 2px 7px var(--sd),inset -2px -2px 5px var(--sl)}
+#mono-harness details.codecard summary{list-style:none;display:flex;align-items:center;gap:7px;padding:9px 12px;font-size:11.5px;font-weight:500;letter-spacing:.6px;color:var(--ink3);cursor:pointer;font-family:ui-monospace,Consolas,monospace}
+#mono-harness details.codecard summary::-webkit-details-marker{display:none}
+#mono-harness details.codecard summary svg{width:13px;height:13px}
+#mono-harness details.codecard[open] summary{border-bottom:1px dashed var(--line)}
+#mono-harness details.codecard pre.msgcode{margin:0;border-radius:0;box-shadow:none;background:transparent}
+/* restrained syntax palette */
+#mono-harness .msgcode .tok-kw{color:#c792ea}
+#mono-harness .msgcode .tok-str{color:#a5d6a7}
+#mono-harness .msgcode .tok-num{color:#f2a97e}
+#mono-harness .msgcode .tok-com{color:#68686f;font-style:italic}
+#mono-harness .msgcode .tok-tag{color:#82aaff}
+#mono-harness .pill.off{opacity:.45}
+#mono-harness .pill.on{box-shadow:2px 2px 6px var(--sd),-2px -2px 4px var(--sl),inset 0 0 0 1.5px var(--ink)}
+
+/* ---------- WORKSPACE IDE ---------- */
+#ide{position:fixed;inset:0;z-index:300;display:none;grid-template-rows:auto 1fr 200px;background:#0b0b0d;color:#f4f4f6;font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:13px}
+#ide .ide-head{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#121215;border-bottom:1px solid #232329}
+#ide .ide-logo{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:#1a1a1f;color:#a4a4b0}
+#ide .ide-head b{font-size:13.5px;letter-spacing:.2px}
+#ide .ide-path{font-size:11.5px;color:#68686f;max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#ide .ide-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:9px;background:#1a1a1f;color:#c9c9d2;border:0;font:inherit;font-size:12px;cursor:pointer}
+#ide .ide-btn:hover{background:#222228}
+#ide .ide-btn svg{width:13px;height:13px}
+#ide .ide-main{display:grid;grid-template-columns:230px 1fr 1fr;min-height:0}
+#ide .ide-tree{overflow-y:auto;background:#0e0e11;border-right:1px solid #1d1d22;padding:8px}
+#ide .ide-row{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 9px;border-radius:8px;background:none;border:0;color:#a4a4b0;font:inherit;font-size:12px;cursor:pointer}
+#ide .ide-row:hover{background:#17171c}
+#ide .ide-row.sel{background:#1e1e24;color:#f4f4f6}
+#ide .ide-row svg{width:13px;height:13px;flex:none}
+#ide .ide-empty{color:#5a5a63;font-size:11.5px;line-height:1.7;padding:10px}
+#ide .ide-edit{min-width:0;display:flex}
+#ide textarea{flex:1;width:100%;background:#0a0a0c;color:#e8e8ee;border:0;outline:none;resize:none;padding:14px;font:inherit;font-size:12.5px;line-height:1.6;white-space:pre;overflow:auto}
+#ide .ide-prev{display:flex;flex-direction:column;border-left:1px solid #1d1d22;min-width:0}
+#ide .ide-prevbar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#121215;border-bottom:1px solid #232329;font-size:11.5px;color:#68686f}
+#ide .ide-prevbar span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#ide iframe{flex:1;border:0;background:#101013;width:100%}
+#ide .ide-term{display:flex;flex-direction:column;border-top:1px solid #1d1d22;background:#0a0a0c;min-height:0}
+#ide .ide-out{flex:1;overflow-y:auto;padding:10px 14px;font-size:12px;line-height:1.6}
+#ide .ide-line{white-space:pre-wrap;word-break:break-word;color:#c9c9d2}
+#ide .ide-line.cmd{color:#f4f4f6;font-weight:600}
+#ide .ide-line.dim{color:#68686f}
+#ide .ide-in{display:flex;align-items:center;gap:9px;padding:9px 14px;border-top:1px solid #1d1d22}
+#ide .ide-prompt{color:#82aaff;font-weight:600}
+#ide .ide-in input{flex:1;background:transparent;border:0;outline:none;color:#f4f4f6;font:inherit;font-size:12.5px}
+@media (max-width:900px){#ide .ide-main{grid-template-columns:180px 1fr}#ide .ide-prev{display:none}}

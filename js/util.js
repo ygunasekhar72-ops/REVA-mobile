@@ -15,12 +15,54 @@
     esc: function (s) {
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     },
+    /* tiny syntax highlighter — returns HTML with tok-* spans over escaped text */
+    hi: function (src, lang) {
+      lang = (lang || '').toLowerCase();
+      var KW = 'const|let|var|function|return|if|else|elif|for|while|class|new|import|export|from|await|async|try|catch|except|finally|throw|raise|typeof|instanceof|this|self|super|null|nil|none|undefined|true|false|def|lambda|not|and|or|in|is|pass|with|as|yield|switch|case|break|continue|do|enum|interface|type|implements|extends|public|private|protected|static|void|int|float|str|string|bool|boolean|struct|match|fun|val|echo|local';
+      var comments = '<!--[\\s\\S]*?-->|/\\*[\\s\\S]*?\\*/|//[^\\n]*';
+      if (/^(py|python|sh|bash|zsh|yaml|yml|rb|ruby|toml|conf)$/.test(lang)) comments += '|#[^\\n]*';
+      var re = new RegExp(
+        '(' + comments + ')' +
+        '|("(?:[^"\\\\\\n]|\\\\.)*"|\'(?:[^\'\\\\\\n]|\\\\.)*\'|`(?:[^`\\\\]|\\\\.)*`)' +
+        '|(\\b\\d+(?:\\.\\d+)?\\b)' +
+        '|(\\b(?:' + KW + ')\\b)' +
+        '|(<\\/?[a-zA-Z][a-zA-Z0-9-]*)', 'g');
+      function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+      var raw = String(src), out = '', last = 0, m;
+      while ((m = re.exec(raw)) !== null) {
+        out += esc(raw.slice(last, m.index));
+        if (m[1]) out += '<span class="tok-com">' + esc(m[1]) + '</span>';
+        else if (m[2]) out += '<span class="tok-str">' + esc(m[2]) + '</span>';
+        else if (m[3]) out += '<span class="tok-num">' + esc(m[3]) + '</span>';
+        else if (m[4]) out += '<span class="tok-kw">' + esc(m[4]) + '</span>';
+        else out += '<span class="tok-tag">' + esc(m[5]) + '</span>';
+        last = m.index + m[0].length;
+        if (m[0].length === 0) re.lastIndex++;
+      }
+      out += esc(raw.slice(last));
+      return out;
+    },
     mdLite: function (s) {
-      var e = H.esc(s);
-      e = e.replace(/```(\w*)\n?([\s\S]*?)```/g, function (m, l, c) { return '<pre class="msgcode">' + c + '</pre>'; });
-      e = e.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-      e = e.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
-      return e;
+      function inline(t) {
+        var e = H.esc(t);
+        e = e.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+        e = e.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+        return e;
+      }
+      var parts = String(s).split(/```(\w*)\r?\n?([\s\S]*?)```/);
+      var out = '';
+      for (var i = 0; i < parts.length; i += 3) {
+        out += inline(parts[i]);
+        if (parts[i + 1] === undefined) break;
+        var lang = parts[i + 1], code = parts[i + 2].replace(/\n$/, '');
+        var lines = code.split('\n').length;
+        var html = '<pre class="msgcode">' + H.hi(code, lang) + '</pre>';
+        if (lines > 12) {
+          out += '<details class="codecard"><summary><i data-lucide="file-code"></i>' + H.esc(lang || 'code') +
+            ' · ' + lines + ' lines</summary>' + html + '</details>';
+        } else out += html;
+      }
+      return out;
     },
     tok: function (s) { return Math.max(1, Math.ceil(String(s || '').length / 4)); },
     fmtK: function (n) { return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n)); },

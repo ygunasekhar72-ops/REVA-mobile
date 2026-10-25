@@ -1,12 +1,13 @@
 /* Mono Harness — persistent store (localStorage) */
 (function () {
-  var KEY = 'mono-harness-v2';
+  var KEY = 'mono-harness-v3';
+  var PREV_KEY = 'mono-harness-v2';
 
   var DEFAULTS = {
     settings: {
       providerId: 'echo', model: 'echo-1',
       effort: 'High', maxTokens: 16, stream: true, fallbackId: '',
-      ctxK: 128,
+      ctxK: 128, tools: true,
       theme: 'obsidian', depth: 100, radius: 18, font: 15, motion: true, icons: 'line',
       mode: 'Build', compactAt: 80, notify: false, lang: 'en',
       autosave: true, checkpoints: true,
@@ -22,8 +23,7 @@
       { id: 'echo',      name: 'Echo (offline demo)', base: '', type: 'echo',             key: '', models: ['echo-1'] }
     ],
     skills: [],          // [{id, name, desc, on}] — announced to the model in the system prompt
-    plugins: {},         // id -> enabled, for entries in db.installed
-    installed: [],       // plugin pack ids installed from the registry
+    plugins: [],         // [{id, name, desc, prompt, source: 'user'|'ai', on}] — prompt packs
     memories: [],        // [{id, title, tag, body}]
     allowRules: [],      // [{id, rule}] — commands pre-approved for the agent
     sessions: [],
@@ -35,17 +35,37 @@
     vfsContent: {}
   };
 
+  function migrateV2(saved) {
+    // plugins were a registry-driven object map + installed id list; drop them (static preview packs)
+    var db = JSON.parse(JSON.stringify(DEFAULTS));
+    Object.keys(saved).forEach(function (k) {
+      if (k === 'settings') { Object.assign(db.settings, saved.settings || {}, { tools: saved.settings && saved.settings.tools !== undefined ? saved.settings.tools : true }); return; }
+      if (k === 'plugins' || k === 'installed') return;
+      if (k === 'vfs' || k === 'vfsContent') { Object.assign(db[k], saved[k] || {}); return; }
+      if (db[k] === undefined) return;
+      db[k] = saved[k];
+    });
+    return db;
+  }
+
   function load() {
     try {
       var raw = localStorage.getItem(KEY);
-      if (!raw) return JSON.parse(JSON.stringify(DEFAULTS));
+      if (!raw) {
+        var prev = localStorage.getItem(PREV_KEY);
+        if (prev) {
+          var migrated = migrateV2(JSON.parse(prev));
+          try { localStorage.setItem(KEY, JSON.stringify(migrated)); } catch (e) {}
+          return migrated;
+        }
+        return JSON.parse(JSON.stringify(DEFAULTS));
+      }
       var saved = JSON.parse(raw);
       var db = JSON.parse(JSON.stringify(DEFAULTS));
-      // shallow-merge top level; settings merged key-by-key so new defaults appear
       Object.keys(saved).forEach(function (k) {
         if (k === 'settings') { Object.assign(db.settings, saved.settings || {}); return; }
         if (k === 'vfs' || k === 'vfsContent') { Object.assign(db[k], saved[k] || {}); return; }
-        if (db[k] === undefined) return; // ignore unknown/removed keys from older versions
+        if (db[k] === undefined) return;
         db[k] = saved[k];
       });
       return db;

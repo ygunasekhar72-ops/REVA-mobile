@@ -2,6 +2,7 @@
 (function () {
   var $ = H.$, $$ = H.$$;
   var ICON = { dir: 'folder', code: 'file-code', doc: 'file-text', img: 'image' };
+  var TOOL_ICON = { write_file: 'file-plus-2', read_file: 'file-search', list_files: 'folder-open', delete_file: 'trash-2', save_memory: 'book-marked', add_plugin: 'puzzle', run_command: 'terminal' };
 
   function switchRow(icon, title, sub, on, attr) {
     return '<div class="row"><span class="tile"><i data-lucide="' + icon + '"></i></span>' +
@@ -90,44 +91,30 @@
     },
 
     /* ---------- PLUGINS / MARKET ---------- */
-    pluginById: function (id) {
-      return (window.REGISTRY || []).find(function (r) { return r.id === id; });
-    },
     renderPlugins: function () {
-      var db = Store.db;
-      var inst = db.installed.map(UI.pluginById).filter(Boolean);
-      $('#plugList').innerHTML = inst.map(function (m) {
-        return switchRow(m.i, m.n, 'v' + m.v + ' · ' + m.by + ' — ' + m.d, db.plugins[m.id] !== false, 'plugin:' + m.id);
+      var list = Store.db.plugins;
+      $('#plugList').innerHTML = list.map(function (p) {
+        return '<div class="row"><span class="tile"><i data-lucide="puzzle"></i></span>' +
+          '<span class="rtxt"><b>' + H.esc(p.name) + '</b><small>' + H.esc(p.desc || '') + (p.source === 'ai' ? ' · built by AI' : '') + '</small></span>' +
+          '<i data-lucide="x" class="chev" style="width:15px;height:15px;cursor:pointer" data-delplugin="' + p.id + '"></i>' +
+          '<label class="sw"><input type="checkbox" data-toggle="plugin:' + p.id + '"' + (p.on ? ' checked' : '') + '/><i></i></label></div>';
       }).join('') ||
-        '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:14px 0 6px">No plugins installed — browse the marketplace</p>';
-      var n = inst.filter(function (m) { return db.plugins[m.id] !== false; }).length;
-      $('#setPlugSub').textContent = n + ' enabled · ' + inst.length + ' installed';
+        '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:14px 0 6px">No plugins — add one below or let the AI build it</p>';
+      var n = list.filter(function (p) { return p.on; }).length;
+      $('#setPlugSub').textContent = n + ' enabled · ' + list.length + ' installed';
+      $('#mktCount').textContent = list.length + ' plugins installed';
       H.icons();
     },
     renderMarket: function (q) {
       q = (q || '').toLowerCase();
-      var reg = window.REGISTRY || [];
-      $('#mktList').innerHTML = reg.filter(function (m) { return m.n.toLowerCase().indexOf(q) > -1; })
-        .map(function (m) {
-          var inst = Store.db.installed.indexOf(m.id) >= 0;
-          return '<div class="row"><span class="tile"><i data-lucide="' + m.i + '"></i></span>' +
-            '<span class="rtxt"><b>' + H.esc(m.n) + '</b><small>v' + H.esc(m.v) + ' · ' + H.esc(m.by) + ' — ' + H.esc(m.d) + '</small></span>' +
-            '<button class="' + (inst ? 'btnGhost' : 'btnX') + '" data-mkt="' + m.id + '" style="padding:8px 13px;font-size:12.5px;border-radius:11px">' +
-            (inst ? 'Installed' : 'Install') + '</button></div>';
-        }).join('') || '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:18px">No matches</p>';
-
-      var feat = reg.filter(function (m) { return m.featured; })[0] || reg[0];
-      if (feat) {
-        var tile = $('#featTile');
-        if (tile) tile.innerHTML = '<i data-lucide="' + feat.i + '"></i>';
-        $('#featName').textContent = 'Featured · ' + feat.n;
-        $('#featDesc').textContent = 'v' + feat.v + ' · ' + feat.by + ' — ' + feat.d;
-        var fb = $('#featInstall');
-        fb.setAttribute('data-install', feat.id);
-        var isInst = Store.db.installed.indexOf(feat.id) >= 0;
-        fb.textContent = isInst ? 'Installed' : 'Install';
-        fb.classList.toggle('btnX', !isInst); fb.classList.toggle('btnGhost', isInst);
-      }
+      var list = Store.db.plugins.filter(function (p) { return p.name.toLowerCase().indexOf(q) > -1; });
+      $('#mktList').innerHTML = list.map(function (p) {
+        var icon = p.source === 'ai' ? 'sparkles' : 'puzzle';
+        return '<div class="row"><span class="tile"><i data-lucide="' + icon + '"></i></span>' +
+          '<span class="rtxt"><b>' + H.esc(p.name) + '</b><small>' + H.esc(p.desc || '') + (p.source === 'ai' ? ' · built by AI' : '') + '</small></span>' +
+          '<i data-lucide="x" class="chev" style="width:15px;height:15px;cursor:pointer" data-delplugin="' + p.id + '"></i>' +
+          '<label class="sw"><input type="checkbox" data-toggle="plugin:' + p.id + '"' + (p.on ? ' checked' : '') + '/><i></i></label></div>';
+      }).join('') || '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:18px">No plugins yet — build one with the AI above</p>';
       H.icons();
     },
 
@@ -294,8 +281,24 @@
         return u;
       }
       var a = H.el('<div class="msg ai"></div>');
-      a.innerHTML = H.mdLite(m.content);
-      H.longPress(a, function () { H.copy(m.content); });
+      var inner = '';
+      if (m.reasoning) {
+        inner += '<details class="think"><summary><i data-lucide="brain"></i>Thinking</summary><div class="think-body">' + H.esc(m.reasoning) + '</div></details>';
+      }
+      (m.tools || []).forEach(function (t) {
+        inner += '<div class="toolcard' + (t.ok === false ? ' terr' : '') + '" data-toolpath="' + H.esc(t.path || '') + '">' +
+          '<div class="th"><i data-lucide="' + (t.ok === false ? 'alert-circle' : TOOL_ICON[t.name] || 'wrench') + '"></i>' + H.esc(t.label) +
+          (t.meta ? '<span class="st">' + H.esc(t.meta) + '</span>' : '') + '</div></div>';
+      });
+      inner += H.mdLite(m.content);
+      a.innerHTML = inner;
+      a.querySelectorAll('[data-toolpath]').forEach(function (card) {
+        var p = card.getAttribute('data-toolpath');
+        if (p) card.addEventListener('click', function () { App.openPath(p); });
+      });
+      var think = a.querySelector('.think');
+      if (think) H.longPress(a, function () { H.copy(m.content); });
+      H.icons();
       return a;
     },
     renderTodoCard: function (sess) {
@@ -367,9 +370,8 @@
       var skills = db.skills; var n = skills.filter(function (s) { return s.on; }).length;
       $('#setSkillSub').textContent = n + ' of ' + skills.length + ' enabled';
       $('#setPermSub').textContent = 'Mode: ' + db.settings.mode + ' · ' + db.allowRules.length + ' rule' + (db.allowRules.length === 1 ? '' : 's');
-      var inst = db.installed.map(UI.pluginById).filter(Boolean);
-      var pn = inst.filter(function (m) { return db.plugins[m.id] !== false; }).length;
-      $('#setPlugSub').textContent = pn + ' enabled · ' + inst.length + ' installed';
+      var pn = db.plugins.filter(function (p) { return p.on; }).length;
+      $('#setPlugSub').textContent = pn + ' enabled · ' + db.plugins.length + ' installed';
       var ok = db.mcp.filter(function (s) { return s.ok && s.on; }).length;
       $('#setMcpSub').textContent = ok + ' connected · ' + (db.mcp.length - ok) + ' unreachable';
       $('#setHookSub').textContent = db.hooks.filter(function (h) { return h.on; }).length + ' of ' + db.hooks.length + ' active';

@@ -1,4 +1,7 @@
-/* Mono Harness — AI client for custom OpenAI-compatible providers */
+/* Mono Harness — AI client for custom OpenAI-compatible providers.
+   chat() resolves { content, reasoning, toolCalls } — reasoning carries the
+   model's thinking stream (NVIDIA reasoning_content / gpt-oss reasoning) and
+   toolCalls the accumulated OpenAI-style function calls. */
 (function () {
   function headers(p) {
     var h = { 'Content-Type': 'application/json' };
@@ -10,7 +13,7 @@
   }
 
   /* --- offline demo provider: streams a canned, helpful reply --- */
-  function echoStream(text, onDelta, signal) {
+  function echoResult(text, onDelta, onReasoning, signal) {
     var reply = 'You are on the **Echo (offline demo)** provider — no network is used.\n\n' +
       'You said: "' + (text.length > 160 ? text.slice(0, 160) + '…' : text) + '"\n\n' +
       'To talk to a real model:\n' +
@@ -22,8 +25,8 @@
     var i = 0;
     return new Promise(function (resolve, reject) {
       function step() {
-        if (signal && signal.aborted) return resolve('');
-        if (i >= words.length) return resolve(reply);
+        if (signal && signal.aborted) return resolve({ content: reply, reasoning: '', toolCalls: null });
+        if (i >= words.length) return resolve({ content: reply, reasoning: '', toolCalls: null });
         var chunk = words.slice(i, i + 2).join('');
         i += 2;
         onDelta(chunk);
@@ -43,27 +46,54 @@
     return arr.sort();
   }
 
+  function buildBody(opts) {
+    var body = {
+      model: opts.model,
+      messages: opts.messages,
+      stream: !!opts.stream,
+      max_tokens: (opts.maxTokens || 16) * 1024
+    };
+    if (opts.tools && opts.tools.length) {
+      body.tools = opts.tools;
+      body.tool_choice = 'auto';
+    }
+    return body;
+  }
+
+  /* accumulate streaming tool_call fragments by index */
+  function mergeToolCall(acc, tc) {
+    var i = tc.index || 0;
+    acc[i] = acc[i] || { id: '', type: 'function', function: { name: '', arguments: '' } };
+    if (tc.id) acc[i].id = tc.id;
+    if (tc.function) {
+      if (tc.function.name) acc[i].function.name += tc.function.name;
+      if (tc.function.arguments) acc[i].function.arguments += tc.function.arguments;
+    }
+    return acc;
+  }
+  function cleanToolCalls(acc) {
+    var arr = acc.filter(Boolean).map(function (t) {
+      try { JSON.parse(t.function.arguments); } catch (e) { t.function.arguments = '{}'; }
+      return t;
+    });
+    return arr.length ? arr : null;
+  }
+
   /* --- chat completion, streaming or not --- */
   async function chat(opts) {
     var p = opts.provider, msgs = opts.messages;
     var onDelta = opts.onDelta || function () {};
+    var onReasoning = opts.onReasoning || function () {};
     var signal = opts.signal;
 
     if (p.type === 'echo') {
       var lastUser = '';
       for (var i = msgs.length - 1; i >= 0; i--) if (msgs[i].role === 'user') { lastUser = msgs[i].content; break; }
-      return echoStream(lastUser, onDelta, signal);
+      return echoResult(lastUser, onDelta, onReasoning, signal);
     }
 
-    var body = {
-      model: opts.model,
-      messages: msgs,
-      stream: !!opts.stream,
-      max_tokens: (opts.maxTokens || 16) * 1024
-    };
-
     var res = await fetch(baseUrl(p) + '/chat/completions', {
-      method: 'POST', headers: headers(p), body: JSON.stringify(body), signal: signal
+      method: 'POST', headers: headers(p), body: JSON.stringify(buildBody(opts)), signal: signal
     });
 
     if (!res.ok) {
@@ -77,14 +107,17 @@
 
     if (!opts.stream) {
       var j = await res.json();
-      var content = (j.choices && j.choices[0] && (j.choices[0].message || {}).content) || '';
-      onDelta(content);
-      return content;
+      var m = (j.choices && j.choices[0] && j.choices[0].message) || {};
+      var content0 = m.content || '';
+      if (content0) onDelta(content0);
+      var reas0 = m.reasoning_content || m.reasoning || '';
+      if (reas0) onReasoning(reas0);
+      return { content: content0, reasoning: reas0, toolCalls: (m.tool_calls && m.tool_calls.length) ? cleanToolCalls(m.tool_calls.slice()) : null };
     }
 
     var reader = res.body.getReader();
     var dec = new TextDecoder();
-    var buf = '', full = '';
+    var buf = '', full = '', reasoning = '', tcAcc = [];
     while (true) {
       var r = await reader.read();
       if (r.done) break;
@@ -98,12 +131,19 @@
         if (d === '[DONE]') continue;
         try {
           var jr = JSON.parse(d);
-          var piece = jr.choices && jr.choices[0] && jr.choices[0].delta && jr.choices[0].delta.content;
+          var delta = jr.choices && jr.choices[0] && jr.choices[0].delta;
+          if (!delta) continue;
+          var piece = delta.content;
           if (piece) { full += piece; onDelta(piece); }
+          var reas = delta.reasoning_content || delta.reasoning;
+          if (reas) { reasoning += reas; onReasoning(reas); }
+          if (delta.tool_calls) {
+            for (var k = 0; k < delta.tool_calls.length; k++) mergeToolCall(tcAcc, delta.tool_calls[k]);
+          }
         } catch (e) { /* keepalive or partial json — ignore */ }
       }
     }
-    return full;
+    return { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) };
   }
 
   function friendlyError(e) {

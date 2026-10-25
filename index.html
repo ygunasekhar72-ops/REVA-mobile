@@ -56,13 +56,16 @@
     <!-- ================= FILES ================= -->
     <section class="screen tab-scr" id="scr-files">
       <div class="shead"><h2>Files</h2>
+        <button class="iconb" id="ideBtn" aria-label="Open workspace IDE"><i data-lucide="monitor"></i></button>
         <button class="iconb" id="newFileBtn" aria-label="New file"><i data-lucide="file-plus-2"></i></button>
+        <button class="iconb" id="folderBtn" aria-label="Upload folder"><i data-lucide="folder-up"></i></button>
         <button class="iconb" id="mountBtn" aria-label="Mount device folder"><i data-lucide="folder-open"></i></button>
       </div>
       <input class="inp" id="fileSearch" placeholder="Search files…" style="margin-bottom:12px" />
       <div class="crumbs" id="fileCrumbs"></div>
       <div id="filesList"></div>
       <input type="file" id="fileImport" multiple style="display:none" />
+      <input type="file" id="folderImport" webkitdirectory multiple style="display:none" />
     </section>
 
     <!-- ================= PLUGINS ================= -->
@@ -75,6 +78,7 @@
       </div>
       <div class="sec">Installed</div>
       <div id="plugList"></div>
+      <button class="row" id="plugAdd" style="margin-top:4px"><span class="tile"><i data-lucide="plus"></i></span><span class="rtxt"><b>Add plugin</b><small>An instruction pack injected while enabled</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
     </section>
 
     <!-- ================= AI WORKSPACE ================= -->
@@ -143,11 +147,14 @@
         <div class="chrow">
           <button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button>
           <div class="tt"><b id="chatTitle">New chat</b><small id="chatSub">fresh context</small></div>
+          <button class="iconb" id="chatDel" aria-label="Delete chat" style="width:34px;height:34px"><i data-lucide="trash-2" style="width:15px;height:15px"></i></button>
           <button class="ctxchip" data-sheet="sheet-ctx" aria-label="Context usage"><i data-lucide="gauge" style="width:13px;height:13px"></i><span class="m"><b id="ctxBarFill" style="width:0%"></b></span><span id="ctxPct1">0%</span></button>
         </div>
         <div class="pills">
           <button class="pill" data-sheet="sheet-model" id="modelPillBtn" aria-label="Choose model"><i data-lucide="brain-circuit" style="width:13px;height:13px"></i><span id="modelPill">echo-1</span><i data-lucide="chevron-down" style="width:13px;height:13px"></i></button>
           <button class="pill" id="modePill" aria-label="Cycle permission mode"><i data-lucide="shield-check" style="width:13px;height:13px"></i><span id="modeTxt">Build</span></button>
+          <button class="pill" id="toolsPill" aria-label="Toggle tools"><i data-lucide="wrench" style="width:13px;height:13px"></i><span id="toolsTxt">Tools</span></button>
+          <button class="pill" id="idePill" aria-label="Open IDE"><i data-lucide="monitor" style="width:13px;height:13px"></i><span>IDE</span></button>
           <button class="pill" data-tab="ai" style="margin-left:auto" aria-label="AI workspace"><i data-lucide="brain" style="width:13px;height:13px"></i></button>
         </div>
       </div>
@@ -258,11 +265,11 @@
 
     <!-- ================= MARKETPLACE ================= -->
     <section class="screen ov with-tabs" id="ov-market">
-      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Marketplace</h2></div>
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Marketplace</h2><button class="iconb" id="mktAdd" aria-label="New plugin"><i data-lucide="plus"></i></button></div>
       <input class="inp" id="mktSearch" placeholder="Search plugins…" style="margin-bottom:12px" />
       <div class="card" style="padding:15px;margin-bottom:14px;background:linear-gradient(145deg,var(--sur2),var(--sur))">
-        <div style="display:flex;gap:11px;align-items:center"><span class="tile" style="width:44px;height:44px;border-radius:15px" id="featTile"><i data-lucide="pen-tool"></i></span><div><b style="font-size:15px" id="featName">Featured</b><br><small style="font-size:12px;color:var(--ink3)" id="featDesc"></small></div></div>
-        <button class="btnX" style="width:100%;margin-top:13px" id="featInstall" data-install>Install</button>
+        <div style="display:flex;gap:11px;align-items:center"><span class="tile" style="width:44px;height:44px;border-radius:15px"><i data-lucide="sparkles"></i></span><div><b style="font-size:15px">Build a plugin with AI</b><br><small style="font-size:12px;color:var(--ink3)">Describe it — the model installs it via the add_plugin tool</small></div></div>
+        <button class="btnX" style="width:100%;margin-top:13px" id="aiPluginBtn">Ask the AI</button>
       </div>
       <div class="sec">All plugins</div>
       <div id="mktList"></div>
@@ -325,7 +332,19 @@
 
   <div class="sheet" id="sheet-file" aria-label="File preview">
     <div class="grab"></div><h3 id="fsTitle">file</h3>
+    <img id="fsImg" alt="" style="display:none;max-width:100%;max-height:340px;border-radius:14px;margin-bottom:10px" />
     <div class="toolcard" style="margin:0"><pre id="fsCode"></pre></div>
+  </div>
+
+  <div class="sheet" id="sheet-plugin" aria-label="Edit plugin">
+    <div class="grab"></div><h3 id="plTitle"><i data-lucide="puzzle" style="width:17px;height:17px"></i>Plugin</h3>
+    <div class="fld"><label>Name</label><input class="inp" id="plName" placeholder="Code Reviewer"/></div>
+    <div class="fld"><label>Short description</label><input class="inp" id="plDesc" placeholder="Review-focused code habits"/></div>
+    <div class="fld"><label>Instruction block — injected into the system prompt while enabled</label><textarea class="inp" id="plPrompt" placeholder="When reviewing or writing code: check edge cases first…"></textarea></div>
+    <div class="acts">
+      <button class="btnGhost" id="plDelete"><i data-lucide="trash-2" style="width:14px;height:14px"></i>Delete</button>
+      <button class="btnX" id="plSave">Save plugin</button>
+    </div>
   </div>
 
   <div class="sheet" id="sheet-provider" aria-label="Edit provider">
@@ -424,6 +443,31 @@
     <div class="acts"><button class="btnX" id="nfSave">Create file</button></div>
   </div>
 
+  <!-- ============ WORKSPACE IDE (full window) ============ -->
+  <div id="ide" style="display:none">
+    <div class="ide-head">
+      <span class="ide-logo"><i data-lucide="monitor"></i></span>
+      <b>Mono IDE</b>
+      <span class="ide-path kbd" id="idePath">—</span>
+      <span style="flex:1"></span>
+      <button class="ide-btn" id="ideNewFile"><i data-lucide="file-plus-2"></i>New</button>
+      <button class="ide-btn" id="ideSave"><i data-lucide="save"></i>Save</button>
+      <button class="ide-btn" id="ideClose"><i data-lucide="x"></i>Close</button>
+    </div>
+    <div class="ide-main">
+      <div class="ide-tree" id="ideTree"></div>
+      <div class="ide-edit"><textarea id="ideEditor" spellcheck="false" placeholder="Select a file from the tree — or ask the model to write one. Ctrl+S saves."></textarea></div>
+      <div class="ide-prev" id="idePreviewWrap">
+        <div class="ide-prevbar"><span id="idePrevLabel">preview</span><span style="flex:1"></span><button class="ide-btn" id="ideRun"><i data-lucide="play"></i>Run</button></div>
+        <iframe id="ideFrame" sandbox="allow-scripts allow-modals" title="Live preview"></iframe>
+      </div>
+    </div>
+    <div class="ide-term">
+      <div class="ide-out" id="ideOut"></div>
+      <div class="ide-in"><span class="ide-prompt">❯</span><input id="ideCmd" placeholder="harness console — try help, ls, tree, cat, status" autocomplete="off" spellcheck="false"/></div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <div class="p-homebar"></div>
 </div>
@@ -432,10 +476,11 @@
 <script src="js/vendor/lucide.min.js"></script>
 <script src="js/util.js"></script>
 <script src="js/store.js"></script>
-<script src="js/registry.js"></script>
+<script src="js/tools.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/mcp.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/ide.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

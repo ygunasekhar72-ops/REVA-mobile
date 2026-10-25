@@ -53,7 +53,13 @@
     $('#selLang').value = s.lang;
     $$('#pmodeSeg button').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-pm') === s.mode); });
     $('#pmodeDesc').textContent = s.mode + ' — the agent will ' + MODE_DESC[s.mode] + '.';
+    renderToolsPill();
     renderFallbackSel();
+  }
+  function renderToolsPill() {
+    var on = db.settings.tools !== false;
+    $('#toolsPill').classList.toggle('off', !on);
+    $('#toolsTxt').textContent = on ? 'Tools' : 'Tools off';
   }
   function renderFallbackSel() {
     var sel = $('#selFallback');
@@ -82,8 +88,14 @@
       p.push('Enabled skills:');
       skills.forEach(function (k) { p.push('- ' + k.name + (k.desc ? ': ' + k.desc : '')); });
     }
-    var packs = db.installed.map(UI.pluginById).filter(Boolean).filter(function (r) { return db.plugins[r.id] !== false; });
-    packs.forEach(function (r) { p.push('Plugin ' + r.n + ' v' + r.v + ':\n' + r.prompt); });
+    var packs = db.plugins.filter(function (p) { return p.on; });
+    packs.forEach(function (r) { p.push('Plugin ' + r.name + ':\n' + r.prompt); });
+    if (db.settings.tools !== false) {
+      p.push('You have tools: write_file, read_file, list_files, delete_file, save_memory, add_plugin, run_command. ' +
+        'When asked to build or change anything, DO IT with write_file instead of pasting large code blocks in chat — ' +
+        'the harness renders your tool calls as file cards and the user can run the result. ' +
+        'Use save_memory to remember durable facts about the user or project.');
+    }
     if (db.allowRules.length) {
       p.push('The user has pre-approved these commands without confirmation: ' + db.allowRules.map(function (r) { return r.rule; }).join(', ') + '.');
     }
@@ -150,74 +162,132 @@
     var typing = H.el('<div class="typing"><i></i><i></i><i></i></div>');
     flow.appendChild(typing);
     scroller.scrollTop = scroller.scrollHeight;
-    var bubble = null, acc = '';
+    var bubble = null, thinkEl = null, contentEl = null, acc = '', accRe = '';
     state.streaming = true; setSendStop(true);
     state.ctrl = new AbortController();
+    var toolsOn = db.settings.tools !== false;
+    var MAX_ITERS = 8;
 
+    function atBottom() { return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 90; }
+    var stick = true;
     function ensureBubble() {
       if (!bubble) {
         typing.remove();
         bubble = H.el('<div class="msg ai"></div>');
         flow.appendChild(bubble);
       }
+      return bubble;
     }
-    function atBottom() { return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 90; }
-    var stick = true;
+    function ensureThink() {
+      var b = ensureBubble();
+      if (!thinkEl) {
+        thinkEl = H.el('<details class="think" open><summary><i data-lucide="brain"></i>Thinking</summary><div class="think-body"></div></details>');
+        b.insertBefore(thinkEl, b.firstChild);
+        H.icons();
+      }
+      return thinkEl.querySelector('.think-body');
+    }
+    function ensureContent() {
+      var b = ensureBubble();
+      if (!contentEl) {
+        contentEl = H.el('<div class="ai-seg"></div>');
+        b.appendChild(contentEl);
+      }
+      return contentEl;
+    }
     function onDeltaFn(d) {
-      ensureBubble(); acc += d;
+      ensureContent(); acc += d;
       if (stick) stick = atBottom();
-      bubble.innerHTML = H.mdLite(acc);
+      contentEl.innerHTML = H.mdLite(acc);
+      H.icons();
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
-    function attempt(provider) {
-      acc = '';
-      if (bubble) bubble.innerHTML = '';
+    function onReasoningFn(d) {
+      var body = ensureThink();
+      accRe += d;
+      body.textContent = accRe.slice(-4000);
+      body.scrollTop = body.scrollHeight;
+      if (stick) scroller.scrollTop = scroller.scrollHeight;
+    }
+    function appendToolCard(t) {
+      var b = ensureBubble();
+      contentEl = null; // next content starts a fresh segment under the card
+      var card = H.el('<div class="toolcard' + (t.ok === false ? ' terr' : '') + '"><div class="th"><i data-lucide="' +
+        (t.ok === false ? 'alert-circle' : 'wrench') + '"></i>' + H.esc(t.label) +
+        (t.meta ? '<span class="st">' + H.esc(t.meta) + '</span>' : '') + '</div></div>');
+      b.appendChild(card);
+      H.icons();
+      if (stick) scroller.scrollTop = scroller.scrollHeight;
+    }
+    function aborted(e) { return e && (e.aborted || e.name === 'AbortError'); }
+    function callAI(provider) {
       return AI.chat({
         provider: provider,
         model: db.settings.model,
-        messages: apiMessages(),
+        messages: apiMsgs,
         stream: db.settings.stream,
         maxTokens: db.settings.maxTokens,
         signal: state.ctrl.signal,
-        onDelta: onDeltaFn
+        tools: toolsOn ? Tools.schemas : undefined,
+        onDelta: onDeltaFn,
+        onReasoning: onReasoningFn
       });
     }
-    function aborted(e) { return e && (e.aborted || e.name === 'AbortError'); }
 
-    var content = null, failed = null;
-    try {
-      content = await attempt(prov);
-      if (state.ctrl.signal.aborted) throw Object.assign(new Error('stopped'), { aborted: true });
-    } catch (e) {
-      if (aborted(e)) {
-        typing.remove();
-        if (acc) s.messages.push({ role: 'assistant', content: acc + '\n\n*(stopped)*', ts: Date.now() });
-        else H.toast('Generation stopped');
-      } else {
-        // retry once through the configured fallback provider, if any
+    var apiMsgs = apiMessages();
+    var toolResults = [], failed = null, stopped = false, usedFallback = false, iters = 0, res = null;
+
+    while (true) {
+      iters++;
+      try {
+        res = await callAI(prov);
+      } catch (e) {
+        if (aborted(e)) { stopped = true; break; }
         var fb = db.providers.find(function (x) { return x.id === db.settings.fallbackId; });
         if (fb && fb.id !== prov.id) {
           H.toast(prov.name + ' failed — retrying via ' + fb.name);
           try {
-            content = await attempt(fb);
-            if (state.ctrl.signal.aborted) throw Object.assign(new Error('stopped'), { aborted: true });
+            res = await callAI(fb);
+            usedFallback = true;
             H.toast('Replied via fallback ' + fb.name);
           } catch (e2) {
-            if (aborted(e2)) {
-              typing.remove();
-              if (acc) s.messages.push({ role: 'assistant', content: acc + '\n\n*(stopped)*', ts: Date.now() });
-              else H.toast('Generation stopped');
-            } else failed = e2;
+            if (aborted(e2)) { stopped = true; break; }
+            failed = e2; break;
           }
-        } else failed = e;
+        } else { failed = e; break; }
       }
+      if (state.ctrl.signal.aborted) { stopped = true; break; }
+
+      if (res.toolCalls && res.toolCalls.length && iters < MAX_ITERS) {
+        apiMsgs.push({ role: 'assistant', content: res.content || '', tool_calls: res.toolCalls });
+        for (var i = 0; i < res.toolCalls.length; i++) {
+          var tc = res.toolCalls[i];
+          var args = {};
+          try { args = JSON.parse(tc.function.arguments || '{}'); } catch (e) {}
+          var result = Tools.run(tc.function.name, args);
+          var info = Tools.brief(tc.function.name, args, result);
+          info.name = tc.function.name;
+          toolResults.push(info);
+          appendToolCard(info);
+          apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(result).slice(0, 4000) });
+        }
+        acc = ''; contentEl = null;
+        refreshCtx(); UI.renderHome();
+        continue;
+      }
+      break;
     }
+
     if (failed) {
       typing.remove();
       s.messages.push({ role: 'assistant', err: true, content: AI.friendlyError(failed), ts: Date.now() });
-    } else if (content !== null) {
+    } else if (stopped) {
+      typing.remove();
+      if (acc || toolResults.length) s.messages.push({ role: 'assistant', content: (acc ? acc + '\n\n*(stopped)*' : '*(stopped mid-task — see tool activity above)*'), reasoning: accRe || undefined, tools: toolResults.length ? toolResults : undefined, ts: Date.now() });
+      else H.toast('Generation stopped');
+    } else {
       ensureBubble();
-      s.messages.push({ role: 'assistant', content: content || acc || '(empty reply)', ts: Date.now() });
+      s.messages.push({ role: 'assistant', content: acc || (res && res.content) || '(empty reply)', reasoning: accRe || undefined, tools: toolResults.length ? toolResults : undefined, ts: Date.now() });
     }
     s.updatedAt = Date.now();
     Store.save();
@@ -253,6 +323,17 @@
   App.openFile = openFile;
   App.retry = retry;
   App.refreshCtx = refreshCtx;
+  App.openPath = function (path) {
+    if (!path) return;
+    path = String(path).replace(/^\/+/, '');
+    if (path.indexOf('workspace/') !== 0) path = 'workspace/' + path;
+    var i = path.lastIndexOf('/');
+    var dir = i > 0 ? path.slice(0, i) : 'workspace';
+    var f = { n: path.slice(i + 1), t: 'code' };
+    H.setTab('files');
+    goPath(dir);
+    openFile(f, dir);
+  };
 
   /* ================= compaction ================= */
   function transcript(s) {
@@ -273,10 +354,11 @@
     var summary = null, viaApi = false;
     if (prov.type !== 'echo' && prov.key && prov.base) {
       try {
-        summary = await AI.chat({
+        var sr = await AI.chat({
           provider: prov, model: db.settings.model, stream: false, maxTokens: 4,
           messages: [{ role: 'user', content: 'Summarize this conversation in under 150 words. Keep decisions, file/code references, and open todos:\n\n' + transcript(s) }]
         });
+        summary = (sr && sr.content) || null;
         viaApi = !!summary;
       } catch (e) { H.toast('Model summary failed — using local'); }
     }
@@ -375,7 +457,15 @@
     }
     var key = path + '/' + f.n;
     $('#fsTitle').textContent = f.n;
-    $('#fsCode').textContent = db.vfsContent[key] !== undefined ? db.vfsContent[key] : '// no content yet — this file is a placeholder';
+    var content = db.vfsContent[key] !== undefined ? db.vfsContent[key] : '// no content yet — this file is a placeholder';
+    if (/^data:image\//.test(String(content))) {
+      $('#fsImg').src = content; $('#fsImg').style.display = '';
+      var tc = $('#fsCode').closest('.toolcard'); if (tc) tc.style.display = 'none';
+    } else {
+      $('#fsImg').style.display = 'none';
+      var tc2 = $('#fsCode').closest('.toolcard'); if (tc2) tc2.style.display = '';
+      $('#fsCode').textContent = content;
+    }
     H.openSheet('sheet-file');
   }
 
@@ -448,8 +538,8 @@
     var p = pvDraft();
     $('#pvStatus').textContent = 'Testing connection…';
     try {
-      await AI.chat({ provider: p, model: p.models[0] || 'x', messages: [{ role: 'user', content: 'ping' }], stream: false, maxTokens: 1 });
-      $('#pvStatus').textContent = '✓ Connection OK';
+      var r = await AI.chat({ provider: p, model: p.models[0] || 'x', messages: [{ role: 'user', content: 'ping' }], stream: false, maxTokens: 1 });
+      $('#pvStatus').textContent = '✓ Connection OK' + (r && r.reasoning ? ' (reasoning model)' : '');
     } catch (e) {
       // a model-level error still proves the endpoint is reachable
       var m = AI.friendlyError(e);
@@ -525,7 +615,6 @@
     UI.renderSettingsSubs();
     var sess = Store.active();
     UI.renderChat(sess); UI.renderChatHead(sess);
-    $('#mktCount').textContent = (window.REGISTRY || []).length + ' plugins available';
     refreshCtx();
   }
 
@@ -544,32 +633,6 @@
     }
     if ((t = e.target.closest('[data-toast]'))) { H.toast(t.getAttribute('data-toast')); return; }
     if ((t = e.target.closest('[data-sugg]'))) { $('#chatInput').value = t.getAttribute('data-sugg'); $('#chatInput').focus(); return; }
-    if ((t = e.target.closest('[data-mkt]'))) {
-      var id = t.getAttribute('data-mkt');
-      if (db.installed.indexOf(id) < 0) {
-        var pack = UI.pluginById(id);
-        if (pack) {
-          db.installed.push(id);
-          if (db.plugins[id] === undefined) db.plugins[id] = true;
-          Store.save(); UI.renderMarket($('#mktSearch').value); UI.renderPlugins(); UI.renderSettingsSubs(); refreshCtx();
-          H.toast(pack.n + ' installed');
-        }
-      }
-      return;
-    }
-    if ((t = e.target.closest('[data-install]'))) {
-      var fid = t.getAttribute('data-install');
-      if (fid && db.installed.indexOf(fid) < 0) {
-        var fp = UI.pluginById(fid);
-        if (fp) {
-          db.installed.push(fid);
-          if (db.plugins[fid] === undefined) db.plugins[fid] = true;
-          Store.save(); UI.renderMarket($('#mktSearch').value); UI.renderPlugins(); UI.renderSettingsSubs(); refreshCtx();
-          H.toast(fp.n + ' installed');
-        }
-      }
-      return;
-    }
     if ((t = e.target.closest('[data-cmd]'))) {
       var c = t.getAttribute('data-cmd');
       H.closeSheets();
@@ -626,6 +689,13 @@
       db.settings.mode = 'Plan'; Store.save(); applyAppearance(); UI.renderChatHead(Store.active());
       H.toast('Mode → Plan (propose first)'); return;
     }
+    if ((t = e.target.closest('[data-delplugin]'))) {
+      var pid = t.getAttribute('data-delplugin');
+      db.plugins = db.plugins.filter(function (x) { return x.id !== pid; });
+      Store.save(); UI.renderPlugins(); UI.renderMarket($('#mktSearch').value); UI.renderSettingsSubs(); refreshCtx();
+      H.toast('Plugin removed');
+      return;
+    }
     if ((t = e.target.closest('[data-delrule]'))) {
       var rid = t.getAttribute('data-delrule');
       db.allowRules = db.allowRules.filter(function (x) { return x.id !== rid; });
@@ -645,6 +715,34 @@
     var s = Store.active();
     if (s && s.messages.length) s = Store.newSession();
     UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); openChat();
+  });
+  // delete current chat
+  $('#chatDel').addEventListener('click', function () {
+    var s = Store.active();
+    if (!s) { H.toast('No chat to delete'); return; }
+    if (!confirm('Delete chat "' + s.title + '"?')) return;
+    db.sessions = db.sessions.filter(function (x) { return x.id !== s.id; });
+    db.activeId = null;
+    Store.save(); H.pop(); UI.renderHome(); refreshCtx();
+    H.toast('Chat deleted');
+  });
+  // tools toggle
+  $('#toolsPill').addEventListener('click', function () {
+    db.settings.tools = db.settings.tools === false;
+    Store.save(); renderToolsPill(); refreshCtx();
+    H.toast(db.settings.tools === false ? 'Tools off — plain chat only' : 'Tools on — the model can write files, save memories, add plugins');
+  });
+  // IDE
+  $('#idePill').addEventListener('click', function () { IDE.open(); });
+  $('#ideBtn').addEventListener('click', function () { IDE.open(); });
+  // AI-built plugins
+  $('#aiPluginBtn').addEventListener('click', function () {
+    H.setTab('home');
+    var s = Store.active();
+    if (s && s.messages.length) s = Store.newSession();
+    UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); openChat();
+    $('#chatInput').value = 'Use the add_plugin tool to create a plugin that ';
+    $('#chatInput').focus();
   });
   $('#qResume').addEventListener('click', function () {
     var last = db.sessions.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; })[0];
@@ -706,19 +804,42 @@
   });
   $('#fileImport').addEventListener('change', function (e) {
     var files = Array.prototype.slice.call(e.target.files || []);
-    var pending = files.length;
-    db.vfs['workspace/imported'] = db.vfs['workspace/imported'] || [];
+    var pending = files.length, imported = 0;
+    if (!pending) return;
     files.forEach(function (f) {
-      if (f.size > 100000) { H.toast(f.name + ' too large — skipped'); if (--pending === 0) done(); return; }
+      if (f.size > 400000) { H.toast(f.name + ' too large — skipped'); if (--pending === 0) done(); return; }
+      var isImg = /^image\//.test(f.type) || /\.(png|jpe?g|gif|webp|svg|ico)$/i.test(f.name);
       var r = new FileReader();
       r.onload = function () {
-        db.vfs['workspace/imported'].push({ n: f.name, t: 'code', s: fmtSize(f.size) });
-        db.vfsContent['workspace/imported/' + f.name] = String(r.result);
+        Tools.run('write_file', { path: 'workspace/imported/' + f.name, content: r.result });
+        imported++;
         if (--pending === 0) done();
       };
-      r.readAsText(f);
+      r.onerror = function () { if (--pending === 0) done(); };
+      if (isImg) r.readAsDataURL(f); else r.readAsText(f);
     });
-    function done() { Store.save(); goPath('workspace/imported'); H.toast(files.length + ' file(s) imported'); }
+    function done() { Store.save(); goPath('workspace/imported'); H.toast(imported + ' file(s) imported'); }
+    e.target.value = '';
+  });
+  $('#folderBtn').addEventListener('click', function () { $('#folderImport').click(); });
+  $('#folderImport').addEventListener('change', function (e) {
+    var files = Array.prototype.slice.call(e.target.files || []);
+    var pending = files.length, imported = 0;
+    if (!pending) return;
+    files.forEach(function (f) {
+      var rel = (f.webkitRelativePath || f.name).replace(/^\/+/, '');
+      if (f.size > 400000) { if (--pending === 0) done(); return; }
+      var isImg = /^image\//.test(f.type) || /\.(png|jpe?g|gif|webp|svg|ico)$/i.test(f.name);
+      var r = new FileReader();
+      r.onload = function () {
+        Tools.run('write_file', { path: 'workspace/' + rel, content: r.result });
+        imported++;
+        if (--pending === 0) done();
+      };
+      r.onerror = function () { if (--pending === 0) done(); };
+      if (isImg) r.readAsDataURL(f); else r.readAsText(f);
+    });
+    function done() { Store.save(); goPath('workspace'); H.toast(imported + ' file(s) uploaded'); }
     e.target.value = '';
   });
   $('#fileSearch').addEventListener('input', function (e) {
@@ -870,13 +991,49 @@
     H.toast('Rule added');
   });
 
+  // plugin sheet (user-authored plugins; the AI adds its own via the add_plugin tool)
+  var plId = null;
+  function openPluginSheet(id) {
+    plId = id || null;
+    var p = id ? db.plugins.find(function (x) { return x.id === id; }) : null;
+    $('#plTitle').innerHTML = '<i data-lucide="puzzle" style="width:17px;height:17px"></i>' + (p ? H.esc(p.name) : 'New plugin');
+    $('#plName').value = p ? p.name : '';
+    $('#plDesc').value = p ? (p.desc || '') : '';
+    $('#plPrompt').value = p ? p.prompt : '';
+    $('#plDelete').style.display = p ? '' : 'none';
+    H.openSheet('sheet-plugin'); H.icons();
+  }
+  $('#plugAdd').addEventListener('click', function () { openPluginSheet(null); });
+  $('#mktAdd').addEventListener('click', function () { openPluginSheet(null); });
+  $('#plSave').addEventListener('click', function () {
+    var name = $('#plName').value.trim(), prompt = $('#plPrompt').value.trim();
+    if (!name || !prompt) { H.toast('Name and instruction block required'); return; }
+    if (plId) {
+      var p = db.plugins.find(function (x) { return x.id === plId; });
+      p.name = name; p.desc = $('#plDesc').value.trim(); p.prompt = prompt;
+    } else {
+      db.plugins.push({ id: 'p' + H.uid(), name: name, desc: $('#plDesc').value.trim(), prompt: prompt, source: 'user', on: true });
+    }
+    Store.save(); UI.renderPlugins(); UI.renderMarket($('#mktSearch').value); UI.renderSettingsSubs(); refreshCtx(); H.closeSheets();
+    H.toast('Plugin saved');
+  });
+  $('#plDelete').addEventListener('click', function () {
+    if (!plId) return;
+    db.plugins = db.plugins.filter(function (x) { return x.id !== plId; });
+    Store.save(); UI.renderPlugins(); UI.renderMarket($('#mktSearch').value); UI.renderSettingsSubs(); refreshCtx(); H.closeSheets();
+    H.toast('Plugin deleted');
+  });
+
   // toggles inside rendered lists (delegated change)
   root.addEventListener('change', function (e) {
     var t = e.target;
     var tog = t.getAttribute && t.getAttribute('data-toggle');
     if (tog) {
       var kind = tog.split(':')[0], id = tog.split(':')[1];
-      if (kind === 'plugin') db.plugins[id] = t.checked;
+      if (kind === 'plugin') {
+        var pk = db.plugins.find(function (x) { return x.id === id; });
+        if (pk) pk.on = t.checked;
+      }
       if (kind === 'skill') {
         var sk = db.skills.find(function (x) { return x.id === id; });
         if (sk) sk.on = t.checked;
@@ -1004,6 +1161,8 @@
   $('#dim').addEventListener('click', H.closeSheets);
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    var ide = document.getElementById('ide');
+    if (ide && ide.style.display !== 'none') { IDE.close(); return; }
     if ($('.sheet.on')) { H.closeSheets(); return; }
     if ($('.ov.on')) H.pop();
   });
@@ -1037,6 +1196,7 @@
   clock(); setInterval(clock, 30000);
   applyAppearance();
   renderAll();
+  IDE.wire();
   storeUse();
   Store.onChange(function () { storeUse(); });
   H.icons();
