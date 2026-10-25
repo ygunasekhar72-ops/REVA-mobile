@@ -23,6 +23,18 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Bundle busybox (real terminal toolset, ~300 commands)
+        run: |
+          cd /tmp
+          curl -sL -o bb.zip https://github.com/meefik/busybox/releases/download/1.34.1/busybox-v1_34_1.zip
+          unzip -o -q bb.zip
+          find . -name busybox -exec ls -la {} \;
+          JNIDIR="$GITHUB_WORKSPACE/android/app/src/main/jniLibs"
+          mkdir -p "$JNIDIR/arm64-v8a" "$JNIDIR/armeabi-v7a" "$JNIDIR/x86_64"
+          [ -f arm64/bin/busybox ]  && cp arm64/bin/busybox  "$JNIDIR/arm64-v8a/libbusybox.so"   && echo "bundled arm64"
+          [ -f arm/bin/busybox ]    && cp arm/bin/busybox    "$JNIDIR/armeabi-v7a/libbusybox.so" && echo "bundled arm"
+          [ -f x86_64/bin/busybox ] && cp x86_64/bin/busybox "$JNIDIR/x86_64/libbusybox.so"      && echo "bundled x86_64"
+
       - name: Bundle web app into Android assets
         run: |
           mkdir -p android/app/src/main/assets

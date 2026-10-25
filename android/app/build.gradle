@@ -11,9 +11,12 @@ android {
     defaultConfig {
         applicationId "com.reva.app"
         minSdk 26
-        targetSdk 34
-        versionCode 12
-        versionName "1.1.0"
+        // Target 28 (like Termux, distributed outside Play Store): keeps
+        // exec-from-app-home allowed, so the terminal can run downloaded
+        // static binaries (pkg install). Play Store would require 34+.
+        targetSdk 28
+        versionCode 13
+        versionName "1.2.0"
     }
 
     signingConfigs {

@@ -93,10 +93,24 @@ public class MainActivity extends Activity {
         web.loadUrl("file:///android_asset/index.html");
     }
 
-    /** Interactive shell session wired to the on-page terminal. */
+    /** Interactive shell session wired to the on-page terminal.
+     *  Preferred path: busybox `script` gives the shell a REAL pty (proper
+     *  Ctrl+C, colors, vim, job control) while our pipes feed it. Falls back
+     *  to plain `sh -i` when busybox is absent. All exec argv are constants —
+     *  user input only ever travels as bytes through the stream. */
     private class ShellStream {
         private Process proc;
         private java.io.OutputStream stdin;
+        private String busybox;
+
+        private String busyboxPath() {
+            if (busybox != null) return busybox;
+            try {
+                File f = new File(getApplicationInfo().nativeLibraryDir, "libbusybox.so");
+                busybox = (f.exists() && f.canExecute()) ? f.getAbsolutePath() : "";
+            } catch (Exception e) { busybox = ""; }
+            return busybox;
+        }
 
         private void emit(String chunk) {
             final String payload = chunk.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "");
@@ -118,40 +132,101 @@ public class MainActivity extends Activity {
             }).start();
         }
 
-        @JavascriptInterface
-        public synchronized void start() {
-            stop();
+        /** mksh profile: pkg installer + busybox helper on PATH */
+        private void writeProfile() {
             try {
-                proc = Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-i"});
-                stdin = proc.getOutputStream();
-                pump(proc.getInputStream());
-                pump(proc.getErrorStream());
-            } catch (Exception e) {
-                emit("shell error: " + e.getMessage() + "\n");
-            }
+                File home = getFilesDir();
+                File bin = new File(home, "bin");
+                if (!bin.exists()) bin.mkdirs();
+                File rc = new File(home, ".mkshrc");
+                if (!rc.exists()) {
+                    String nl = System.getProperty("line.separator") != null ? "" : "";
+                    String bb = busyboxPath();
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("export PATH=$HOME/bin:").append(bb.isEmpty() ? "" : new File(bb).getParent() + ":").append("/system/bin:/system/xbin:$PATH").append('\n');
+                    sb.append("export TERM=xterm-256color").append('\n');
+                    sb.append("export PS1='$ '").append('\n');
+                    if (!bb.isEmpty()) {
+                        sb.append("bb() { \"").append(bb).append("\" \"$@\"; }").append('\n');
+                    }
+                    sb.append("pkg() {").append('\n');
+                    sb.append("  case \"$1\" in").append('\n');
+                    sb.append("    i|install)").append('\n');
+                    sb.append("      shift; mkdir -p $HOME/bin").append('\n');
+                    sb.append("      for u in \"$@\"; do").append('\n');
+                    sb.append("        n=${u##*/}").append('\n');
+                    sb.append("        if bb wget -q -O $HOME/bin/$n \"$u\"; then chmod +x $HOME/bin/$n && echo \"installed: $n (run: $n)\"; else echo \"download failed: $u\"; fi").append('\n');
+                    sb.append("      done;;").append('\n');
+                    sb.append("    l|list) bb --list;;").append('\n');
+                    sb.append("    *) echo \"pkg install <url-of-static-binary>... | pkg list\";;").append('\n');
+                    sb.append("  esac").append('\n');
+                    sb.append("}").append('\n');
+                    java.io.FileOutputStream fos = new java.io.FileOutputStream(rc);
+                    fos.write(sb.toString().getBytes());
+                    fos.close();
+                }
+            } catch (Exception ignored) { }
         }
 
         @JavascriptInterface
-        public void write(final String line) {
+        public synchronized void start() {
+            stop();
+            writeProfile();
+            String bb = busyboxPath();
+            try {
+                if (!bb.isEmpty()) {
+                    // real pty: busybox script runs `sh -i` on a pseudo-terminal
+                    proc = launch(new String[]{bb, "script", "-qfc", "/system/bin/sh -i", "/dev/null"});
+                }
+            } catch (Exception e) {
+                emit("(pty unavailable: " + e.getMessage() + " — falling back to plain sh)\n");
+                proc = null;
+            }
+            if (proc == null) {
+                try { proc = launch(new String[]{"/system/bin/sh", "-i"}); }
+                catch (Exception e) { emit("shell error: " + e.getMessage() + "\n"); return; }
+            }
+            stdin = proc.getOutputStream();
+            pump(proc.getInputStream());
+            pump(proc.getErrorStream());
+        }
+
+        private Process launch(String[] argv) throws Exception {
+            ProcessBuilder pb = new ProcessBuilder(argv);
+            pb.directory(getFilesDir());
+            pb.environment().put("HOME", getFilesDir().getAbsolutePath());
+            pb.environment().put("TERM", "xterm-256color");
+            pb.environment().put("ENV", new File(getFilesDir(), ".mkshrc").getAbsolutePath());
+            String path = pb.environment().get("PATH");
+            String bb = busyboxPath();
+            pb.environment().put("PATH", new File(getFilesDir(), "bin").getAbsolutePath()
+                    + (bb.isEmpty() ? "" : ":" + new File(bb).getParent())
+                    + ":" + (path == null ? "/system/bin" : path));
+            return pb.start();
+        }
+
+        /** Raw byte passthrough (pty mode: keystrokes go through untouched). */
+        @JavascriptInterface
+        public void writeRaw(final String data) {
             final java.io.OutputStream s = stdin;
-            if (s == null) return;
+            if (s == null || data == null) return;
             new Thread(new Runnable() {
                 public void run() {
-                    try {
-                        s.write((line + "\n").getBytes());
-                        s.flush();
-                    } catch (Exception e) {
-                        emit("\n[shell closed — tap a key to restart via Term.open]\n");
-                    }
+                    try { s.write(data.getBytes()); s.flush(); }
+                    catch (Exception e) { emit("\n[shell closed — reopen the terminal]\n"); }
                 }
             }).start();
         }
 
-        /** Ctrl-C equivalent: kill the current process tree and start fresh. */
+        /** Line helper (compat; appends newline). */
+        @JavascriptInterface
+        public void write(final String line) { writeRaw(line + "\n"); }
+
+        /** Hard interrupt: kill the session and start a fresh one. */
         @JavascriptInterface
         public synchronized void interrupt() {
             stop();
-            emit("\n^C — shell restarted (cwd/env reset)\n");
+            emit("\n[interrupt — shell restarted]\n");
             start();
         }
 

@@ -1,7 +1,7 @@
 /* REVA — real terminal overlay.
-   Android (APK): a persistent interactive /system/bin/sh session — the shell
-   itself interprets pipes, redirects, and chaining; output streams live into
-   xterm.js. This is the Termux architecture (minus the PTY: ^C restarts).
+   Android (APK): a REAL pty (busybox `script` wrapping /system/bin/sh -i).
+   Keystrokes pass through raw — the shell handles echo, line editing, history
+   and Ctrl+C itself; output streams back live. Full unrestricted shell.
    Browser: harness console backend until a WASM backend is bundled. */
 (function () {
   var $ = H.$;
@@ -9,7 +9,7 @@
   var line = '', hist = [], histPos = 0;
   var PROMPT = '❯ ';
 
-  function isAndroid() { return !!(window.REVAShell && window.REVAShell.write); }
+  function isAndroid() { return !!(window.REVAShell && (window.REVAShell.writeRaw || window.REVAShell.write)); }
 
   function open() {
     var el = $('#terminal');
@@ -19,21 +19,21 @@
       term = new Terminal({
         cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, Consolas, monospace',
         theme: { background: '#0a0a0c', foreground: '#e8e8ee', cursor: '#f4f4f6' },
-        scrollback: 2000, convertEol: false
+        scrollback: 4000, convertEol: false
       });
       term.open($('#termHost'));
       window.__termInst = term;
       backend = isAndroid() ? 'android' : 'console';
       var be = $('#termBackend');
-      if (be) be.textContent = backend === 'android' ? 'device shell · interactive' : 'harness console';
+      if (be) be.textContent = backend === 'android' ? 'device shell · pty' : 'harness console';
       if (backend === 'android') {
         window.__revaTermOut = function (chunk) { term.write(chunk); };
         REVAShell.start();
-        term.writeln('\x1b[1mREVA shell\x1b[0m — real interactive /system/bin/sh (app sandbox).');
-        term.writeln('\x1b[2mfull shell syntax works: pipes |, redirects > <, && ; — ^C restarts the shell\x1b[0m\r\n');
+        term.writeln('\x1b[1mREVA shell\x1b[0m — real pty · full /system/bin/sh + busybox (~300 cmds) + pkg');
+        term.writeln('\x1b[2mtry: pkg list · bb top · bb vi file · pkg install <url-of-static-binary>\x1b[0m\r');
       } else {
         term.writeln('\x1b[1mREVA terminal\x1b[0m — harness console backend (browser). \x1b[2mhelp\x1b[0m lists commands.');
-        term.writeln('\x1b[2mThe Android APK runs a real interactive device shell here.\x1b[0m\r\n');
+        term.writeln('\x1b[2mThe Android APK runs a real unrestricted device shell here.\x1b[0m\r\n');
         term.write(PROMPT);
       }
       wire();
@@ -50,7 +50,12 @@
 
   function wire() {
     term.onData(function (data) {
-      if (backend === 'console' && busy) {
+      if (backend === 'android') {
+        // raw passthrough — the pty/shell owns echo, editing, ^C, arrows
+        REVAShell.writeRaw(data);
+        return;
+      }
+      if (busy) {
         if (data === '\u0003') { busy = false; term.write('^C\r\n' + PROMPT); }
         return;
       }
@@ -59,17 +64,11 @@
         var cmd = line; line = '';
         if (cmd.trim()) { hist.push(cmd); }
         histPos = hist.length;
-        if (backend === 'android') {
-          // the shell echoes its own prompt; just forward the line
-          REVAShell.write(cmd);
-        } else {
-          run(cmd);
-        }
+        run(cmd);
       } else if (data === '\u007f') {
         if (line.length) { line = line.slice(0, -1); term.write('\b \b'); }
       } else if (data === '\u0003') {
-        if (backend === 'android') { REVAShell.interrupt(); line = ''; }
-        else { term.write('^C\r\n' + PROMPT); line = ''; }
+        term.write('^C\r\n' + PROMPT); line = '';
       } else if (data === '\u001b[A') {
         if (histPos > 0) { histPos--; redraw(hist[histPos] || ''); }
       } else if (data === '\u001b[B') {
@@ -83,7 +82,7 @@
     window.addEventListener('resize', fit);
   }
   function redraw(text) {
-    term.write('\r\x1b[K' + (backend === 'android' ? '' : PROMPT) + text);
+    term.write('\r\x1b[K' + PROMPT + text);
     line = text;
   }
 
@@ -100,9 +99,9 @@
   /* feed a line into the terminal as if typed (automation + tests) */
   function type(cmd) {
     if (!term || (backend === 'console' && busy)) return;
+    if (backend === 'android') { REVAShell.writeRaw(cmd + '\n'); return; }
     term.write(cmd + '\r\n');
-    if (backend === 'android') REVAShell.write(cmd);
-    else run(cmd);
+    run(cmd);
   }
 
   window.Term = { open: open, close: close, fit: fit, type: type };
