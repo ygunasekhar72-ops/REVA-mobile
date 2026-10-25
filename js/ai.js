@@ -9,7 +9,10 @@
     return h;
   }
   function baseUrl(p) {
-    return (p.base || '').replace(/\/+$/, '');
+    var u = (p.base || '').replace(/\/+$/, '');
+    // users often paste the full endpoint — normalize to the API root
+    u = u.replace(/\/chat\/completions$/, '').replace(/\/models$/, '');
+    return u;
   }
 
   /* --- offline demo provider: streams a canned, helpful reply --- */
