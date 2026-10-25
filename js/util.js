@@ -134,10 +134,18 @@
     var d = H.$('#dim'); if (d) d.classList.remove('on');
   };
 
-  /* phone fit */
+  /* phone fit — full-bleed "native" mode on real phones, mockup on desktop */
   H.fit = function () {
     if (!root || !phone) return;
     var scaler = H.$('#scaler');
+    var nativeMode = window.innerWidth <= 520;
+    if (root.classList) root.classList.toggle('native', nativeMode);
+    if (nativeMode) {
+      phone.style.transform = '';
+      scaler.style.width = '100%';
+      scaler.style.height = '100%';
+      return;
+    }
     var w = Math.max(280, root.clientWidth - 6);
     var h = Math.max(480, window.innerHeight - 60);
     var s = Math.min(1, w / 390, h / 800);
