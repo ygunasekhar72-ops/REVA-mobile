@@ -45,8 +45,9 @@ jobs:
           BASE="https://raw.githubusercontent.com/Bibarud/TermFold/HEAD/app/src/main/jniLibs"
           for abi in arm64-v8a x86_64; do
             mkdir -p "$JNIDIR/$abi"
-            curl -sL -o "$JNIDIR/$abi/libproot.so" "$BASE/$abi/libproot.so"
-            curl -sL -o "$JNIDIR/$abi/libproot-loader.so" "$BASE/$abi/libproot-loader.so"
+            for lib in libproot.so libproot-loader.so libtalloc.so libandroid-shmem.so; do
+              curl -sL -o "$JNIDIR/$abi/$lib" "$BASE/$abi/$lib"
+            done
             ls -la "$JNIDIR/$abi"
           done
 
