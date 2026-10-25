@@ -13,6 +13,8 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
+import java.io.File;
+
 public class MainActivity extends Activity {
 
     private static final int FILE_CHOOSER_REQUEST = 100;
