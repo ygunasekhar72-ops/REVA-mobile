@@ -56,7 +56,7 @@
     },
 
     /* ---------- FILES ---------- */
-    renderFiles: function (entries, path, mounted) {
+    renderFiles: function (entries, path, mounted, emptyMsg) {
       var parts = path.split('/');
       var crumbs = $('#fileCrumbs');
       crumbs.innerHTML = '';
@@ -76,7 +76,7 @@
       });
       var fl = $('#filesList');
       fl.innerHTML = entries.length ? '' :
-        '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:16px 0">Empty folder — create a file or import one</p>';
+        '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:16px 0">' + H.esc(emptyMsg || 'Empty folder — create a file or import one') + '</p>';
       entries.forEach(function (f) {
         var row = H.el('<button class="row">' +
           '<span class="tile"><i data-lucide="' + (ICON[f.t] || 'file') + '"></i></span>' +
@@ -164,9 +164,11 @@
       '<button class="row" id="addProvider"><span class="tile"><i data-lucide="plus"></i></span><span class="rtxt"><b>Add custom provider</b><small>Any OpenAI-compatible endpoint</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>';
 
       $('#modelCards').innerHTML = prov.models.length ? prov.models.map(function (m) {
+        var st = (prov.modelStatus || {})[m];
+        var badge = st === 'ok' ? '<span>✓ verified</span>' : (st === 'unknown' ? '<span>unverified</span>' : '');
         return '<button class="mcard' + (m === db.settings.model ? ' sel' : '') + '" data-model="' + H.esc(m) + '">' +
           '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b><small>' + H.esc(prov.name) + '</small></span></span>' +
-          '<span class="mmeta"><span>' + db.settings.ctxK + 'k ctx</span></span></button>';
+          '<span class="mmeta"><span>' + db.settings.ctxK + 'k ctx</span>' + badge + '</span></button>';
       }).join('') :
       '<div class="lockban"><i data-lucide="info"></i><span>No models yet — open the provider and press "Fetch models", or add one manually below.</span></div>';
 
@@ -291,16 +293,27 @@
       if (m.reasoning) {
         inner += '<details class="think"><summary><i data-lucide="brain"></i>Thinking</summary><div class="think-body">' + H.esc(m.reasoning) + '</div></details>';
       }
-      (m.tools || []).forEach(function (t) {
-        inner += '<div class="toolcard' + (t.ok === false ? ' terr' : '') + '" data-toolpath="' + H.esc(t.path || '') + '">' +
-          '<div class="th"><i data-lucide="' + (t.ok === false ? 'alert-circle' : TOOL_ICON[t.name] || 'wrench') + '"></i>' + H.esc(t.label) +
-          (t.meta ? '<span class="st">' + H.esc(t.meta) + '</span>' : '') + '</div></div>';
+      var acts = m.activity && m.activity.length ? m.activity : (m.tools || []).map(function (t) {
+        return { k: t.cmd ? 'cmd' : 'tool', icon: t.cmd ? 'terminal' : 'wrench', text: t.label, meta: t.meta || '', out: t.out || '' };
       });
+      if (acts.length) {
+        var rows = acts.map(function (a) {
+          if (a.k === 'cmd') return '<div class="act-row"><i data-lucide="terminal"></i><b>' + H.esc(a.text) + '</b></div>' + (a.out ? '<pre class="act-out">' + H.esc(a.out) + '</pre>' : '');
+          return '<div class="act-row' + (a.ok === false ? ' failed' : '') + '" data-open="' + H.esc(a.path || '') + '"><i data-lucide="' + (a.ok === false ? 'alert-circle' : a.icon) + '"></i><b>' + H.esc(a.text) + '</b>' + (a.meta ? '<span class="meta">' + H.esc(a.meta) + '</span>' : '') + '</div>';
+        }).join('');
+        if (acts.length > 4) inner += '<details class="actwrap"><summary>' + acts.length + ' steps</summary><div class="activity">' + rows + '</div></details>';
+        else inner += '<div class="activity">' + rows + '</div>';
+      }
       inner += H.mdLite(m.content);
       a.innerHTML = inner;
       a.querySelectorAll('[data-toolpath]').forEach(function (card) {
         var p = card.getAttribute('data-toolpath');
         if (p) card.addEventListener('click', function () { App.openPath(p); });
+      });
+      a.querySelectorAll('.act-row[data-open]').forEach(function (row) {
+        var p = row.getAttribute('data-open');
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', function () { App.openPath(p); });
       });
       var think = a.querySelector('.think');
       if (think) H.longPress(a, function () { H.copy(m.content); });

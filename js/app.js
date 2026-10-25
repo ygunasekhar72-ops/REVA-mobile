@@ -18,11 +18,11 @@
   };
 
   var MODE_DESC = {
-    Plan: 'propose a plan before doing anything; do not assume it will be applied',
+    Plan: 'present a plan first and wait for approval — file-modifying tools are disabled, only reading is allowed',
     Build: 'be pragmatic and produce working solutions',
     Edit: 'prefer minimal, precise diffs over rewrites',
     Yolo: 'be fast and direct; skip caveats',
-    Guard: 'call out risks explicitly before anything destructive'
+    Guard: 'call out risks explicitly — destructive tools (delete, console) are disabled'
   };
   /* Starter skill pack — mirrors the capability map of a pro agent runtime */
   var STARTER_SKILLS = [
@@ -89,6 +89,7 @@
     $('#selLang').value = s.lang;
     $$('#pmodeSeg button').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-pm') === s.mode); });
     $('#pmodeDesc').textContent = s.mode + ' — the agent will ' + MODE_DESC[s.mode] + '.';
+    renderEffortPill();
     renderToolsPill();
     renderFallbackSel();
   }
@@ -113,12 +114,18 @@
   }
 
   /* ================= system prompt & context ================= */
+  var EFFORT_LINE = {
+    Low: 'answer directly and concisely; skip extended deliberation',
+    High: 'reason carefully through the problem before answering',
+    Max: 'think deeply: weigh alternatives and edge cases, then answer thoroughly and completely'
+  };
   function sysPrompt() {
     var s = db.settings;
     var p = ['You are the assistant inside REVA — a minimal, local-first mobile AI harness. Be concise and helpful.'];
     p.push('Mode — ' + s.mode + ': ' + MODE_DESC[s.mode] + '.');
-    p.push('Reasoning effort: ' + s.effort + '.');
+    p.push('Reasoning effort — ' + s.effort + ': ' + EFFORT_LINE[s.effort] + '.');
     if (s.think) p.push('Think step by step for non-trivial requests before answering.');
+    p.push('Formatting: open with the direct answer, then organize the rest into short sections with headings or bullet points. Write explanations as prose. Use code blocks only for actual code, never as a substitute for explanation.');
     var skills = db.skills.filter(function (k) { return k.on; });
     if (skills.length) {
       p.push('Enabled skills:');
@@ -198,21 +205,64 @@
     var typing = H.el('<div class="typing" data-live="1"><i></i><i></i><i></i></div>');
     flow.appendChild(typing);
     scroller.scrollTop = scroller.scrollHeight;
-    var bubble = null, thinkEl = null, contentEl = null, statusEl = null, acc = '', accRe = '';
+    var bubble = null, thinkEl = null, contentEl = null, acc = '', accRe = '';
     state.streaming = true; setSendStop(true);
     state.ctrl = new AbortController();
     var toolsOn = db.settings.tools !== false;
+    var mode = db.settings.mode;
     var MAX_ITERS = 8;
 
-    /* live activity chip so the user can see what the agent is doing */
-    function setStatus(txt) {
-      if (!txt) { if (statusEl) { statusEl.remove(); statusEl = null; } return; }
+    /* ---- live activity feed (ZCode-style): rows appear as the agent works ---- */
+    var actEl = null, spinRow = null, thoughtRow = null, thoughtStart = 0, activity = [];
+    function ensureAct() {
       var b = ensureBubble();
-      if (!statusEl) {
-        statusEl = H.el('<div class="agent-status" data-live="1"><span class="dots"><i></i><i></i><i></i></span><span class="stxt"></span></div>');
+      if (!actEl) {
+        actEl = H.el('<div class="activity" data-live="1"></div>');
+        b.insertBefore(actEl, contentEl || null);
       }
-      statusEl.querySelector('.stxt').textContent = txt;
-      b.appendChild(statusEl);
+      return actEl;
+    }
+    function actRow(icon, text, meta) {
+      var act = ensureAct();
+      var row = H.el('<div class="act-row"><i data-lucide="' + icon + '"></i><b>' + H.esc(text) + '</b>' + (meta ? '<span class="meta">' + H.esc(meta) + '</span>' : '') + '</div>');
+      act.appendChild(row);
+      H.icons();
+      return row;
+    }
+    function setStatus(txt) { /* spinner row rides at the bottom of the feed */
+      if (!txt) { if (spinRow) { spinRow.remove(); spinRow = null; } return; }
+      var act = ensureAct();
+      if (!spinRow) spinRow = H.el('<div class="act-row spin-row"><span class="spin"></span><span class="stxt"></span></div>');
+      spinRow.querySelector('.stxt').textContent = txt;
+      act.appendChild(spinRow);
+      if (stick) scroller.scrollTop = scroller.scrollHeight;
+    }
+    function beginThought() {
+      if (thoughtRow) return;
+      thoughtStart = Date.now();
+      var act = ensureAct();
+      thoughtRow = H.el('<div class="act-row"><i data-lucide="brain"></i><b>Thinking</b><span class="meta">…</span></div>');
+      act.insertBefore(thoughtRow, spinRow || null);
+      H.icons();
+    }
+    function endThought() {
+      if (!thoughtRow) return;
+      var secs = Math.max(1, Math.round((Date.now() - thoughtStart) / 1000));
+      thoughtRow.querySelector('.meta').textContent = secs + 's';
+      activity.push({ k: 't', icon: 'brain', text: 'Thinking', meta: secs + 's' });
+      thoughtRow = null;
+    }
+    function addToolRow(info, out) {
+      endThought();
+      if (info.cmd) {
+        actRow('terminal', '❯ ' + info.cmd, info.meta || '');
+        var pre = H.el('<pre class="act-out">' + H.esc(String(out || '').slice(0, 500)) + '</pre>');
+        ensureAct().appendChild(pre);
+        activity.push({ k: 'cmd', icon: 'terminal', text: '❯ ' + info.cmd, meta: info.meta || '', out: String(out || '').slice(0, 500) });
+      } else {
+        actRow(info.ok === false ? 'alert-circle' : 'wrench', info.label, info.meta || '');
+        activity.push({ k: 'tool', icon: 'wrench', text: info.label, meta: info.meta || '', ok: info.ok, path: info.path || '' });
+      }
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
 
@@ -245,6 +295,7 @@
     }
     function onDeltaFn(d) {
       setStatus(null);
+      endThought();
       ensureContent(); acc += d;
       if (stick) stick = atBottom();
       contentEl.innerHTML = H.mdLite(acc);
@@ -252,22 +303,16 @@
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
     function onReasoningFn(d) {
-      var body = ensureThink();
+      beginThought();
       setStatus('Thinking…');
+      var body = ensureThink();
       accRe += d;
       body.textContent = accRe.slice(-4000);
       body.scrollTop = body.scrollHeight;
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
-    function appendToolCard(t) {
-      var b = ensureBubble();
-      contentEl = null; // next content starts a fresh segment under the card
-      var card = H.el('<div class="toolcard' + (t.ok === false ? ' terr' : '') + '"><div class="th"><i data-lucide="' +
-        (t.ok === false ? 'alert-circle' : 'wrench') + '"></i>' + H.esc(t.label) +
-        (t.meta ? '<span class="st">' + H.esc(t.meta) + '</span>' : '') + '</div></div>');
-      b.appendChild(card);
-      H.icons();
-      if (stick) scroller.scrollTop = scroller.scrollHeight;
+    function appendToolCard(info, out) {
+      addToolRow(info, out);
     }
     function aborted(e) { return e && (e.aborted || e.name === 'AbortError'); }
     /* while this run is streaming, renderChat() can re-attach the live elements
@@ -287,10 +332,21 @@
         messages: apiMsgs,
         stream: db.settings.stream,
         maxTokens: db.settings.maxTokens,
+        effort: db.settings.effort,
         signal: state.ctrl.signal,
-        tools: toolsOn ? Tools.schemas : undefined,
+        tools: toolSchemas(),
         onDelta: onDeltaFn,
         onReasoning: onReasoningFn
+      });
+    }
+    /* the mode really gates what the agent can do */
+    function toolSchemas() {
+      if (!toolsOn) return undefined;
+      return Tools.schemas.filter(function (t) {
+        var n = t.function.name;
+        if (mode === 'Plan') return ['read_file', 'list_files', 'save_memory', 'add_plugin'].indexOf(n) >= 0;
+        if (mode === 'Guard') return ['delete_file', 'run_command'].indexOf(n) < 0;
+        return true;
       });
     }
 
@@ -331,7 +387,7 @@
           info = Tools.brief(tc.function.name, args, result);
           info.name = tc.function.name;
           toolResults.push(info);
-          appendToolCard(info);
+          addToolRow(info, result);
           apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(result).slice(0, 4000) });
         }
         acc = ''; contentEl = null;
@@ -347,11 +403,11 @@
       s.messages.push({ role: 'assistant', err: true, content: AI.friendlyError(failed), ts: Date.now() });
     } else if (stopped) {
       typing.remove();
-      if (acc || toolResults.length) s.messages.push({ role: 'assistant', content: (acc ? acc + '\n\n*(stopped)*' : '*(stopped mid-task — see tool activity above)*'), reasoning: accRe || undefined, tools: toolResults.length ? toolResults : undefined, ts: Date.now() });
+      if (acc || toolResults.length) s.messages.push({ role: 'assistant', content: (acc ? acc + '\n\n*(stopped)*' : '*(stopped mid-task — see tool activity above)*'), reasoning: accRe || undefined, tools: toolResults.length ? toolResults : undefined, activity: activity.length ? activity : undefined, ts: Date.now() });
       else H.toast('Generation stopped');
     } else {
       ensureBubble();
-      s.messages.push({ role: 'assistant', content: acc || (res && res.content) || '(empty reply)', reasoning: accRe || undefined, tools: toolResults.length ? toolResults : undefined, ts: Date.now() });
+      s.messages.push({ role: 'assistant', content: acc || (res && res.content) || '(empty reply)', reasoning: accRe || undefined, tools: toolResults.length ? toolResults : undefined, activity: activity.length ? activity : undefined, ts: Date.now() });
     }
     s.updatedAt = Date.now();
     Store.save();
@@ -381,6 +437,7 @@
 
   App.openSession = function (id) {
     db.activeId = id; Store.save();
+    state.curPath = 'workspace';
     UI.renderChat(Store.active()); UI.renderChatHead(Store.active()); refreshCtx();
     openChat();
   };
@@ -401,46 +458,51 @@
   };
 
   /* ================= compaction ================= */
+  var COMPACT_KEEP = 6; // recent messages always stay in context
   function transcript(s) {
     return visibleMessages(s).map(function (m) { return m.role.toUpperCase() + ': ' + m.content; }).join('\n---\n');
   }
-  function localSummary(s) {
-    var users = visibleMessages(s).filter(function (m) { return m.role === 'user'; })
+  function localSummary(s, portion) {
+    var users = portion.filter(function (m) { return m.role === 'user'; })
       .map(function (m) { return '• ' + m.content.slice(0, 120); });
-    var lastA = ''; 
-    for (var i = s.messages.length - 1; i >= 0; i--) if (s.messages[i].role === 'assistant' && !s.messages[i].err) { lastA = s.messages[i].content.slice(0, 240); break; }
-    return 'Local summary (no model call):\n' + users.slice(0, 8).join('\n') + (lastA ? '\nLast reply: ' + lastA : '');
+    var lastA = '';
+    for (var i = portion.length - 1; i >= 0; i--) if (portion[i].role === 'assistant' && !portion[i].err) { lastA = portion[i].content.slice(0, 240); break; }
+    return 'Local summary:\n' + (users.slice(0, 8).join('\n') || '(no user messages)') + (lastA ? '\nLast reply: ' + lastA : '');
   }
+  /* smart compaction: summarize only the older slice, keep the recent tail live,
+     merge summaries incrementally, and keep just the newest checkpoints */
   async function compact(silent) {
     var s = Store.active();
     if (!s || !visibleMessages(s).length) { H.toast('Nothing to compact'); return; }
+    var oldCut = s.cutAt || 0;
+    var cut = Math.max(oldCut, s.messages.length - COMPACT_KEEP);
+    if (cut <= oldCut) { H.toast('Nothing older to compact — the recent context stays'); return; }
+    var portion = s.messages.slice(oldCut, cut);
     var before = H.tok(sysPrompt()) + histTokens();
     var prov = Store.activeProvider();
     var summary = null, viaApi = false;
     if (prov.type !== 'echo' && prov.key && prov.base) {
       try {
         var sr = await AI.chat({
-          provider: prov, model: db.settings.model, stream: false, maxTokens: 4,
-          messages: [{ role: 'user', content: 'Summarize this conversation in under 150 words. Keep decisions, file/code references, and open todos:\n\n' + transcript(s) }]
+          provider: prov, model: db.settings.model, stream: false, maxTokens: 4, effort: db.settings.effort,
+          messages: [{ role: 'user', content: 'Summarize this part of a conversation in under 150 words. Keep decisions, file/code references, and open todos:\n\n' + portion.map(function (m) { return m.role.toUpperCase() + ': ' + m.content; }).join('\n---\n') }]
         });
         summary = (sr && sr.content) || null;
         viaApi = !!summary;
       } catch (e) { H.toast('Model summary failed — using local'); }
     }
-    if (!summary) summary = localSummary(s);
-    var after = H.tok(sysPrompt()) + H.tok(summary) + 40;
-    s.compactions = s.compactions || [];
-    if (db.settings.checkpoints) {
-      s.compactions.unshift({ date: Date.now(), before: before, after: after, api: viaApi, snapshot: transcript(s) });
-    } else {
-      s.compactions.unshift({ date: Date.now(), before: before, after: after, api: viaApi });
-    }
+    if (!summary) summary = localSummary(s, portion);
     s.summary = (s.summary ? s.summary + '\n\n' : '') + '[Compacted ' + new Date().toLocaleString() + ']\n' + summary;
-    s.cutAt = s.messages.length;   // context drops; visible history stays
+    if (s.summary.length > 6000) s.summary = s.summary.slice(0, 6000); // keep the injected summary bounded
+    s.cutAt = cut;
+    var after = H.tok(sysPrompt());
+    s.compactions = s.compactions || [];
+    s.compactions.unshift({ date: Date.now(), before: before, after: after, api: viaApi, kept: s.messages.length - cut, snapshot: portion.map(function (m) { return m.role.toUpperCase() + ': ' + m.content; }).join('\n---\n').slice(0, 2000) });
+    if (s.compactions.length > 3) s.compactions.length = 3;
     s.updatedAt = Date.now();
     Store.save();
     refreshCtx(); UI.renderBuffer(s); UI.renderHome();
-    H.toast('Compacted · ' + H.fmtK(before) + ' → ' + H.fmtK(after) + ' tok');
+    H.toast('Compacted · kept last ' + (s.messages.length - cut) + ' messages · ' + H.fmtK(before) + ' → ' + H.fmtK(after) + ' tok');
     fireHook('Compaction', { before: before, after: after });
   }
 
@@ -505,8 +567,12 @@
         return;
       } catch (e) { H.toast('Cannot open folder'); return; }
     }
-    var list = db.vfs[path] || [];
-    UI.renderFiles(list, path, false);
+    var s = Store.ws();
+    if (!s) {
+      UI.renderFiles([], path, false, 'Each chat has its own workspace — start a chat to create files');
+      return;
+    }
+    UI.renderFiles(s.vfs[path] || [], path, false);
   }
   function fmtSize(b) { return b < 1024 ? b + ' B' : (b / 1024).toFixed(1) + ' KB'; }
 
@@ -522,7 +588,8 @@
     }
     var key = path + '/' + f.n;
     $('#fsTitle').textContent = f.n;
-    var content = db.vfsContent[key] !== undefined ? db.vfsContent[key] : '// no content yet — this file is a placeholder';
+    var ws = Store.ws();
+    var content = ws && ws.vfsContent[key] !== undefined ? ws.vfsContent[key] : '// no content yet — this file is a placeholder';
     if (/^data:image\//.test(String(content))) {
       $('#fsImg').src = content; $('#fsImg').style.display = '';
       var tc = $('#fsCode').closest('.toolcard'); if (tc) tc.style.display = 'none';
@@ -535,9 +602,11 @@
   }
 
   function vfsFiles() {
+    var s = Store.ws();
     var out = [];
-    Object.keys(db.vfs).forEach(function (path) {
-      db.vfs[path].forEach(function (f) { if (f.t !== 'dir') out.push({ path: path + '/' + f.n, n: f.n }); });
+    if (!s) return out;
+    Object.keys(s.vfs).forEach(function (path) {
+      s.vfs[path].forEach(function (f) { if (f.t !== 'dir') out.push({ path: path + '/' + f.n, n: f.n }); });
     });
     return out;
   }
@@ -550,7 +619,7 @@
     $('#attList').querySelectorAll('[data-att]').forEach(function (b) {
       b.addEventListener('click', function () {
         var f = files[+b.getAttribute('data-att')];
-        var content = (db.vfsContent[f.path] || '').slice(0, 6000);
+        var content = ((Store.ws() || {}).vfsContent || {})[f.path] || '';
         $('#chatInput').value += '\n\n[file: ' + f.path + ']\n```\n' + content + '\n```';
         H.closeSheets();
         $('#chatInput').focus();
@@ -594,7 +663,30 @@
       var models = await AI.listModels(p);
       p.models = Array.from(new Set(p.models.concat(models)));
       Store.save(); UI.renderModels(); UI.renderSettingsSubs();
-      $('#pvStatus').textContent = '✓ ' + models.length + ' models found' + (models.length ? ' — e.g. ' + models.slice(0, 2).join(', ') : '');
+      if (p.type === 'echo') {
+        $('#pvStatus').textContent = '✓ ' + p.models.length + ' models';
+        return;
+      }
+      // verify every model actually serves chat before offering it — dead catalog entries are removed
+      p.modelStatus = p.modelStatus || {};
+      var queue = p.models.filter(function (m) { return !p.modelStatus[m]; });
+      var done = 0, dead = 0;
+      async function worker() {
+        while (queue.length) {
+          var m = queue.shift();
+          var st = await AI.probeModel(p, m);
+          p.modelStatus[m] = st;
+          if (st === 'dead') dead++;
+          done++;
+          $('#pvStatus').textContent = 'verifying ' + done + '/' + (done + queue.length) + ' models…';
+        }
+      }
+      var workers = [];
+      for (var k = 0; k < Math.min(6, queue.length); k++) workers.push(worker());
+      await Promise.all(workers);
+      p.models = p.models.filter(function (m) { return p.modelStatus[m] !== 'dead'; });
+      Store.save(); UI.renderModels(); UI.renderSettingsSubs();
+      $('#pvStatus').textContent = '✓ ' + p.models.length + ' working models' + (dead ? ' · ' + dead + ' unavailable removed' : '');
     } catch (e) {
       $('#pvStatus').textContent = '✗ ' + AI.friendlyError(e).split('\n')[0];
     }
@@ -673,7 +765,8 @@
 
   /* ================= boot: render everything ================= */
   function renderAll() {
-    UI.renderHome(); UI.renderFiles(db.vfs[state.curPath] || [], state.curPath, false);
+    var ws = Store.ws();
+    UI.renderHome(); UI.renderFiles(ws ? (ws.vfs[state.curPath] || []) : [], state.curPath, false);
     UI.renderPlugins(); UI.renderMarket(''); UI.renderSkills(); UI.renderRules();
     UI.renderModels(); UI.renderModelSheet(db.settings.providerId);
     UI.renderMemory(); UI.renderMCP(); UI.renderHooks(); UI.renderAutos();
@@ -730,7 +823,7 @@
     if ((t = e.target.closest('[data-model]'))) { pickModel(t.getAttribute('data-model'), null); return; }
     if ((t = e.target.closest('[data-mem]'))) { openMemorySheet(t.getAttribute('data-mem')); return; }
     if ((t = e.target.closest('[data-mcp-test]'))) { testMcp(+t.getAttribute('data-mcp-test')); return; }
-    if ((t = e.target.closest('[data-theme]'))) {
+    if ((t = e.target.closest('.thc[data-theme]'))) {
       db.settings.theme = t.getAttribute('data-theme');
       Store.save(); applyAppearance(); UI.renderSettingsSubs();
       return;
@@ -782,7 +875,9 @@
   // hero & quick actions
   $('#hero').addEventListener('click', function () {
     var s = Store.active();
-    if (s && s.messages.length) s = Store.newSession();
+    if (!s) s = Store.newSession();
+    else if (s.messages.length) s = Store.newSession();
+    state.curPath = 'workspace';
     UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); openChat();
   });
   // delete current chat
@@ -863,12 +958,14 @@
     H.openSheet('sheet-newfile');
   });
   $('#nfSave').addEventListener('click', function () {
+    var s = Store.ws();
+    if (!s) { H.toast('Start a chat first — each chat has its own workspace'); return; }
     var name = $('#nfName').value.trim();
     if (!name) { H.toast('Name required'); return; }
     var path = state.curPath === '' ? 'workspace' : state.curPath;
-    db.vfs[path] = db.vfs[path] || [];
-    db.vfs[path].push({ n: name, t: name.endsWith('.md') ? 'doc' : 'code', s: '0 KB' });
-    db.vfsContent[path + '/' + name] = '';
+    s.vfs[path] = s.vfs[path] || [];
+    s.vfs[path].push({ n: name, t: name.endsWith('.md') ? 'doc' : 'code', s: '0 KB' });
+    s.vfsContent[path + '/' + name] = '';
     Store.save(); goPath(path); H.closeSheets(); H.toast(name + ' created');
   });
   $('#fileImport').addEventListener('change', function (e) {
@@ -971,16 +1068,22 @@
     H.closeSheets(); H.toast('Provider deleted');
   });
 
-  // add model manually
-  $('#addModelBtn').addEventListener('click', function () {
+  // add model manually — probe it first, only working models are added
+  $('#addModelBtn').addEventListener('click', async function () {
     var v = $('#addModelIn').value.trim();
     if (!v) return;
     var p = Store.activeProvider();
+    if (p.type === 'echo') { H.toast('Echo is the offline demo — pick a real provider'); return; }
+    $('#addModelIn').value = '';
+    H.toast('Testing ' + v + '…');
+    var st = await AI.probeModel(p, v);
+    if (st === 'dead') { H.toast('✗ ' + v + ' is not available on this endpoint'); return; }
+    p.modelStatus = p.modelStatus || {};
     if (p.models.indexOf(v) < 0) p.models.push(v);
+    p.modelStatus[v] = st;
     db.settings.model = v;
     Store.save(); UI.renderModels(); UI.renderModelSheet(db.settings.providerId); UI.renderChatHead(Store.active()); UI.renderSettingsSubs();
-    $('#addModelIn').value = '';
-    H.toast('Model → ' + v);
+    H.toast(st === 'ok' ? '✓ ' + v + ' works — selected' : v + ' added (endpoint did not confirm)');
   });
 
   // runtime selects & switches
@@ -1273,6 +1376,18 @@
     origSetTab(id);
     if (id === 'files') goPath(state.curPath); // agent writes files mid-session — always render fresh
   };
+
+  // effort pill — cycles Low → High → Max, really changes how the model answers
+  function renderEffortPill() {
+    var el = $('#effortPillTxt');
+    if (el) el.textContent = 'Effort · ' + db.settings.effort;
+  }
+  $('#effortPill').addEventListener('click', function () {
+    var order = ['Low', 'High', 'Max'];
+    db.settings.effort = order[(order.indexOf(db.settings.effort) + 1) % order.length];
+    Store.save(); applyAppearance(); renderEffortPill(); refreshCtx();
+    H.toast('Effort → ' + db.settings.effort + ' (' + EFFORT_LINE[db.settings.effort] + ')');
+  });
 
   /* ================= start ================= */
   if (window.ResizeObserver) new ResizeObserver(H.fit).observe(root);

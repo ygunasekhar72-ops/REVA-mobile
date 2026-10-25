@@ -10,19 +10,21 @@ In the APK, API calls go out directly — no CORS proxy needed. Point a custom p
 
 ## Features
 
-- **Agent with real tools** — the model writes/reads/lists/deletes workspace files (`write_file`, `read_file`, `list_files`, `delete_file`), saves memories (`save_memory`), installs plugins for you (`add_plugin`), and runs a harness console (`run_command`) in a loop until the task is done. Tool calls render as compact cards ("Writing pomodoro.html · 3.1 KB") instead of code dumps.
-- **Thinking display** — reasoning models' thought streams (`reasoning_content`) are captured and shown in a collapsible "Thinking" block per reply.
-- **Chat with any OpenAI-compatible provider** — streaming, stop/retry, per-session model choice, fallback provider, markdown with syntax-highlighted code (long code blocks collapse).
-- **Workspace IDE** — full-window overlay with file tree, code editor (Ctrl+S), sandboxed live preview for HTML apps, and a harness terminal shared with the model.
-- **Sessions** — autosaved, resumable, deletable, with per-session token estimates.
-- **Context management** — live context meter, auto-compaction with model or local summaries, checkpoint snapshots.
-- **Memory** — manual notes plus AI-saved memories (`save_memory`), all injected into the system prompt every turn.
-- **Skills & plugins** — user-authored skills and plugin instruction packs; the AI can build and install plugins on request.
-- **Permissions** — five agent modes (Plan / Build / Edit / Yolo / Guard) plus user-defined allow-rules.
-- **Files** — virtual workspace, file/folder/image upload, image previews, and read-only mounting of a real folder via the File System Access API (Chromium).
-- **MCP servers** — real Model Context Protocol handshake over Streamable HTTP (`initialize` → `tools/list`) with tool counts.
-- **Hooks & automations** — JSON webhooks on session start / prompt / done / compaction; scheduled prompts.
-- **Three monochrome themes**, 3D depth / radius / text-size controls, reduced-motion support, installable as a PWA.
+- **Live agent activity feed** — a ZCode-style feed in every reply: Thinking rows with durations, tool calls as they happen (Writing `index.html` · 6.8 KB), terminal commands with their output, and a spinner while the model works. Navigating away mid-build is safe — coming back re-attaches the live stream.
+- **Agent with real tools** — the model writes/reads/lists/deletes workspace files, saves memories, installs plugins for you, and runs a harness console — in a loop until the task is done.
+- **Per-chat workspaces** — every new chat starts with its own empty workspace; the IDE, Files tab, attachments and tools all scope to the active chat.
+- **Workspace IDE** — full-window overlay with file tree, syntax-highlighted editor (Ctrl+S), sandboxed live preview for HTML apps, and a real harness terminal with command history.
+- **Working effort control** — Low/High/Max right in the chat composer; it shapes the system prompt and sends `reasoning_effort` to supporting endpoints (auto-detected, gracefully skipped elsewhere).
+- **Model verification** — fetching models probes every entry with a real request; dead catalog entries (NVIDIA lists dozens) are removed and only verified-working models get the ✓ badge. Manual adds are tested before being accepted.
+- **Chat with any OpenAI-compatible provider** — streaming, stop/retry, per-session model choice, fallback provider, up to 2M-token context window setting.
+- **Smart compaction** — auto/manual compaction summarizes only the older slice (model-made or local), keeps the recent messages live in context, merges summaries incrementally, and retains the newest checkpoints.
+- **Practical modes** — Plan mode literally withholds file-modifying tools (read-only + planning), Guard disables destructive ones, Build/Edit/Yolo shape behavior via the prompt.
+- **Memory** — manual notes plus AI-saved memories (`save_memory`), injected into the system prompt every turn.
+- **Skills & plugins** — user-authored skills (plus a one-click starter pack) and plugin packs the AI can build and install itself.
+- **Files** — per-chat virtual workspace, file/folder/image upload, image previews, read-only mounting of a real folder (Chromium).
+- **MCP servers** — real Model Context Protocol handshake over Streamable HTTP with tool counts.
+- **Hooks & automations** — JSON webhooks on session lifecycle events; scheduled prompts.
+- **Three monochrome themes**, 3D depth/radius/text-size controls, reduced-motion support, installable as a PWA, and a signed Android APK built by CI.
 
 ## Quick start
 

@@ -60,6 +60,9 @@
       body.tools = opts.tools;
       body.tool_choice = 'auto';
     }
+    if (opts.effort && !opts.provider.noEffort) {
+      body.reasoning_effort = ({ Low: 'low', High: 'medium', Max: 'high' })[opts.effort] || 'medium';
+    }
     return body;
   }
 
@@ -95,9 +98,27 @@
       return echoResult(lastUser, onDelta, onReasoning, signal);
     }
 
-    var res = await fetch(baseUrl(p) + '/chat/completions', {
-      method: 'POST', headers: headers(p), body: JSON.stringify(buildBody(opts)), signal: signal
-    });
+    var res;
+    try {
+      res = await fetch(baseUrl(p) + '/chat/completions', {
+        method: 'POST', headers: headers(p), body: JSON.stringify(buildBody(opts)), signal: signal
+      });
+    } catch (e) {
+      if (signal && signal.aborted) throw e;
+      throw e;
+    }
+    // if this endpoint rejects the reasoning_effort parameter, remember and retry without it
+    if (!res.ok && res.status === 400 && opts.effort && !opts.provider.noEffort) {
+      var errText = await res.text().catch(function () { return ''; });
+      if (/reasoning_effort|unrecognized|unexpected|unknown field|unsupported/i.test(errText)) {
+        opts.provider.noEffort = true;
+        var body2 = buildBody(opts);
+        delete body2.reasoning_effort;
+        res = await fetch(baseUrl(p) + '/chat/completions', {
+          method: 'POST', headers: headers(p), body: JSON.stringify(body2), signal: signal
+        });
+      }
+    }
 
     if (!res.ok) {
       var t = await res.text().catch(function () { return ''; });
@@ -149,6 +170,28 @@
     return { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) };
   }
 
+  /* --- model verification: does this model actually serve chat on this endpoint? --- */
+  async function probeModel(p, model) {
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var to = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
+    try {
+      var res = await fetch(baseUrl(p) + '/chat/completions', {
+        method: 'POST', headers: headers(p),
+        body: JSON.stringify({ model: model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false }),
+        signal: ctrl ? ctrl.signal : undefined
+      });
+      if (res.ok) return 'ok';
+      if (res.status === 404) return 'dead';
+      var t = await res.text().catch(function () { return ''; });
+      if (/not found|does not exist|no such model|unknown model|invalid model/i.test(t)) return 'dead';
+      return 'unknown'; // 429/5xx/timeout — not the model's fault
+    } catch (e) {
+      return 'unknown';
+    } finally {
+      if (to) clearTimeout(to);
+    }
+  }
+
   function friendlyError(e) {
     var m = String(e && e.message || e);
     if (m.indexOf('Failed to fetch') >= 0 || e instanceof TypeError) {
@@ -159,5 +202,5 @@
     return m;
   }
 
-  window.AI = { chat: chat, listModels: listModels, friendlyError: friendlyError };
+  window.AI = { chat: chat, listModels: listModels, probeModel: probeModel, friendlyError: friendlyError };
 })();

@@ -1,8 +1,13 @@
 /* Mono Harness — built-in agent tools + harness console.
-   Tools operate on the workspace VFS and app state only; there is no OS shell.
-   The same command set powers the user-facing console (IDE terminal) and the
-   model's run_command tool. */
+   Tools operate on the ACTIVE CHAT's workspace only (each chat gets its own);
+   there is no OS shell. The same command set powers the user-facing terminal
+   (IDE console) and the model's run_command tool. */
 (function () {
+  function WS() {
+    var s = Store.ws();
+    if (!s) throw new Error('No active chat — each chat has its own workspace');
+    return s;
+  }
   function normPath(p) {
     p = String(p || '').replace(/\\/g, '/').replace(/^\/+/, '');
     if (p === 'workspace') return p;
@@ -22,63 +27,68 @@
   function baseOf(path) {
     return path.slice(path.lastIndexOf('/') + 1);
   }
-  /* make sure every directory segment exists in the VFS tree */
+  /* make sure every directory segment exists in the workspace tree */
   function ensureDirs(path) {
+    var vfs = WS().vfs;
     var parts = path.split('/');
     var acc = '';
     for (var i = 0; i < parts.length - 1; i++) {
       var parent = acc || 'workspace';
       acc = acc ? acc + '/' + parts[i] : parts[i];
-      var list = Store.db.vfs[parent] || (Store.db.vfs[parent] = []);
+      var list = vfs[parent] || (vfs[parent] = []);
       if (!list.some(function (e) { return e.n === parts[i] && e.t === 'dir'; })) {
         list.push({ n: parts[i], t: 'dir', p: acc });
-        Store.db.vfs[acc] = Store.db.vfs[acc] || [];
+        vfs[acc] = vfs[acc] || [];
       }
     }
-    Store.db.vfs[path] = Store.db.vfs[path] || [];
+    vfs[path] = vfs[path] || [];
   }
   function fmtSize(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
 
   var IMPL = {
     write_file: function (a) {
+      var s = WS();
       var path = normPath(a.path);
       var content = String(a.content || '');
       ensureDirs(parentOf(path) || 'workspace');
       var dir = parentOf(path) || 'workspace';
-      var list = Store.db.vfs[dir] || (Store.db.vfs[dir] = []);
+      var list = s.vfs[dir] || (s.vfs[dir] = []);
       var name = baseOf(path);
       var size = fmtSize(content.length);
       var ex = list.find(function (e) { return e.n === name; });
       var isImg = /^data:image\//.test(content);
       if (ex) { ex.s = size; if (ex.t !== 'dir') ex.t = isImg ? 'img' : 'code'; }
       else list.push({ n: name, t: isImg ? 'img' : (/\.(md|txt)$/.test(name) ? 'doc' : 'code'), s: size });
-      Store.db.vfsContent[path] = content;
+      s.vfsContent[path] = content;
       Store.save();
       return 'Wrote ' + path + ' (' + size + ')';
     },
     read_file: function (a) {
+      var s = WS();
       var path = normPath(a.path);
-      var c = Store.db.vfsContent[path];
+      var c = s.vfsContent[path];
       if (c === undefined) return 'Error: no such file: ' + path;
       return String(c).slice(0, 6000);
     },
     list_files: function (a) {
+      var s = WS();
       var path = normPath(a.path || 'workspace');
-      var list = Store.db.vfs[path];
+      var list = s.vfs[path];
       if (!list) return 'Error: no such folder: ' + path;
       if (!list.length) return '(empty)';
       return list.map(function (e) { return (e.t === 'dir' ? '[dir]  ' : '       ') + e.n + (e.s ? '  ' + e.s : ''); }).join('\n');
     },
     delete_file: function (a) {
+      var s = WS();
       var path = normPath(a.path);
       var dir = parentOf(path) || 'workspace';
       var name = baseOf(path);
-      var list = Store.db.vfs[dir] || [];
+      var list = s.vfs[dir] || [];
       var before = list.length;
-      Store.db.vfs[dir] = list.filter(function (e) { return e.n !== name; });
-      delete Store.db.vfsContent[path];
+      s.vfs[dir] = list.filter(function (e) { return e.n !== name; });
+      delete s.vfsContent[path];
       Store.save();
-      return Store.db.vfs[dir].length < before ? 'Deleted ' + path : 'Error: no such file: ' + path;
+      return s.vfs[dir].length < before ? 'Deleted ' + path : 'Error: no such file: ' + path;
     },
     save_memory: function (a) {
       var title = String(a.title || '').trim() || 'note.md';
@@ -95,7 +105,7 @@
       var id = 'p' + H.uid();
       Store.db.plugins.push({ id: id, name: name, desc: String(a.description || '').slice(0, 120), prompt: prompt.slice(0, 1200), source: 'ai', on: true });
       Store.save();
-      return 'Added plugin "' + name + '" (' + id + ') — enabled. Tell the user to reload nothing; it applies next turn.';
+      return 'Added plugin "' + name + '" (' + id + ') — enabled; applies from the next turn.';
     },
     run_command: function (a) {
       return Console.exec(String(a.command || '')).out;
@@ -111,23 +121,23 @@
     if (name === 'delete_file') return { label: 'Deleting ' + (args.path || ''), meta: ok ? 'done' : 'failed', ok: ok };
     if (name === 'save_memory') return { label: 'Saving memory ' + (args.title || ''), meta: args.tag || 'project', ok: ok };
     if (name === 'add_plugin') return { label: 'Adding plugin ' + (args.name || ''), meta: 'by AI', ok: ok };
-    if (name === 'run_command') return { label: 'Console · ' + (args.command || ''), meta: '', ok: ok };
+    if (name === 'run_command') return { label: '❯ ' + (args.command || ''), meta: '', ok: ok, cmd: args.command, out: s };
     return { label: name, meta: '', ok: ok };
   }
 
   var SCHEMAS = [
-    { type: 'function', function: { name: 'write_file', description: 'Create or overwrite a file in the harness workspace. Use for code, notes, HTML apps. path is relative to workspace, e.g. "app/index.html".', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },
+    { type: 'function', function: { name: 'write_file', description: 'Create or overwrite a file in this chat\'s workspace. Use for code, notes, HTML apps. path is relative to workspace, e.g. "app/index.html".', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },
     { type: 'function', function: { name: 'read_file', description: 'Read a workspace file (up to 6000 chars).', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'list_files', description: 'List a workspace folder.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'defaults to workspace root' } } } } },
     { type: 'function', function: { name: 'delete_file', description: 'Delete a workspace file.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'save_memory', description: 'Persist something the user wants remembered across sessions. tag: user | feedback | project | reference.', parameters: { type: 'object', properties: { title: { type: 'string', description: 'file-style name, e.g. deploy-notes.md' }, body: { type: 'string' }, tag: { type: 'string' } }, required: ['title', 'body'] } } },
     { type: 'function', function: { name: 'add_plugin', description: 'Create and install a plugin (a persistent instruction pack) for the user. Use when the user asks for a plugin, persona, or standing behavior.', parameters: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, prompt: { type: 'string', description: 'the instruction block injected into the system prompt while enabled' } }, required: ['name', 'prompt'] } } },
-    { type: 'function', function: { name: 'run_command', description: 'Run a harness console command. Available: ls [path], tree, cat <file>, rm <file>, model, memories, plugins, status, help.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } }
+    { type: 'function', function: { name: 'run_command', description: 'Run a harness console command. Available: ls [path], tree, cat <file>, rm <file>, mkdir <dir>, mv <a> <b>, echo <text>, wc <file>, grep <pat> <file>, date, model, memories, plugins, status, help.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } }
   ];
 
   /* ---------- harness console (user terminal + run_command) ---------- */
   var Console = {
-    HELP: 'commands: ls [path] · tree · cat <file> · rm <file> · model · memories · plugins · status · clear · help',
+    HELP: 'commands: ls [path] · tree · cat <file> · rm <file> · mkdir <dir> · mv <a> <b> · echo <text> · wc <file> · grep <pat> <file> · date · model · memories · plugins · status · clear · help',
     exec: function (line) {
       line = String(line || '').trim();
       var parts = line.split(/\s+/);
@@ -139,18 +149,43 @@
         else if (cmd === 'ls') out = IMPL.list_files({ path: arg || 'workspace' });
         else if (cmd === 'tree') {
           var lines = [];
-          Object.keys(Store.db.vfs).sort().forEach(function (p) {
+          Object.keys(WS().vfs).sort().forEach(function (p) {
             lines.push(p + '/');
-            (Store.db.vfs[p] || []).forEach(function (e) { lines.push('  ' + e.n + (e.t === 'dir' ? '/' : '')); });
+            (WS().vfs[p] || []).forEach(function (e) { lines.push('  ' + e.n + (e.t === 'dir' ? '/' : '')); });
           });
           out = lines.join('\n') || '(empty)';
         }
         else if (cmd === 'cat') out = IMPL.read_file({ path: arg });
         else if (cmd === 'rm') out = IMPL.delete_file({ path: arg });
+        else if (cmd === 'mkdir') { ensureDirs(normPath(arg)); Store.save(); out = 'Created ' + normPath(arg); }
+        else if (cmd === 'mv') {
+          var a = normPath((arg.split(/\s+/)[0] || ''));
+          var b = normPath((arg.split(/\s+/)[1] || ''));
+          var src = WS().vfsContent[a];
+          if (src === undefined) out = 'Error: no such file: ' + a;
+          else { IMPL.write_file({ path: b, content: src }); IMPL.delete_file({ path: a }); out = 'Moved ' + a + ' → ' + b; }
+        }
+        else if (cmd === 'echo') out = arg;
+        else if (cmd === 'wc') {
+          var c = WS().vfsContent[normPath(arg)];
+          if (c === undefined) out = 'Error: no such file: ' + arg;
+          else { c = String(c); out = c.split('\n').length + ' lines · ' + (c.match(/\S+/g) || []).length + ' words · ' + c.length + ' chars'; }
+        }
+        else if (cmd === 'grep') {
+          var pat = arg.split(/\s+/)[0] || '';
+          var f = normPath(arg.split(/\s+/).slice(1).join(' '));
+          var body = WS().vfsContent[f];
+          if (body === undefined) out = 'Error: no such file: ' + f;
+          else {
+            var hits = String(body).split('\n').map(function (l, n) { return l.toLowerCase().indexOf(pat.toLowerCase()) >= 0 ? (n + 1) + ': ' + l.trim().slice(0, 90) : null; }).filter(Boolean);
+            out = hits.length ? hits.join('\n') : '(no matches)';
+          }
+        }
+        else if (cmd === 'date') out = new Date().toLocaleString();
         else if (cmd === 'model') out = Store.db.settings.model + ' · ' + Store.activeProvider().name;
         else if (cmd === 'memories') out = Store.db.memories.length ? Store.db.memories.map(function (m) { return m.tag + ' · ' + m.title; }).join('\n') : '(none)';
         else if (cmd === 'plugins') out = Store.db.plugins.length ? Store.db.plugins.map(function (p) { return (p.on ? 'on  ' : 'off ') + p.name + (p.source === 'ai' ? ' · built by AI' : ''); }).join('\n') : '(none)';
-        else if (cmd === 'status') out = 'provider ' + Store.activeProvider().name + ' · model ' + Store.db.settings.model + ' · tools ' + (Store.db.settings.tools !== false ? 'on' : 'off') + ' · mode ' + Store.db.settings.mode;
+        else if (cmd === 'status') out = 'provider ' + Store.activeProvider().name + ' · model ' + Store.db.settings.model + ' · tools ' + (Store.db.settings.tools !== false ? 'on' : 'off') + ' · mode ' + Store.db.settings.mode + ' · effort ' + Store.db.settings.effort;
         else if (cmd === 'clear') return { out: '', clear: true };
         else out = 'Unknown command: ' + cmd + '\n' + Console.HELP;
       } catch (e) { out = 'Error: ' + e.message; }

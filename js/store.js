@@ -2,7 +2,6 @@
 (function () {
   var KEY = 'mono-harness-v3';
   var PREV_KEY = 'mono-harness-v2';
-
   var DEFAULTS = {
     settings: {
       providerId: 'echo', model: 'echo-1',
@@ -30,9 +29,7 @@
     activeId: null,
     autos: [],
     hooks: [],
-    mcp: [],             // [{name, url, on, ok, tools}]
-    vfs: { workspace: [] },
-    vfsContent: {}
+    mcp: []             // [{name, url, on, ok, tools}]
   };
 
   function migrateV2(saved) {
@@ -41,11 +38,26 @@
     Object.keys(saved).forEach(function (k) {
       if (k === 'settings') { Object.assign(db.settings, saved.settings || {}, { tools: saved.settings && saved.settings.tools !== undefined ? saved.settings.tools : true }); return; }
       if (k === 'plugins' || k === 'installed') return;
-      if (k === 'vfs' || k === 'vfsContent') { Object.assign(db[k], saved[k] || {}); return; }
+      if (k === 'vfs' || k === 'vfsContent') { db[k] = saved[k]; return; } // kept for workspace migration below
       if (db[k] === undefined) return;
       db[k] = saved[k];
     });
+    migrateWorkspaces(db, saved);
+    delete db.vfs; delete db.vfsContent;
     return db;
+  }
+
+  /* Each chat owns its workspace. Sessions from before this change inherit
+     the legacy global workspace; every new session starts empty. */
+  function migrateWorkspaces(db, saved) {
+    var legacyVfs = (saved && saved.vfs) || { workspace: [] };
+    var legacyContent = (saved && saved.vfsContent) || {};
+    db.sessions.forEach(function (s) {
+      if (!s.vfs) {
+        s.vfs = JSON.parse(JSON.stringify(legacyVfs));
+        s.vfsContent = JSON.parse(JSON.stringify(legacyContent));
+      }
+    });
   }
 
   function load() {
@@ -64,10 +76,11 @@
       var db = JSON.parse(JSON.stringify(DEFAULTS));
       Object.keys(saved).forEach(function (k) {
         if (k === 'settings') { Object.assign(db.settings, saved.settings || {}); return; }
-        if (k === 'vfs' || k === 'vfsContent') { Object.assign(db[k], saved[k] || {}); return; }
+        if (k === 'vfs' || k === 'vfsContent') return; // legacy global workspace — migrated per session below
         if (db[k] === undefined) return;
         db[k] = saved[k];
       });
+      migrateWorkspaces(db, saved);
       return db;
     } catch (e) {
       return JSON.parse(JSON.stringify(DEFAULTS));
@@ -85,9 +98,10 @@
       }
       localStorage.setItem(KEY, JSON.stringify(out));
     } catch (e) {
-      // quota exceeded — drop heaviest payload and retry once
+      // quota exceeded — drop the heaviest payload (per-chat file contents) and retry once
       try {
-        var lean = Object.assign({}, db, { vfsContent: {} });
+        var lean = JSON.parse(JSON.stringify(db));
+        lean.sessions = (lean.sessions || []).map(function (s) { return Object.assign({}, s, { vfsContent: {} }); });
         localStorage.setItem(KEY, JSON.stringify(lean));
       } catch (e2) { /* storage full; app keeps working in memory */ }
     }
@@ -114,7 +128,9 @@
         messages: [], todos: [],
         model: db.settings.model,
         createdAt: Date.now(), updatedAt: Date.now(),
-        summary: null, compactions: []
+        summary: null, compactions: [],
+        vfs: { workspace: [] },          // every chat gets its own empty workspace
+        vfsContent: {}
       };
       db.sessions.unshift(s);
       if (db.sessions.length > 40) db.sessions.length = 40;
@@ -122,11 +138,16 @@
       persist();
       return s;
     },
+    /* the active chat's workspace (vfs + vfsContent), created on demand */
+    ws: function () {
+      var s = this.active();
+      if (!s) return null;
+      if (!s.vfs) { s.vfs = { workspace: [] }; s.vfsContent = {}; }
+      return s;
+    },
     wipe: function (parts) {
-      (parts || ['sessions', 'memories', 'autos', 'hooks', 'vfs', 'vfsContent']).forEach(function (p) {
+      (parts || ['sessions', 'memories', 'autos', 'hooks']).forEach(function (p) {
         if (p === 'sessions') { db.sessions = []; db.activeId = null; }
-        else if (p === 'vfs') { db.vfs = JSON.parse(JSON.stringify(DEFAULTS.vfs)); }
-        else if (p === 'vfsContent') { db.vfsContent = JSON.parse(JSON.stringify(DEFAULTS.vfsContent)); }
         else db[p] = JSON.parse(JSON.stringify(DEFAULTS[p]));
       });
       persist();

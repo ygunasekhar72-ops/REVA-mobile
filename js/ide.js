@@ -23,9 +23,11 @@
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
   function allFiles() {
+    var s = Store.ws();
     var out = [];
-    Object.keys(Store.db.vfs).sort().forEach(function (dir) {
-      (Store.db.vfs[dir] || []).forEach(function (f) {
+    if (!s) return out;
+    Object.keys(s.vfs).sort().forEach(function (dir) {
+      (s.vfs[dir] || []).forEach(function (f) {
         if (f.t !== 'dir') out.push({ path: dir + '/' + f.n, n: f.n });
       });
     });
@@ -40,7 +42,7 @@
       var sel = f.path === curPath ? ' sel' : '';
       var ico = /\.html?$/.test(f.n) ? 'code-2' : /\.(md|txt)$/.test(f.n) ? 'file-text' : 'file-code';
       return '<button class="ide-row' + sel + '" data-idefile="' + esc(f.path) + '"><i data-lucide="' + ico + '"></i><span>' + esc(f.n) + '</span></button>';
-    }).join('') || '<p class="ide-empty">No files yet.<br>Ask the model to write one,<br>or use the console: <b>help</b></p>';
+    }).join('') || '<p class="ide-empty">' + (Store.active() ? 'No files yet.<br>Ask the model to write one,<br>or use the console: <b>help</b>' : 'Each chat has its own<br>workspace — start a chat,<br>then build here.') + '</p>';
     if (window.lucide) try { lucide.createIcons({ attrs: { width: 14, height: 14 } }); } catch (e) {}
     tree.querySelectorAll('[data-idefile]').forEach(function (b) {
       b.addEventListener('click', function () { IDE.loadFile(b.getAttribute('data-idefile')); });
@@ -50,7 +52,8 @@
   function loadFile(path) {
     if (dirty && !confirm('Discard unsaved changes to ' + curPath + '?')) return;
     curPath = path;
-    var c = Store.db.vfsContent[path];
+    var s = Store.ws();
+    var c = s ? s.vfsContent[path] : undefined;
     $('#ideEditor').value = c === undefined ? '' : String(c);
     dirty = false;
     $('#idePath').textContent = path;
@@ -71,8 +74,9 @@
 
   function showPreview(path) {
     var frame = $('#ideFrame'), holder = $('#idePreviewWrap');
-    if (path && Store.db.vfsContent[path] !== undefined) {
-      frame.setAttribute('srcdoc', Store.db.vfsContent[path]);
+    var s = Store.ws();
+    if (path && s && s.vfsContent[path] !== undefined) {
+      frame.setAttribute('srcdoc', s.vfsContent[path]);
       $('#idePrevLabel').textContent = path;
       holder.style.display = '';
     } else {
@@ -84,7 +88,8 @@
 
   function save() {
     if (!curPath) return;
-    Tools.run('write_file', { path: curPath, content: $('#ideEditor').value });
+    var r = Tools.run('write_file', { path: curPath, content: $('#ideEditor').value });
+    if (r.indexOf('Error') === 0) { IDE.print(r); return; }
     dirty = false;
     IDE.print('saved ' + curPath, 'dim');
     refreshTree();
@@ -128,8 +133,20 @@
     $('#ideEditor').addEventListener('keydown', function (e) {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
     });
+    var cmdHistory = [], histPos = -1;
     $('#ideCmd').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); runCmd(); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var line = $('#ideCmd').value;
+        if (line.trim()) { cmdHistory.push(line); histPos = cmdHistory.length; }
+        runCmd();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (histPos > 0) { histPos--; $('#ideCmd').value = cmdHistory[histPos] || ''; }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (histPos < cmdHistory.length) { histPos++; $('#ideCmd').value = cmdHistory[histPos] || ''; }
+      }
     });
     $('#ideNewFile').addEventListener('click', function () {
       var name = prompt('New file path (e.g. app/index.html)');
