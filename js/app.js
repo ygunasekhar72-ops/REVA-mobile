@@ -79,7 +79,7 @@
   /* ================= system prompt & context ================= */
   function sysPrompt() {
     var s = db.settings;
-    var p = ['You are the assistant inside Mono Harness — a minimal, local-first mobile AI harness. Be concise and helpful.'];
+    var p = ['You are the assistant inside REVA — a minimal, local-first mobile AI harness. Be concise and helpful.'];
     p.push('Mode — ' + s.mode + ': ' + MODE_DESC[s.mode] + '.');
     p.push('Reasoning effort: ' + s.effort + '.');
     if (s.think) p.push('Think step by step for non-trivial requests before answering.');
@@ -383,7 +383,7 @@
   function fireHook(event, payload) {
     db.hooks.filter(function (h) { return h.on && h.event === event; }).forEach(function (h) {
       fetch(h.url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ app: 'mono-harness', event: event, payload: payload, ts: Date.now() })
+        body: JSON.stringify({ app: 'reva', event: event, payload: payload, ts: Date.now() })
       }).catch(function () {});
     });
   }
@@ -1085,7 +1085,7 @@
   $('#hkTest').addEventListener('click', function () {
     var url = $('#hkUrl').value.trim();
     if (!url) { H.toast('URL required'); return; }
-    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: 'mono-harness', event: 'test' }) })
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app: 'reva', event: 'test' }) })
       .then(function () { H.toast('Test sent'); })
       .catch(function () { H.toast('Test failed — check URL / CORS'); });
   });

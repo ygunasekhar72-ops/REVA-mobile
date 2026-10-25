@@ -1,6 +1,6 @@
 {
-  "name": "Mono Harness",
-  "short_name": "Mono Harness",
+  "name": "REVA",
+  "short_name": "REVA",
   "description": "A minimal, local-first, mobile-styled AI harness for any OpenAI-compatible provider.",
   "start_url": "./",
   "display": "standalone",

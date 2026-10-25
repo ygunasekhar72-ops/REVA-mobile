@@ -55,7 +55,7 @@
       jsonrpc: '2.0', id: 1, method: 'initialize',
       params: {
         protocolVersion: PROTOCOL, capabilities: {},
-        clientInfo: { name: 'mono-harness', version: '1.0.0' }
+        clientInfo: { name: 'reva', version: '1.0.0' }
       }
     });
     if (!init.ok && init.status !== 202) {

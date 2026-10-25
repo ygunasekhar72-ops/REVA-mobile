@@ -1,6 +1,12 @@
-# Mono Harness
+# REVA
 
-A minimal, local-first, mobile-styled AI harness that runs entirely in your browser. Bring any OpenAI-compatible endpoint — OpenAI, OpenRouter, Groq, a local Ollama or LM Studio, or anything that speaks `/chat/completions` — and get a phone-shaped agent with sessions, memory, context compaction, plugins, skills, MCP server discovery and webhooks. No build step, no framework, no backend, no telemetry.
+A minimal, local-first, mobile-styled AI harness that runs entirely in your browser — and on Android as an APK. Bring any OpenAI-compatible endpoint — OpenAI, OpenRouter, Groq, a local Ollama or LM Studio, NVIDIA NIM, or anything that speaks `/chat/completions` — and get a phone-shaped agent with an agentic tool loop, workspace IDE, memory, context compaction, plugins, MCP server discovery and webhooks. No build step, no framework, no backend, no telemetry.
+
+## Download for Android
+
+Grab the latest APK from [Releases](../../releases) — built automatically by GitHub Actions on every push to `main`. Install by opening the downloaded file (Android asks to allow installs from the browser). The APK bundles the whole app: it works offline and stores everything on-device.
+
+In the APK, API calls go out directly — no CORS proxy needed. Point a custom provider at e.g. `https://integrate.api.nvidia.com/v1` (NVIDIA NIM), paste your key, fetch models, go.
 
 ## Features
 
@@ -80,6 +86,8 @@ js/ide.js           — workspace IDE (tree, editor, preview, terminal)
 js/app.js           — application controller, agent loop, event wiring
 js/vendor/          — vendored lucide icons (fully offline)
 assets/icon.svg     — app icon
+android/            — minimal WebView wrapper (the APK ships the web app in assets/)
+.github/workflows/  — APK build + release pipeline
 ```
 
 ## Browser support
