@@ -24,6 +24,42 @@
     Yolo: 'be fast and direct; skip caveats',
     Guard: 'call out risks explicitly before anything destructive'
   };
+  /* Starter skill pack — mirrors the capability map of a pro agent runtime */
+  var STARTER_SKILLS = [
+    ['docx', 'Create and edit Word documents; revisions, comments, format-preserving edits, DOCX to PDF/images'],
+    ['pdf', 'PDF production: reports, posters, LaTeX papers, merge/split, text extraction'],
+    ['pptx', 'Build PowerPoint decks from scratch or outlines; read and restyle existing decks'],
+    ['xlsx', 'Excel/CSV/XLSM workbooks: create, edit, analyze, formulas, pivot data'],
+    ['docx-viewer', 'Open and discuss Word files with the user in a document viewer'],
+    ['pdf-viewer', 'Open and discuss PDFs with the user in a viewer'],
+    ['pptx-viewer', 'Open and discuss slide decks with the user in a viewer'],
+    ['xlsx-viewer', 'Open and discuss spreadsheets with the user in a viewer'],
+    ['control-browser', 'Drive a real browser: navigate, click, type, fill forms, screenshot, verify pages'],
+    ['web-gui-tester', 'Black-box test web UIs like a real user: clicks, input, scrolling, visual checks'],
+    ['visualize', 'Interactive charts, simulations and visual tools rendered inline for the user'],
+    ['mermaid-visualizer', 'Turn text into Mermaid flowcharts, architecture and sequence diagrams'],
+    ['excalidraw-diagram', 'Generate Excalidraw diagrams: Obsidian, standard, or animated output'],
+    ['json-canvas', 'Create and edit JSON Canvas boards: mind maps, flows, canvases'],
+    ['obsidian-bases', 'Obsidian Bases (.base): database views, filters, formulas over notes'],
+    ['obsidian-markdown', 'Obsidian-flavored markdown: wikilinks, embeds, callouts, frontmatter, tags'],
+    ['obsidian-cli', 'Manage an Obsidian vault via CLI: notes, tasks, properties, plugin reloads'],
+    ['obsidian-setup', 'Verify and install Obsidian CLI, defuddle and knap tooling'],
+    ['defuddle', 'Extract clean article markdown from web pages, dropping clutter and navigation'],
+    ['knap', 'Render markdown from templates and structured data with the Knap CLI'],
+    ['cloudbase', 'Tencent CloudBase: web apps, mini-programs, cloud functions, databases, hosting'],
+    ['mimosa-security-scan', 'Run a sealed, reproducible deep security scan of a repository'],
+    ['reverse-engineer-anything', 'Reverse engineer binaries, Electron/managed apps, firmware, and web bundles'],
+    ['computer-use', 'Control native desktop apps and the OS UI directly'],
+    ['skill-creator', 'Author new skills: write SKILL.md, improve triggers and wording'],
+    ['plugin-creator', 'Build agent-host plugins and local marketplaces'],
+    ['dynamic-workflows', 'Write and debug multi-agent workflow scripts: fan-out, gating, typed results'],
+    ['configuration-guide', 'Configure extension resources: MCP servers, commands, skills, hooks, plugins'],
+    ['diagnose-commands', 'Diagnose and fix custom slash-command configuration problems'],
+    ['diagnose-hooks', 'Diagnose and fix hook configuration problems: events, matchers, timeouts'],
+    ['diagnose-mcp', 'Diagnose MCP server connection and tool-discovery problems'],
+    ['diagnose-plugins', 'Diagnose plugin and marketplace problems'],
+    ['diagnose-skills', 'Diagnose skill discovery: shadowing, precedence, disabled skills']
+  ];
   var GREET = { en: ['Good morning', 'Good afternoon', 'Good evening'], hi: ['सुप्रभात', 'नमस्ते', 'शुभ संध्या'], de: ['Guten Morgen', 'Guten Tag', 'Guten Abend'] };
 
   /* ================= appearance ================= */
@@ -979,6 +1015,16 @@
     H.openSheet('sheet-skill'); H.icons();
   }
   $('#addSkill').addEventListener('click', function () { openSkillSheet(null); });
+  $('#importSkills').addEventListener('click', function () {
+    var added = 0;
+    STARTER_SKILLS.forEach(function (s) {
+      var exists = db.skills.some(function (x) { return x.name.toLowerCase() === s[0].toLowerCase(); });
+      if (!exists) { db.skills.push({ id: 'sk' + H.uid(), name: s[0], desc: s[1], on: true }); added++; }
+    });
+    if (!added) { H.toast('Starter pack already imported'); return; }
+    Store.save(); UI.renderSkills(); UI.renderSettingsSubs(); refreshCtx();
+    H.toast(added + ' skills imported');
+  });
   $('#skSave').addEventListener('click', function () {
     var name = $('#skName').value.trim();
     if (!name) { H.toast('Name required'); return; }
@@ -1206,6 +1252,12 @@
       $('#storeUse').textContent = fmtSize(bytes) + ' of ~5 MB used';
     } catch (e) {}
   }
+
+  var origSetTab = H.setTab;
+  H.setTab = function (id) {
+    origSetTab(id);
+    if (id === 'files') goPath(state.curPath); // agent writes files mid-session — always render fresh
+  };
 
   /* ================= start ================= */
   if (window.ResizeObserver) new ResizeObserver(H.fit).observe(root);

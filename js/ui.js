@@ -127,7 +127,7 @@
           '<i data-lucide="x" class="chev" style="width:15px;height:15px;cursor:pointer" data-delskill="' + s.id + '"></i>' +
           '<label class="sw"><input type="checkbox" data-toggle="skill:' + s.id + '"' + (s.on ? ' checked' : '') + '/><i></i></label></div>';
       }).join('') ||
-        '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:12px 0">No skills yet — add one with the + button</p>';
+        '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:12px 0">No skills yet — add one with + or import the starter pack</p>';
       var n = skills.filter(function (s) { return s.on; }).length;
       $('#setSkillSub').textContent = n + ' of ' + skills.length + ' enabled';
       $('#skillMaster').checked = skills.length > 0 && n === skills.length;
