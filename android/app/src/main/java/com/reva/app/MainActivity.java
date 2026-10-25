@@ -93,6 +93,9 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new ShellStream("window.__revaTermOut", true), "REVAShell");
         web.addJavascriptInterface(new ShellStream("window.__revaAgentOut", false), "REVAAgent");
 
+        // Prepare the shell environment at launch: busybox copy + ~/.mkshrc
+        try { new ShellStream("none", true).setupEnv(); } catch (Exception ignored) { }
+
         web.loadUrl("file:///android_asset/index.html");
     }
 
@@ -153,6 +156,12 @@ public class MainActivity extends Activity {
         }
 
         /** mksh profile: pkg installer + busybox helper on PATH */
+        /** busybox copy + shell profile — idempotent, safe at every launch */
+        void setupEnv() {
+            busyboxPath();
+            writeProfile();
+        }
+
         private void writeProfile() {
             try {
                 File home = getFilesDir();
@@ -204,7 +213,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public synchronized void start() {
             stop();
-            if (pty) writeProfile();
+            setupEnv();
             String bb = busyboxPath();
             try {
                 if (pty && !bb.isEmpty()) {
