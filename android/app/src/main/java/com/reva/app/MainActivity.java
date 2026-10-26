@@ -93,6 +93,8 @@ public class MainActivity extends Activity {
         // only ever travels as bytes through the streams.
         web.addJavascriptInterface(new ShellStream("window.__revaTermOut", true), "REVAShell");
         web.addJavascriptInterface(new ShellStream("window.__revaAgentOut", false), "REVAAgent");
+        // connected-app automations: real app detection + launch
+        web.addJavascriptInterface(new AppsBridge(), "REVAApps");
 
         // Prepare the shell environment at launch: busybox copy + ~/.mkshrc +
         // REVA Linux rootfs. Background thread — first-run extraction of the
@@ -131,6 +133,46 @@ public class MainActivity extends Activity {
                         } catch (Exception ignored) { }
                     }
                 });
+            }
+        }
+    }
+
+    /** Launchable apps on this device, for connect-app automations (max 3). */
+    private class AppsBridge {
+        @android.webkit.JavascriptInterface
+        public String listApps() {
+            try {
+                android.content.pm.PackageManager pm = getPackageManager();
+                Intent q = new Intent(Intent.ACTION_MAIN);
+                q.addCategory(Intent.CATEGORY_LAUNCHER);
+                java.util.List<android.content.pm.ResolveInfo> rl = pm.queryIntentActivities(q, 0);
+                org.json.JSONArray arr = new org.json.JSONArray();
+                java.util.TreeSet<String> seen = new java.util.TreeSet<>();
+                for (android.content.pm.ResolveInfo ri : rl) {
+                    String pkg = ri.activityInfo.packageName;
+                    if ("com.reva.app".equals(pkg) || !seen.add(pkg)) continue;
+                    String label = String.valueOf(ri.loadLabel(pm));
+                    org.json.JSONObject o = new org.json.JSONObject();
+                    o.put("pkg", pkg);
+                    o.put("label", label);
+                    arr.put(o);
+                }
+                return arr.toString();
+            } catch (Exception e) {
+                return "[]";
+            }
+        }
+
+        @android.webkit.JavascriptInterface
+        public String launchApp(String pkg) {
+            try {
+                Intent i = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (i == null) return "no such app";
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return "opened " + pkg;
+            } catch (Exception e) {
+                return "error: " + e.getMessage();
             }
         }
     }

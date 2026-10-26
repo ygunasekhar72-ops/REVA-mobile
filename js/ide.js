@@ -3,6 +3,7 @@
 (function () {
   var $ = H.$;
   var curPath = null, dirty = false;
+  var tabs = []; // open file paths — VS Code-style editor tabs
 
   function open(path) {
     var ide = $('#ide');
@@ -52,15 +53,54 @@
   function loadFile(path) {
     if (dirty && !confirm('Discard unsaved changes to ' + curPath + '?')) return;
     curPath = path;
+    if (tabs.indexOf(path) === -1) tabs.push(path);
     var s = Store.ws();
     var c = s ? s.vfsContent[path] : undefined;
     $('#ideEditor').value = c === undefined ? '' : String(c);
     dirty = false;
     $('#idePath').textContent = path;
     refreshHl();
+    refreshTabs();
     refreshTree();
     if (/\.html?$/.test(path)) showPreview(path);
     else showPreview(null);
+  }
+
+  /* VS Code-style tabs: every opened file gets a tab with a close X */
+  function refreshTabs() {
+    var bar = $('#ideTabs');
+    if (!bar) return;
+    bar.innerHTML = tabs.map(function (p) {
+      var n = p.split('/').pop();
+      var active = p === curPath;
+      var dot = (p === curPath && dirty) ? ' ●' : '';
+      return '<button class="ide-tab' + (active ? ' on' : '') + '" data-idetab="' + esc(p) + '"><span>' + esc(n) + dot + '</span><i data-lucide="x" data-idetabx="' + esc(p) + '"></i></button>';
+    }).join('');
+    if (window.lucide) try { lucide.createIcons({ attrs: { width: 12, height: 12 } }); } catch (e) {}
+    bar.querySelectorAll('[data-idetab]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        var x = e.target.closest('[data-idetabx]');
+        if (x) {
+          var p = x.getAttribute('data-idetabx');
+          tabs = tabs.filter(function (t) { return t !== p; });
+          if (curPath === p) { curPath = null; $('#ideEditor').value = ''; refreshHl(); IDE.showPreview(null); $('#idePath').textContent = '—'; }
+          refreshTabs();
+          return;
+        }
+        IDE.loadFile(b.getAttribute('data-idetab'));
+      });
+    });
+  }
+
+  /* line-number gutter, scroll-synced with the editor */
+  function refreshGutter() {
+    var g = $('#ideGutter'), ta = $('#ideEditor');
+    if (!g || !ta) return;
+    var n = ta.value.split('\n').length;
+    var out = '';
+    for (var i = 1; i <= Math.max(n, 1); i++) out += i + '\n';
+    g.textContent = out;
+    g.scrollTop = ta.scrollTop;
   }
 
   /* transparent-textarea-over-highlighted-pre keeps editing simple and code colored */
@@ -92,7 +132,7 @@
     if (r.indexOf('Error') === 0) { IDE.print(r); return; }
     dirty = false;
     IDE.print('saved ' + curPath, 'dim');
-    refreshTree();
+    refreshTree(); refreshTabs();
     if (/\.html?$/.test(curPath)) showPreview(curPath);
   }
 
@@ -124,14 +164,23 @@
     $('#ideClose').addEventListener('click', close);
     $('#ideSave').addEventListener('click', save);
     $('#ideRun').addEventListener('click', function () { if (curPath) showPreview(curPath); });
-    $('#ideEditor').addEventListener('input', function () { dirty = true; refreshHl(); });
+    $('#ideEditor').addEventListener('input', function () { dirty = true; refreshHl(); refreshGutter(); refreshTabs(); });
     $('#ideEditor').addEventListener('scroll', function () {
       var pre = $('#ideHl');
       pre.scrollTop = $('#ideEditor').scrollTop;
       pre.scrollLeft = $('#ideEditor').scrollLeft;
+      var g = $('#ideGutter');
+      if (g) g.scrollTop = $('#ideEditor').scrollTop;
     });
     $('#ideEditor').addEventListener('keydown', function (e) {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        e.preventDefault();
+        var q = prompt('Quick open — file name:');
+        if (!q) return;
+        var hit = allFiles().find(function (f) { return f.path.toLowerCase().indexOf(q.toLowerCase()) >= 0; });
+        if (hit) IDE.loadFile(hit.path); else IDE.print('no file matching "' + q + '"', 'dim');
+      }
     });
     var cmdHistory = [], histPos = -1;
     $('#ideCmd').addEventListener('keydown', function (e) {
@@ -159,6 +208,7 @@
 
   window.IDE = {
     open: open, close: close, refreshTree: refreshTree, loadFile: loadFile,
-    showPreview: showPreview, save: save, print: print, clearOut: clearOut, wire: wire
+    showPreview: showPreview, save: save, print: print, clearOut: clearOut, wire: wire,
+    refreshTabs: refreshTabs, refreshGutter: refreshGutter
   };
 })();

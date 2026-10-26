@@ -136,7 +136,33 @@
       <div class="sec">App</div>
       <button class="row" data-go="ov-general"><span class="tile"><i data-lucide="sliders-horizontal"></i></span><span class="rtxt"><b>General</b><small>Appearance, language, chat, advanced</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
       <button class="row" data-go="ov-cron"><span class="tile"><i data-lucide="calendar-clock"></i></span><span class="rtxt"><b>Automations</b><small id="setAutoSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
-      <button class="row" data-toast="REVA — local build"><span class="tile"><i data-lucide="info"></i></span><span class="rtxt"><b>About</b><small id="aboutVer">REVA · local-first</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-about"><span class="tile"><i data-lucide="info"></i></span><span class="rtxt"><b>About</b><small id="aboutVer">REVA · local-first</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+    </section>
+
+    <!-- ================= ABOUT ================= -->
+    <section class="screen ov with-tabs" id="ov-about">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>About</h2></div>
+      <div class="sec">REVA</div>
+      <div class="row" style="align-items:flex-start;flex-direction:column;gap:6px">
+        <b style="font-size:15px" id="aboutVersion">REVA</b>
+        <small style="font-size:12.5px;color:var(--ink3);line-height:1.6">A local-first mobile AI harness. Your chats, files and keys never leave this device; the agent talks to the AI provider you configure, directly. REVA Linux (bundled Alpine + proot) gives the terminal and agent a real Linux environment, and the background engine keeps work running.</small>
+      </div>
+      <div class="sec">What's inside</div>
+      <div class="row"><span class="rtxt"><b>Agent with real tools</b><small>files, shell, web, browser, plugins, memory</small></span></div>
+      <div class="row"><span class="rtxt"><b>REVA Linux</b><small>Alpine guest · apk packages · /host workspace</small></span></div>
+      <div class="row"><span class="rtxt"><b>Background engine</b><small>agent keeps running from the notification</small></span></div>
+      <div class="row"><span class="rtxt"><b>Plugins & skills</b><small>real tool plugins, starter pack included</small></span></div>
+      <div class="row"><span class="rtxt"><b>Built-in browser, IDE & terminal</b><small>everything local-first</small></span></div>
+      <div class="sec">Storage</div>
+      <div class="row" style="align-items:center;flex-direction:column;gap:6px">
+        <div class="usage meter" style="width:100%"><b id="aboutStore" style="width:12%"></b></div>
+        <small style="font-size:11px;color:var(--ink3)" id="aboutStoreTxt">— of ~5 MB localStorage used</small>
+      </div>
+      <div class="sec">Licenses & credits</div>
+      <div class="row"><span class="rtxt"><b>xterm.js · lucide</b><small>MIT · ISC — terminal + icons</small></span></div>
+      <div class="row"><span class="rtxt"><b>BusyBox · PRoot · Alpine Linux</b><small>GPL-2.0 · GPL-2.0+ · aggregated binaries</small></span></div>
+      <div class="row"><span class="rtxt"><b>Termux / TermFold builds</b><small>proot made app-friendly</small></span></div>
+      <small style="display:block;text-align:center;color:var(--ink3);font-size:11px;padding:10px 0">REVA is MIT-licensed. Full notices in THIRD_PARTY_NOTICES.md.</small>
     </section>
 
     <!-- ================= CHAT ================= -->
@@ -206,6 +232,8 @@
     <!-- ================= MODEL ================= -->
     <section class="screen ov with-tabs" id="ov-model">
       <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Model</h2></div>
+      <div class="sec">Built-in models · free via NVIDIA</div>
+      <div id="builtinModels"></div>
       <div class="sec">Provider · custom supported</div>
       <div id="provCards"></div>
       <div class="sec">Default model · <span id="provNameLbl"></span></div>
@@ -219,7 +247,7 @@
       <div class="row"><span class="rtxt"><b>Extended thinking</b><small>Ask for step-by-step reasoning</small></span><label class="sw"><input type="checkbox" id="swThink"/><i></i></label></div>
       <div class="sec">Runtime</div>
       <div class="row"><span class="rtxt"><b>Stream responses</b><small>Tokens appear as they arrive</small></span><label class="sw"><input type="checkbox" id="swStream" checked/><i></i></label></div>
-      <div class="row"><span class="rtxt"><b>Context window</b><small>Used by the context meter</small></span><select class="inp" id="selCtxK"><option>32</option><option>64</option><option selected>128</option><option>200</option><option>256</option><option>512</option><option value="1000">1M</option><option value="2000">2M</option></select></div>
+      <div class="row"><span class="rtxt"><b>Context window · this model</b><small>Per-model, like smart configuration</small></span><select class="inp" id="selCtxK"><option>32</option><option>64</option><option selected>128</option><option>200</option><option>256</option><option>512</option><option value="1000">1M</option><option value="2000">2M</option></select></div>
       <div class="row"><span class="rtxt"><b>Fallback provider</b><small>On connection failure</small></span><select class="inp" id="selFallback"></select></div>
     </section>
 
@@ -262,7 +290,7 @@
     <!-- ================= AUTOMATIONS ================= -->
     <section class="screen ov with-tabs" id="ov-cron">
       <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Automations</h2><button class="iconb" id="addAuto" aria-label="New automation"><i data-lucide="plus"></i></button></div>
-      <div class="lockban"><i data-lucide="calendar-clock"></i><span>Prompt schedules that run while the app is open — a session is created automatically for each run.</span></div>
+      <div class="lockban"><i data-lucide="calendar-clock"></i><span>Prompt schedules that run while the app is open — a session is created automatically for each run. Connect up to 3 apps: each run can end by opening the app.</span></div>
       <div id="autoList"></div>
       <div class="sec">Run history</div>
       <div id="autoHist"><p style="text-align:center;color:var(--ink3);font-size:12.5px;padding:6px 0 2px">No runs yet</p></div>
@@ -429,6 +457,8 @@
     <div class="grab"></div><h3><i data-lucide="calendar-clock" style="width:17px;height:17px"></i>Automation</h3>
     <div class="fld"><label>Title</label><input class="inp" id="auTitleIn" placeholder="Nightly review"/></div>
     <div class="fld"><label>Prompt to run</label><textarea class="inp" id="auPrompt" placeholder="Summarize today's notes…"></textarea></div>
+    <div class="fld"><label>Connect app — optional (max 3 app automations)</label><select class="inp" id="auApp"><option value="">No app — just run the prompt</option></select></div>
+    <div class="fld"><label>On completion</label><select class="inp" id="auAction"><option value="notify">Notify me</option><option value="open">Open the connected app</option></select></div>
     <div class="fld"><label>Schedule — runs while app is open</label><select class="inp" id="auSched">
       <option value="once2">Once · in 2 minutes</option>
       <option value="i15">Every 15 minutes</option>
@@ -444,7 +474,15 @@
   <div class="sheet" id="sheet-hook" aria-label="Edit hook">
     <div class="grab"></div><h3><i data-lucide="webhook" style="width:17px;height:17px"></i>Hook</h3>
     <div class="fld"><label>Event</label><select class="inp" id="hkEvent">
-      <option>Session start</option><option>User prompt</option><option>Assistant done</option><option>Compaction</option>
+      <option>Session start</option><option>Session end</option><option>User prompt</option>
+      <option>PreToolUse</option><option>PostToolUse</option><option>Assistant done</option>
+      <option>Compaction</option><option>Notification</option>
+    </select></div>
+    <div class="fld"><label>Tool matcher — optional, only for Pre/PostToolUse (e.g. shell_exec, write_file)</label><input class="inp kbd" id="hkMatcher" placeholder="all tools"/></div>
+    <div class="fld"><label>Action</label><select class="inp" id="hkAction">
+      <option value="webhook">Webhook POST (observe)</option>
+      <option value="toast">Local toast</option>
+      <option value="block">Block the tool call (PreToolUse only)</option>
     </select></div>
     <div class="fld"><label>Webhook URL — receives POST JSON</label><input class="inp kbd" id="hkUrl" placeholder="https://example.com/hook"/></div>
     <div class="acts">
@@ -502,7 +540,7 @@
     </div>
     <div class="ide-main">
       <div class="ide-tree" id="ideTree"></div>
-      <div class="ide-edit"><div class="ide-editwrap"><pre id="ideHl" class="tokhl" aria-hidden="true"></pre><textarea id="ideEditor" spellcheck="false" placeholder="Select a file from the tree — or ask the model to write one. Ctrl+S saves."></textarea></div></div>
+      <div class="ide-edit"><div id="ideTabs"></div><div class="ide-editwrap"><pre id="ideGutter" aria-hidden="true"></pre><pre id="ideHl" class="tokhl" aria-hidden="true"></pre><textarea id="ideEditor" spellcheck="false" placeholder="Select a file from the tree — or ask the model to write one. Ctrl+S saves, Ctrl+P quick-open."></textarea></div></div>
       <div class="ide-prev" id="idePreviewWrap">
         <div class="ide-prevbar"><span id="idePrevLabel">preview</span><span style="flex:1"></span><button class="ide-btn" id="ideRun"><i data-lucide="play"></i>Run</button></div>
         <iframe id="ideFrame" sandbox="allow-scripts allow-modals" title="Live preview"></iframe>
@@ -521,13 +559,15 @@
       <b>REVA Terminal</b>
       <span class="ide-path kbd" id="termBackend">—</span>
       <span style="flex:1"></span>
+      <button class="iconb" id="termHome" aria-label="Back to chat"><i data-lucide="message-square"></i></button>
       <button class="ide-btn" id="termClear"><i data-lucide="eraser"></i>Clear</button>
       <button class="ide-btn" id="termClose"><i data-lucide="x"></i>Close</button>
     </div>
     <div id="termHost"></div>
   </div>
 
-<script src="js/vendor/lucide.min.js"></script>
+  <script>window.addEventListener('error', function (e) { try { localStorage.setItem('__err', e.message + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno); } catch (_) {} });</script>
+  <script src="js/vendor/lucide.min.js"></script>
 <script src="js/vendor/xterm.js"></script>
 <script src="js/util.js"></script>
 <script src="js/store.js"></script>

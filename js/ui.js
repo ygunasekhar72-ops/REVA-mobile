@@ -192,9 +192,9 @@
     },
 
     /* ---------- AI WORKSPACE ---------- */
-    renderCtx: function (sysTok, histTok) {
+    renderCtx: function (sysTok, histTok, limitK) {
       var db = Store.db;
-      var total = db.settings.ctxK * 1000;
+      var total = (limitK || db.settings.ctxK) * 1000;
       var used = sysTok + histTok;
       var p = Math.min(100, Math.round(used / total * 100));
       var free = Math.max(0, total - sysTok - histTok);
@@ -271,13 +271,13 @@
         UI.renderTodoCard(sess); H.icons(); return;
       }
       empty.style.display = 'none';
-      sess.messages.forEach(function (m) { flow.appendChild(UI.msgEl(m)); });
+      sess.messages.forEach(function (m, mi) { flow.appendChild(UI.msgEl(m, mi)); });
       if (live) flow.appendChild(live); // re-attach the in-flight stream after navigating back
       UI.renderTodoCard(sess);
       scroller.scrollTop = scroller.scrollHeight;
       H.icons();
     },
-    msgEl: function (m) {
+    msgEl: function (m, i) {
       if (m.err) {
         var e = H.el('<div class="msg ai err"><div class="etxt">' + H.esc(m.content) + '</div>' +
           '<div style="display:flex;gap:8px;margin-top:10px"><button class="btnGhost" style="padding:8px 14px;font-size:12.5px;border-radius:11px" data-retry>' +
@@ -286,16 +286,14 @@
         return e;
       }
       if (m.role === 'user') {
-        var u = H.el('<div class="msg user"></div>');
-        u.textContent = m.content;
-        H.longPress(u, function () { H.copy(m.content); });
+        var u = H.el('<div class="msg user"><div class="utext"></div>' +
+          '<div class="uacts"><button class="uact" data-editmsg="' + i + '" aria-label="Edit message"><i data-lucide="pencil" style="width:12px;height:12px"></i></button>' +
+          '<button class="uact" data-copymsg="' + i + '" aria-label="Copy message"><i data-lucide="copy" style="width:12px;height:12px"></i></button></div></div>');
+        u.querySelector('.utext').textContent = m.content;
         return u;
       }
       var a = H.el('<div class="msg ai"></div>');
       var inner = '';
-      if (m.reasoning) {
-        inner += '<details class="think"><summary><i data-lucide="brain"></i>Thinking</summary><div class="think-body">' + H.esc(m.reasoning) + '</div></details>';
-      }
       var acts = m.activity && m.activity.length ? m.activity : (m.tools || []).map(function (t) {
         return { k: t.cmd ? 'cmd' : 'tool', icon: t.cmd ? 'terminal' : 'wrench', text: t.label, meta: t.meta || '', out: t.out || '' };
       });
@@ -308,6 +306,7 @@
         else inner += '<div class="activity">' + rows + '</div>';
       }
       inner += H.mdLite(m.content);
+      inner += '<div class="aacts"><button class="uact" data-copyai aria-label="Copy reply"><i data-lucide="copy" style="width:12px;height:12px"></i> Copy</button></div>';
       a.innerHTML = inner;
       a.querySelectorAll('[data-toolpath]').forEach(function (card) {
         var p = card.getAttribute('data-toolpath');
@@ -318,9 +317,8 @@
         row.style.cursor = 'pointer';
         row.addEventListener('click', function () { App.openPath(p); });
       });
-      var think = a.querySelector('.think');
-      if (think) H.longPress(a, function () { H.copy(m.content); });
-      H.icons();
+      var cp = a.querySelector('[data-copyai]');
+      if (cp) cp.addEventListener('click', function () { H.copy(m.content); H.toast('Reply copied'); });
       return a;
     },
     renderTodoCard: function (sess) {
@@ -377,8 +375,9 @@
     renderAutos: function () {
       var l = $('#autoList');
       l.innerHTML = Store.db.autos.map(function (a, i) {
-        return '<div class="row"><span class="tile"><i data-lucide="' + (a.icon || 'calendar-clock') + '"></i></span>' +
-          '<span class="rtxt"><b>' + H.esc(a.title) + '</b><small>' + H.esc(a.scheduleLabel) + (a.lastRun ? ' · last ' + H.ago(a.lastRun) : '') + '</small></span>' +
+        var app = a.appPkg ? ' · app: ' + a.appPkg.split('.').pop() : '';
+        return '<div class="row"><span class="tile"><i data-lucide="' + (a.appPkg ? 'app-window' : 'calendar-clock') + '"></i></span>' +
+          '<span class="rtxt"><b>' + H.esc(a.title) + '</b><small>' + H.esc(a.scheduleLabel) + app + (a.lastRun ? ' · last ' + H.ago(a.lastRun) : '') + '</small></span>' +
           '<label class="sw"><input type="checkbox" data-auto-on="' + i + '"' + (a.on ? ' checked' : '') + '/><i></i></label></div>';
       }).join('') || '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:12px 0">No automations yet</p>';
       $('#setAutoSub').textContent = Store.db.autos.filter(function (a) { return a.on; }).length + ' active · runs while app is open';

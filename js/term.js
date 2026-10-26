@@ -43,7 +43,14 @@
     term.focus();
     fit();
   }
-  function close() { var el = $('#terminal'); if (el) el.style.display = 'none'; }
+  function close() {
+    var el = $('#terminal');
+    if (el) el.style.display = 'none';
+    /* return to the last real screen: an open chat, else the home screen */
+    try {
+      if (window.App && window.App.openChat && Store.active()) window.App.openChat();
+    } catch (e) { }
+  }
 
   function fit() {
     if (!term) return;

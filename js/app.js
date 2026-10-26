@@ -80,8 +80,8 @@
     $$('#icoSeg button').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-ico') === s.icons); });
     $$('#effSeg button').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-eff') === s.effort); });
     $('#swStream').checked = s.stream; $('#swThink').checked = !!s.think;
-    $('#selCtxK').value = String(s.ctxK);
-    $('#ringTotal').textContent = 'of ' + s.ctxK + 'k';
+    $('#selCtxK').value = String(ctxFor(db.settings.model));
+    $('#ringTotal').textContent = 'of ' + ctxFor(db.settings.model) + 'k';
     $('#compactAt').textContent = s.compactAt + '%';
     $('#swAutosave').checked = s.autosave; $('#swCheckpoints').checked = s.checkpoints;
     $('#swNotify').checked = s.notify;
@@ -172,8 +172,12 @@
   function histTokens() {
     return visibleMessages().reduce(function (a, m) { return a + H.tok(m.content); }, 0);
   }
+  /* context limit is per MODEL (ZCode-style smart configuration) */
+  function ctxFor(model) {
+    return (db.modelCtx && db.modelCtx[model]) || db.settings.ctxK || 128;
+  }
   function refreshCtx() {
-    UI.renderCtx(H.tok(sysPrompt()), histTokens());
+    UI.renderCtx(H.tok(sysPrompt()), histTokens(), ctxFor(db.settings.model));
     UI.renderBuffer(Store.active());
   }
 
@@ -507,9 +511,13 @@
           var info = Tools.brief(tc.function.name, args, 'ok');
           info.name = tc.function.name; info.args = args;
           setStatus(info.label + '…');
+          var hookBlocked = await fireHook('PreToolUse', { name: tc.function.name, args: args }, tc.function.name);
           beginToolRow(tc.function.name, args);
           var result, ex = null;
-          if (tc.function.name === 'web_search' && window.WebSearch) {
+          if (hookBlocked) {
+            result = 'BLOCKED: a PreToolUse hook vetoed this tool call. Tell the user and continue without it.';
+            info.ok = false;
+          } else if (tc.function.name === 'web_search' && window.WebSearch) {
             var ws = await WebSearch.search(String(args.query || ''));
             result = (ws.text || '') + '\n\nResults:\n' + ws.results.map(function (r, i) { return (i + 1) + '. ' + r.title + ' — ' + r.url; }).join('\n');
             info = Tools.brief('web_search', { query: (ws.results.length ? ws.results.length + ' results' : args.query) }, result);
@@ -524,6 +532,10 @@
             result = await WebSearch.read(String(args.url || ''));
             if (String(result).indexOf('Error') === 0) ex = { exit: 1, out: result };
             if (window.REVABrowser) window.REVABrowser.open(String(args.url || ''));
+          } else if (tc.function.name === 'image_gen' && window.REVAImages) {
+            info.ok = true;
+            result = await REVAImages.generate(String(args.prompt || ''), String(args.path || 'images/' + Date.now() + '.png'));
+            if (String(result).indexOf('Error') === 0) { info.ok = false; ex = { exit: 1, out: result }; }
           } else if (tc.function.name === 'shell_exec' && window.REVAAgent) {
             ex = await AgentExec.exec(String(args.command || ''), { cwd: args.cwd, timeoutMs: (args.timeout_seconds || 120) * 1000 });
             result = (ex.timedOut ? 'TIMEOUT — process killed. Partial output:\n' + (ex.out || '') :
@@ -531,6 +543,7 @@
           } else {
             result = await Tools.run(tc.function.name, args);
           }
+          fireHook('PostToolUse', { name: tc.function.name, args: args, result: String(result).slice(0, 500) }, tc.function.name);
           if (!info.meta) info = Tools.brief(tc.function.name, args, result);
           if (ex && (ex.timedOut || ex.exit !== 0)) info.ok = false;
           info.name = tc.function.name;
@@ -598,10 +611,12 @@
     refreshCtx(); UI.renderHome(); UI.renderSettingsSubs();
     fireHook('Assistant done', { model: s.model });
     notify('Reply finished', s.title);
-    // auto-compact
+    // auto-compact: fires ONLY after the task completes (we're past
+    // streamReply), at 90% of the CURRENT MODEL's context window
     var used = H.tok(sysPrompt()) + histTokens();
-    if (s.messages.length >= 4 && used / (db.settings.ctxK * 1000) * 100 >= db.settings.compactAt) {
-      H.toast('Context over ' + db.settings.compactAt + '% — auto-compacting');
+    var limit = ctxFor(s.model || db.settings.model) * 1000;
+    if (s.messages.length >= 4 && used / limit * 100 >= 90) {
+      H.toast('Context over 90% — auto-compacting');
       compact(true);
     }
   }
@@ -689,14 +704,28 @@
   }
 
   /* ================= hooks / notify ================= */
-  function fireHook(event, payload) {
-    db.hooks.filter(function (h) { return h.on && h.event === event; }).forEach(function (h) {
+  /* ZCode-style hook events — every one is real and fires at the same point
+     ZCode fires it. Actions: webhook POST always; 'block' vetoes (PreToolUse
+     only); 'toast' shows a local toast. */
+  function fireHook(event, payload, matcher) {
+    var list = db.hooks.filter(function (h) { return h.on && h.event === event; });
+    var blocked = false;
+    list.forEach(function (h) {
+      if (h.matcher && matcher && matcher.indexOf(h.matcher) === -1 && matcher !== h.matcher) return;
+      if (h.action === 'block' && event === 'PreToolUse') {
+        blocked = true;
+        H.toast('Hook blocked ' + (matcher || 'tool'));
+        return;
+      }
+      if (h.action === 'toast') { H.toast(event + ' hook' + (matcher ? ' · ' + matcher : '')); }
       fetch(h.url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ app: 'reva', event: event, payload: payload, ts: Date.now() })
+        body: JSON.stringify({ app: 'reva', event: event, matcher: matcher || null, payload: payload, ts: Date.now() })
       }).catch(function () {});
     });
+    return Promise.resolve(blocked);
   }
   function notify(title, body) {
+    fireHook('Notification', { title: title, body: String(body || '').slice(0, 90) });
     if (!db.settings.notify || !document.hidden || !('Notification' in window)) return;
     if (Notification.permission === 'granted') {
       try { new Notification(title, { body: String(body || '').slice(0, 90) }); } catch (e) {}
@@ -943,10 +972,125 @@
         H.icons();
         UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); openChat();
         H.toast('Automation ran · ' + a.title);
-        streamReply(s);
+        streamReply(s).then(function () {
+          if (a.appPkg && a.action === 'open') {
+            try { REVAApps.launch(a.appPkg); } catch (e) { }
+          }
+        });
       }
     });
   }, 20000);
+
+  /* ================= built-in models (free, via NVIDIA) ================= */
+  var BUILTIN_MODELS = [
+    { id: 'z-ai/glm-5.3-flash', name: 'GLM 5.3 Flash', desc: 'fast all-rounder · best default agent' },
+    { id: 'minimaxai/minimax-m3.1', name: 'MiniMax M3.1', desc: 'agentic, long-context' },
+    { id: 'deepseek-ai/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', desc: 'strong reasoning (can hang on some accounts)' },
+    { id: 'nvidia/nemotron-3-ultra-550b-a55b', name: 'Nemotron 3 Ultra 550B', desc: 'flagship, heavyweight' },
+    { id: 'nvidia/nemotron-3.5-super-vl-120b-a12b', name: 'Nemotron 3.5 Super VL', desc: 'vision-language (images in)' },
+    { id: 'black-forest-labs/flux.2-klein', name: 'FLUX.2 Klein', desc: 'image generation — hosted API, image saved to workspace', image: true }
+  ];
+  function renderBuiltinModels() {
+    var host = $('#builtinModels');
+    if (!host) return;
+    host.innerHTML = BUILTIN_MODELS.map(function (m, i) {
+      return '<button class="row" data-builtin="' + i + '"><span class="tile"><i data-lucide="' + (m.image ? 'image' : 'sparkles') + '"></i></span>' +
+        '<span class="rtxt"><b>' + H.esc(m.name) + '</b><small>' + H.esc(m.desc) + '</small></span>' +
+        (db.settings.model === m.id ? '<i data-lucide="check" style="width:15px;height:15px;color:var(--ink)"></i>' : '<i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i>') +
+        '</button>';
+    }).join('');
+    H.icons();
+  }
+  root.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-builtin]');
+    if (!b) return;
+    var m = BUILTIN_MODELS[+b.getAttribute('data-builtin')];
+    var nv = (db.providers || []).find(function (p) { return /nvidia/i.test(p.name) && p.key; });
+    if (!nv) { H.toast('Add your NVIDIA API key under Providers first'); return; }
+    if (!nv.models.some(function (x) { return x === m.id; })) nv.models.push(m.id);
+    db.settings.providerId = nv.id;
+    db.settings.model = m.id;
+    Store.save();
+    UI.renderModels(); UI.renderModelSheet(db.settings.providerId); UI.renderSettingsSubs(); renderBuiltinModels(); refreshCtx();
+    H.toast(m.name + ' selected');
+  });
+  /* image generation: FLUX models are HOSTED on NVIDIA's API (the weights are
+     not downloadable for mobile) — call the image endpoint with the user's
+     key and save the returned image into the workspace. Endpoint + payload
+     verified live against ai.api.nvidia.com (validation errors are how the
+     shape was learned). */
+  window.REVAImages = {
+    generate: function (prompt, path) {
+      var nv = (db.providers || []).find(function (p) { return /nvidia/i.test(p.name) && p.key; });
+      if (!nv) return Promise.resolve('Error: add your NVIDIA API key under Providers first');
+      var key = nv.key;
+      var model = db.settings.imageModel || 'black-forest-labs/flux.2-klein';
+      var attempts = [
+        { url: 'https://ai.api.nvidia.com/v1/genai/' + model, payload: { prompt: prompt, mode: 'base', steps: 4, seed: 0 } },
+        { url: 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell', payload: { prompt: prompt, mode: 'base', steps: 4, seed: 0 } }
+      ];
+      function toDataUrl(buf) {
+        var bytes = new Uint8Array(buf), bin = '';
+        for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return 'data:image/png;base64,' + btoa(bin);
+      }
+      function attempt(i) {
+        if (i >= attempts.length) return Promise.resolve('Error: image endpoint unavailable for ' + model);
+        var a = attempts[i];
+        return fetch(a.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'Accept': 'application/json' },
+          body: JSON.stringify(a.payload)
+        }).then(function (r) {
+          if (r.status === 404 && i + 1 < attempts.length) return attempt(i + 1);
+          if (!r.ok) return r.text().then(function (t) { return 'Error: HTTP ' + r.status + ' ' + t.slice(0, 200); });
+          return r.json().then(function (j) {
+            var b64 = (j.artifacts && j.artifacts[0] && j.artifacts[0].base64) || j.image || (j.data && j.data[0] && (j.data[0].b64_json || j.data[0].url));
+            if (!b64) return 'Error: no image in response: ' + JSON.stringify(j).slice(0, 160);
+            if (b64.indexOf('http') === 0) return fetch(b64).then(function (ir) { return ir.arrayBuffer(); }).then(toDataUrl);
+            return toDataUrl(Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); }).buffer);
+          });
+        }).catch(function (e2) { if (i + 1 < attempts.length) return attempt(i + 1); return 'Error: ' + (e2 && e2.message || e2); });
+      }
+      return attempt(0).then(function (res) {
+        if (String(res).indexOf('Error') === 0) return res;
+        var out = Tools.run('write_file', { path: path, content: res });
+        return String(out).indexOf('Error') === 0 ? out : 'Generated image saved to ' + path + ' (open it from Files, or ask for it in chat)';
+      });
+    }
+  };
+  /* connected-app automations: Android auto-detects launchable apps (max 3).
+     The APK bridge exposes listApps()/launchApp(); the browser fallback uses
+     list()/launch() — normalize both here. */
+  (function () {
+    var bridge = window.REVAApps;
+    var real = {
+      list: function () { try { return bridge && bridge.listApps ? bridge.listApps() : (bridge && bridge.list ? bridge.list() : '[]'); } catch (e) { return '[]'; } },
+      launch: function (pkg) { try { if (bridge && bridge.launchApp) return bridge.launchApp(pkg); if (bridge && bridge.launch) return bridge.launch(pkg); } catch (e) { } H.toast('Opening apps works in the REVA Android app'); }
+    };
+    window.REVAApps = real;
+  })();
+  function fillAutoApps() {
+    var sel = $('#auApp');
+    if (!sel) return;
+    var apps = [];
+    try { apps = JSON.parse(REVAApps.list() || '[]'); } catch (e) { }
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">No app — just run the prompt</option>' +
+      apps.map(function (a) { return '<option value="' + H.esc(a.pkg) + '">' + H.esc(a.label) + '</option>'; }).join('');
+    sel.value = cur;
+  }
+  function fillAbout() {
+    try {
+      var used = 0;
+      for (var k in localStorage) if (Object.prototype.hasOwnProperty.call(localStorage, k)) used += (localStorage[k] || '').length + k.length;
+      var pct = Math.min(100, Math.round(used / (5 * 1024 * 1024) * 100));
+      var meter = $('#aboutStore'); if (meter) meter.style.width = pct + '%';
+      var txt = $('#aboutStoreTxt'); if (txt) txt.textContent = (used / 1024).toFixed(0) + ' KB of ~5 MB localStorage used';
+      var v = $('#aboutVersion'); if (v) v.textContent = 'REVA — local build · v1.4.0';
+      var av = $('#aboutVer'); if (av) av.textContent = 'REVA · v1.4.0 · local-first';
+    } catch (e) { }
+  }
 
   /* ================= boot: render everything ================= */
   function renderAll() {
@@ -954,6 +1098,9 @@
     Tools.ensureStarterPack().then(function (added) {
       if (added && added.length) { Tools.reloadPlugins(); UI.renderPlugins(); H.toast('Starter pack installed: ' + added.join(', ')); }
     });
+    renderBuiltinModels();
+    fillAbout();
+    fillAutoApps();
     var ws = Store.ws();
     UI.renderHome(); UI.renderFiles(ws ? (ws.vfs[state.curPath] || []) : [], state.curPath, false);
     UI.renderPlugins(); UI.renderMarket(''); UI.renderSkills(); UI.renderRules();
@@ -1065,6 +1212,27 @@
       } catch (e2) { }
       IDE.open();
       setTimeout(function () { try { App.openFile({ n: fname.split('/').pop(), t: 'code' }, 'skills'); } catch (e3) { } }, 250);
+      return;
+    }
+    /* edit a sent message: text goes back into the input, the message and
+       everything after it are removed (like ZCode's message editing) */
+    if ((t = e.target.closest('[data-editmsg]'))) {
+      if (state.streaming) { H.toast('Stop the agent first'); return; }
+      var sEd = Store.active(); if (!sEd) return;
+      var iEd = +t.getAttribute('data-editmsg');
+      var mEd = sEd.messages[iEd];
+      if (!mEd || mEd.role !== 'user') return;
+      $('#chatInput').value = mEd.content;
+      sEd.messages.splice(iEd);
+      sEd.cutAt = Math.min(sEd.cutAt || 0, sEd.messages.length);
+      Store.save(); UI.renderChat(sEd); refreshCtx();
+      $('#chatInput').focus();
+      return;
+    }
+    if ((t = e.target.closest('[data-copymsg]'))) {
+      var sCp = Store.active(); if (!sCp) return;
+      var mCp = sCp.messages[+t.getAttribute('data-copymsg')];
+      if (mCp) { H.copy(mCp.content); H.toast('Message copied'); }
       return;
     }
     if ((t = e.target.closest('[data-delskill]'))) {
@@ -1291,7 +1459,15 @@
   // runtime selects & switches
   $('#swStream').addEventListener('change', function (e) { db.settings.stream = e.target.checked; Store.save(); });
   $('#swThink').addEventListener('change', function (e) { db.settings.think = e.target.checked; Store.save(); refreshCtx(); });
-  $('#selCtxK').addEventListener('change', function (e) { db.settings.ctxK = +e.target.value; Store.save(); $('#ringTotal').textContent = 'of ' + db.settings.ctxK + 'k'; refreshCtx(); });
+  $('#selCtxK').addEventListener('change', function (e) {
+    var m = db.settings.model;
+    if (!db.modelCtx) db.modelCtx = {};
+    db.modelCtx[m] = +e.target.value; // per-model context window
+    Store.save();
+    $('#selCtxK').value = String(ctxFor(m));
+    $('#ringTotal').textContent = 'of ' + ctxFor(m) + 'k';
+    refreshCtx();
+  });
   $('#selFallback').addEventListener('change', function (e) { db.settings.fallbackId = e.target.value; Store.save(); });
 
   // general
@@ -1452,21 +1628,26 @@
 
   // hooks sheet
   var hkIdx = -1;
-  $('#addHook').addEventListener('click', function () { hkIdx = -1; $('#hkEvent').value = 'Session start'; $('#hkUrl').value = ''; H.openSheet('sheet-hook'); });
+  $('#addHook').addEventListener('click', function () {
+    hkIdx = -1; $('#hkEvent').value = 'User prompt'; $('#hkMatcher').value = ''; $('#hkAction').value = 'webhook'; $('#hkUrl').value = '';
+    H.openSheet('sheet-hook');
+  });
   root.addEventListener('click', function (e) {
     var row = e.target.closest('[data-hook-on]');
     if (row && e.target.tagName !== 'INPUT') {
       hkIdx = +row.getAttribute('data-hook-on');
       var h = db.hooks[hkIdx];
       $('#hkEvent').value = h.event; $('#hkUrl').value = h.url;
+      $('#hkMatcher').value = h.matcher || ''; $('#hkAction').value = h.action || 'webhook';
       H.openSheet('sheet-hook');
     }
   });
   $('#hkSave').addEventListener('click', function () {
     var ev = $('#hkEvent').value, url = $('#hkUrl').value.trim();
+    var matcher = $('#hkMatcher').value.trim(), action = $('#hkAction').value;
     if (!url) { H.toast('URL required'); return; }
-    if (hkIdx >= 0) { db.hooks[hkIdx].event = ev; db.hooks[hkIdx].url = url; }
-    else db.hooks.push({ event: ev, url: url, on: true });
+    if (hkIdx >= 0) { db.hooks[hkIdx].event = ev; db.hooks[hkIdx].url = url; db.hooks[hkIdx].matcher = matcher; db.hooks[hkIdx].action = action; }
+    else db.hooks.push({ event: ev, url: url, matcher: matcher, action: action, on: true });
     Store.save(); UI.renderHooks(); UI.renderSettingsSubs(); H.closeSheets(); H.toast('Hook saved');
   });
   $('#hkDelete').addEventListener('click', function () {
@@ -1509,7 +1690,9 @@
   $('#addAuto').addEventListener('click', function () {
     state.auIdx = -1;
     $('#auTitleIn').value = ''; $('#auPrompt').value = ''; $('#auSched').value = 'once2';
+    $('#auApp').value = ''; $('#auAction').value = 'notify';
     $('#auDelete').style.display = 'none';
+    fillAutoApps();
     H.openSheet('sheet-auto');
   });
   root.addEventListener('click', function (e) {
@@ -1518,6 +1701,8 @@
       state.auIdx = +row.getAttribute('data-auto-on');
       var a = db.autos[state.auIdx];
       $('#auTitleIn').value = a.title; $('#auPrompt').value = a.prompt; $('#auSched').value = a.sched;
+      fillAutoApps();
+      $('#auApp').value = a.appPkg || ''; $('#auAction').value = a.action || 'notify';
       $('#auDelete').style.display = '';
       H.openSheet('sheet-auto');
     }
@@ -1526,11 +1711,18 @@
     var title = $('#auTitleIn').value.trim(), prompt = $('#auPrompt').value.trim();
     if (!title || !prompt) { H.toast('Title and prompt required'); return; }
     var sched = $('#auSched').value;
+    var appPkg = $('#auApp').value, action = $('#auAction').value;
+    if (appPkg) {
+      var appBound = db.autos.filter(function (x) { return x.appPkg && (!state.auIdx || db.autos[state.auIdx] !== x); }).length;
+      var already = state.auIdx >= 0 && db.autos[state.auIdx].appPkg;
+      if (appBound >= 3 && !already) { H.toast('App automations are limited to 3 — remove one first'); return; }
+    }
     if (state.auIdx >= 0) {
       var a = db.autos[state.auIdx];
       a.title = title; a.prompt = prompt; a.sched = sched; a.scheduleLabel = SCHED_LABEL[sched];
+      a.appPkg = appPkg; a.action = action;
     } else {
-      db.autos.push({ id: H.uid(), title: title, prompt: prompt, sched: sched, scheduleLabel: SCHED_LABEL[sched], on: true, lastRun: 0, created: Date.now() });
+      db.autos.push({ id: H.uid(), title: title, prompt: prompt, sched: sched, scheduleLabel: SCHED_LABEL[sched], appPkg: appPkg, action: action, on: true, lastRun: 0, created: Date.now() });
     }
     Store.save(); UI.renderAutos(); UI.renderSettingsSubs(); H.closeSheets(); H.toast('Automation saved');
   });
@@ -1677,6 +1869,9 @@
   $('#termBtn').addEventListener('click', function () { Term.open(); });
   $('#termPill').addEventListener('click', function () { Term.open(); });
   $('#termClose').addEventListener('click', function () { Term.close(); });
+  /* back to where you came from: Term.close() returns to the open chat;
+     from the home screen the chat overlay simply stays closed */
+  $('#termHome').addEventListener('click', function () { Term.close(); });
   $('#termClear').addEventListener('click', function () {
     if (window.__termInst) window.__termInst.clear();
   });
@@ -1693,5 +1888,6 @@
   Store.onChange(function () { storeUse(); });
   H.icons();
   fireHook('Session start', { at: Date.now() });
+  window.addEventListener('pagehide', function () { fireHook('Session end', { at: Date.now() }); });
   window.__appBooted = true;
 })();
