@@ -2104,7 +2104,9 @@
   $('#wbBack').addEventListener('click', function () { if (wbPos > 0) { wbPos--; wbShow(wbHist[wbPos], false); } });
   $('#wbFwd').addEventListener('click', function () { if (wbPos < wbHist.length - 1) { wbPos++; wbShow(wbHist[wbPos], false); } });
   $('#wbReload').addEventListener('click', function () { if (wbPos >= 0) wbShow(wbHist[wbPos], false); });
-  $('#wbHome').addEventListener('click', function () { wbShow('about:workspace'); });
+  /* #wbHome chip was removed in the browser cleanup — guard optional elements
+     so a missing node can never kill the whole boot again */
+  if ($('#wbHome')) $('#wbHome').addEventListener('click', function () { wbShow('about:workspace'); });
   $('#wbExternal').addEventListener('click', function () { var u = wbHist[wbPos]; if (u && u !== 'about:workspace' && window.open) window.open(u, '_blank'); });
   document.addEventListener('click', function (e) {
     var t = e.target.closest('[data-wblink]');
@@ -2146,7 +2148,8 @@
   H.fit();
   clock(); setInterval(clock, 30000);
   applyAppearance();
-  renderAll();
+  /* boot guard: one render failure must never leave the app half-dead */
+  try { renderAll(); } catch (e) { console.error('boot render failed:', e && e.message || e); }
   IDE.wire();
   storeUse();
   Store.onChange(function () { storeUse(); });

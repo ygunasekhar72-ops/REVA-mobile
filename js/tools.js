@@ -252,16 +252,34 @@
     }));
   }
 
+  /* XHR-based text loader: fetch() cannot load file:// URLs, but the APK
+     serves the app from android_asset — XHR handles both http and file */
+  function fetchText(url) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var x = new XMLHttpRequest();
+        x.open('GET', url, true);
+        x.onload = function () {
+          if (x.status === 200 || (x.responseText && x.status === 0)) resolve(x.responseText);
+          else reject(new Error('HTTP ' + x.status));
+        };
+        x.onerror = function () { reject(new Error('load failed (file or network)')); };
+        x.send();
+      } catch (e) { reject(e); }
+    });
+  }
+
   function ensureStarterPack() {
     if (Store.db.starterInstalled) return Promise.resolve(false);
-    return fetch('plugins/index.json').then(function (r) { return r.json(); }).then(function (list) {
+    return fetchText('plugins/index.json').then(function (listTxt) {
+      var list = JSON.parse(listTxt);
       var added = [];
       var chain = Promise.resolve();
       (list.plugins || []).forEach(function (entry) {
         chain = chain.then(function () {
           var exists = (Store.db.plugins || []).some(function (p) { return p.starterId === entry.id; });
           if (exists) return null;
-          return fetch('plugins/' + entry.file).then(function (r) { return r.text(); }).then(function (code) {
+          return fetchText('plugins/' + entry.file).then(function (code) {
             Store.db.plugins.push({ id: 'sp_' + entry.id, starterId: entry.id, name: entry.name, desc: entry.desc, source: 'starter', on: true, code: code });
             added.push(entry.name);
           });
