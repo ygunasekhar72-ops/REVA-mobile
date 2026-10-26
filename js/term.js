@@ -28,9 +28,11 @@
       if (be) be.textContent = backend === 'android' ? 'device shell · pty' : 'harness console';
       if (backend === 'android') {
         window.__revaTermOut = function (chunk) { term.write(chunk); };
+        // header BEFORE start(): the session's own banner (REVA Linux / host
+        // shell) then lands under it, in order, as it does on the device
+        term.writeln('\x1b[1mREVA shell\x1b[0m — real pty · REVA Linux (Alpine via proot) + busybox (~300 cmds) + pkg');
+        term.writeln('\x1b[2mtry: pkg install curl · bb top · apk add git · lx\x1b[0m\r');
         REVAShell.start();
-        term.writeln('\x1b[1mREVA shell\x1b[0m — real pty · full /system/bin/sh + busybox (~300 cmds) + pkg');
-        term.writeln('\x1b[2mtry: pkg list · bb top · bb vi file · pkg install <url-of-static-binary>\x1b[0m\r');
       } else {
         term.writeln('\x1b[1mREVA terminal\x1b[0m — harness console backend (browser). \x1b[2mhelp\x1b[0m lists commands.');
         term.writeln('\x1b[2mThe Android APK runs a real unrestricted device shell here.\x1b[0m\r\n');
