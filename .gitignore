@@ -4,8 +4,9 @@
 Thumbs.db
 *.log
 
-# local-only Android build inputs — fetched by scripts/prepare-android.sh / CI
-android/app/src/main/jniLibs/
+# built-at-packaging-time Android inputs — the web assets are copied from the
+# repo root, the rootfs is fetched, but jniLibs (Termux busybox/proot builds)
+# are COMMITTED so CI needs no downloads
 android/app/src/main/assets/
 android/local.properties
 android/.gradle/
