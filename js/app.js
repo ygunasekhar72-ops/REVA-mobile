@@ -127,16 +127,21 @@
     p.push('Formatting: open with the direct answer, then organize the rest into short sections with headings or bullet points. Write explanations as prose. Use code blocks only for actual code, never as a substitute for explanation.');
     var skills = db.skills.filter(function (k) { return k.on; });
     if (skills.length) {
-      p.push('Enabled skills:');
-      skills.forEach(function (k) { p.push('- ' + k.name + (k.desc ? ': ' + k.desc : '')); });
+      p.push('Enabled skills (index only — the full instructions live in workspace files; read_file the skill file when you need its details):');
+      skills.forEach(function (k) {
+        p.push('- ' + k.name + (k.desc ? ': ' + k.desc : '') + ' — full instructions: skills/' + k.name.replace(/[^\w.-]+/g, '-') + '.md');
+      });
     }
-    var packs = db.plugins.filter(function (p) { return p.on; });
+    var packs = db.plugins.filter(function (p) { return p.on && p.prompt; });
     packs.forEach(function (r) { p.push('Plugin ' + r.name + ':\n' + r.prompt); });
+    var realPlugins = db.plugins.filter(function (p) { return p.on && p.code && p.loaded; }).map(function (p) { return p.name; });
+    if (realPlugins.length) p.push('Real tool plugins active: ' + realPlugins.join(', ') + '. Their tools appear in your tool list; use them like built-ins.');
     if (db.settings.tools !== false) {
-      p.push('You have tools: write_file, read_file, list_files, delete_file, save_memory, add_plugin, run_command, shell_exec (device builds), web_search, web_read. ' +
+      p.push('You have tools: write_file, read_file, list_files, delete_file, save_memory, add_plugin, run_command, shell_exec (device builds), web_search, web_read, browser_open, browser_read (open pages in the built-in browser for the user), plus any active plugin tools. ' +
         'When asked to build or change anything, DO IT with write_file instead of pasting large code blocks in chat — ' +
         'the harness renders your tool calls as file cards and the user can run the result. ' +
-        'Use web_search for anything current, factual, or uncertain — then web_read the best result before citing it. ' +
+        'Use web_search for anything current, factual, or uncertain — then web_read or browser_read the best result before citing it. ' +
+        'Use browser_read when the user should SEE the page too. ' +
         'Use save_memory to remember durable facts about the user or project.');
     }
     if (db.allowRules.length) {
@@ -210,7 +215,7 @@
     state.ctrl = new AbortController();
     var toolsOn = db.settings.tools !== false;
     var mode = db.settings.mode;
-    var MAX_ITERS = 8;
+    var MAX_ITERS = 14;
 
     /* ---- live activity feed (ZCode-style): rows appear as the agent works ---- */
     var actEl = null, spinRow = null, thoughtRow = null, thoughtStart = 0, activity = [];
@@ -270,7 +275,8 @@
       if (!pendRow || pendName !== name) {
         if (pendRow) pendRow.remove();
         var act = ensureAct();
-        pendRow = H.el('<div class="act-row pend-row"><span class="spin"></span><b>' + H.esc(name) + '</b><span class="meta"></span></div>');
+        var v = verbFor(name, {});
+        pendRow = H.el('<div class="act-row live pend-row"><span class="spin"></span><b>' + H.esc(v.live) + '</b><span class="meta"></span></div>');
         if (spinRow && spinRow.parentNode === act) act.insertBefore(pendRow, spinRow);
         else act.appendChild(pendRow);
         pendName = name; pendBytes = 0;
@@ -288,28 +294,77 @@
       if (thoughtRow) return;
       thoughtStart = Date.now();
       var act = ensureAct();
-      thoughtRow = H.el('<div class="act-row"><i data-lucide="brain"></i><b>Thinking</b><span class="meta">…</span></div>');
+      thoughtRow = H.el('<div class="act-row live"><i data-lucide="brain"></i><b>Thinking</b><span class="meta">…</span></div>');
       act.insertBefore(thoughtRow, pendRow || spinRow || null);
       H.icons();
     }
     function endThought() {
       if (!thoughtRow) return;
       var secs = Math.max(1, Math.round((Date.now() - thoughtStart) / 1000));
+      thoughtRow.classList.remove('live');
       thoughtRow.querySelector('.meta').textContent = secs + 's';
-      activity.push({ k: 't', icon: 'brain', text: 'Thinking', meta: secs + 's' });
+      activity.push({ k: 't', icon: 'brain', text: 'Thought', meta: secs + 's' });
       thoughtRow = null;
+    }
+    /* ZCode-style verb rows: the label states what is happening right now
+       (Writing/Editing/Terminal…), and freezes to the past-tense form when
+       the step finishes. */
+    function verbFor(name, args) {
+      var n = String(name || '');
+      if (n === 'write_file') {
+        try { if (Tools.exists(String(args.path || ''))) return { live: 'Editing', done: 'Edit' }; } catch (e) {}
+        return { live: 'Writing', done: 'Write' };
+      }
+      if (n === 'read_file') return { live: 'Reading', done: 'Read' };
+      if (n === 'list_files') return { live: 'Listing', done: 'Listed' };
+      if (n === 'delete_file') return { live: 'Deleting', done: 'Deleted' };
+      if (n === 'web_search') return { live: 'Searching', done: 'Searched' };
+      if (n === 'web_read' || n === 'browser_open' || n === 'browser_read') return { live: 'Fetching', done: 'Fetched' };
+      if (n === 'run_command' || n === 'shell_exec') return { live: 'Terminal', done: 'Terminal' };
+      if (n === 'save_memory') return { live: 'Saving memory', done: 'Saved memory' };
+      return { live: n, done: n };
+    }
+    function verbIconFor(name) {
+      var n = String(name || '');
+      if (n === 'write_file') return 'file-pen';
+      if (n === 'read_file') return 'file-search';
+      if (n === 'run_command' || n === 'shell_exec') return 'terminal';
+      if (n === 'web_search' || n === 'web_read' || n === 'browser_open' || n === 'browser_read') return 'globe';
+      if (n === 'delete_file') return 'trash-2';
+      if (n === 'save_memory') return 'brain';
+      return 'wrench';
+    }
+    /* live row shown the moment execution starts; finalized by addToolRow */
+    var liveToolRow = null;
+    function beginToolRow(name, args) {
+      clearPend();
+      var v = verbFor(name, args);
+      liveToolRow = H.el('<div class="act-row live"><i data-lucide="' + verbIconFor(name) + '"></i><b>' + H.esc(v.live) + '</b><span class="meta"></span></div>');
+      var act = ensureAct();
+      if (spinRow && spinRow.parentNode === act) act.insertBefore(liveToolRow, spinRow);
+      else act.appendChild(liveToolRow);
+      H.icons();
+      if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
     function addToolRow(info, out) {
       clearPend();
       endThought();
+      var v = verbFor(info.name, info.args || {});
+      var row = null;
+      if (liveToolRow) {
+        row = liveToolRow; liveToolRow = null;
+        row.classList.remove('live');
+        row.innerHTML = '<i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i><b>' + H.esc(v.done) + '</b>' + (info.meta ? '<span class="meta">' + H.esc(info.meta) + '</span>' : '');
+      } else {
+        row = actRow(info.ok === false ? 'alert-circle' : verbIconFor(info.name), v.done, info.meta || '');
+      }
+      H.icons();
       if (info.cmd) {
-        actRow('terminal', '❯ ' + info.cmd, info.meta || '');
         var pre = H.el('<pre class="act-out">' + H.esc(String(out || '').slice(0, 500)) + '</pre>');
         ensureAct().appendChild(pre);
         activity.push({ k: 'cmd', icon: 'terminal', text: '❯ ' + info.cmd, meta: info.meta || '', out: String(out || '').slice(0, 500) });
       } else {
-        actRow(info.ok === false ? 'alert-circle' : 'wrench', info.label, info.meta || '');
-        activity.push({ k: 'tool', icon: 'wrench', text: info.label, meta: info.meta || '', ok: info.ok, path: info.path || '' });
+        activity.push({ k: 'tool', icon: verbIconFor(info.name), text: v.done + ' ' + (info.target || ''), meta: info.meta || '', ok: info.ok, path: info.path || '' });
       }
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
@@ -413,29 +468,33 @@
     }
 
     var apiMsgs = apiMessages();
-    var toolResults = [], failed = null, stopped = false, usedFallback = false, fbName = '', iters = 0, nudged = false, retriedNS = false, res = null;
+    var toolResults = [], failed = null, stopped = false, usedFallback = false, fbName = '', iters = 0, res = null, pendingRes = null;
+    var nsTried = false, streamRetries = 0, nudges = 0;
     startHb();
 
     while (true) {
       iters++;
       setStatus(iters === 1 ? 'Connecting…' : 'Working…');
-      try {
-        res = await callAI(prov);
-      } catch (e) {
-        if (aborted(e)) { stopped = true; break; }
-        var fb = db.providers.find(function (x) { return x.id === db.settings.fallbackId; });
-        if (fb && fb.id !== prov.id) {
-          H.toast(prov.name + ' failed — retrying via ' + fb.name);
-          try {
-            res = await callAI(fb);
-            usedFallback = true;
-            fbName = fb.name;
-            H.toast('Replied via fallback ' + fb.name);
-          } catch (e2) {
-            if (aborted(e2)) { stopped = true; break; }
-            failed = e2; break;
-          }
-        } else { failed = e; break; }
+      if (pendingRes) { res = pendingRes; pendingRes = null; }
+      else {
+        try {
+          res = await callAI(prov);
+        } catch (e) {
+          if (aborted(e)) { stopped = true; break; }
+          var fb = db.providers.find(function (x) { return x.id === db.settings.fallbackId; });
+          if (fb && fb.id !== prov.id) {
+            H.toast(prov.name + ' failed — retrying via ' + fb.name);
+            try {
+              res = await callAI(fb);
+              usedFallback = true;
+              fbName = fb.name;
+              H.toast('Replied via fallback ' + fb.name);
+            } catch (e2) {
+              if (aborted(e2)) { stopped = true; break; }
+              failed = e2; break;
+            }
+          } else { failed = e; break; }
+        }
       }
       if (state.ctrl.signal.aborted) { stopped = true; break; }
 
@@ -446,7 +505,9 @@
           var args = {};
           try { args = JSON.parse(tc.function.arguments || '{}'); } catch (e) {}
           var info = Tools.brief(tc.function.name, args, 'ok');
+          info.name = tc.function.name; info.args = args;
           setStatus(info.label + '…');
+          beginToolRow(tc.function.name, args);
           var result, ex = null;
           if (tc.function.name === 'web_search' && window.WebSearch) {
             var ws = await WebSearch.search(String(args.query || ''));
@@ -457,12 +518,18 @@
           } else if (tc.function.name === 'web_read' && window.WebSearch) {
             result = await WebSearch.read(String(args.url || ''));
             if (String(result).indexOf('Error') === 0) ex = { exit: 1, out: result };
+          } else if (tc.function.name === 'browser_open' && window.REVABrowser) {
+            result = window.REVABrowser.open(String(args.url || ''));
+          } else if (tc.function.name === 'browser_read' && window.WebSearch) {
+            result = await WebSearch.read(String(args.url || ''));
+            if (String(result).indexOf('Error') === 0) ex = { exit: 1, out: result };
+            if (window.REVABrowser) window.REVABrowser.open(String(args.url || ''));
           } else if (tc.function.name === 'shell_exec' && window.REVAAgent) {
             ex = await AgentExec.exec(String(args.command || ''), { cwd: args.cwd, timeoutMs: (args.timeout_seconds || 120) * 1000 });
             result = (ex.timedOut ? 'TIMEOUT — process killed. Partial output:\n' + (ex.out || '') :
               (ex.out || '') + (ex.out ? '\n' : '') + '[exit ' + ex.exit + ']');
           } else {
-            result = Tools.run(tc.function.name, args);
+            result = await Tools.run(tc.function.name, args);
           }
           if (!info.meta) info = Tools.brief(tc.function.name, args, result);
           if (ex && (ex.timedOut || ex.exit !== 0)) info.ok = false;
@@ -475,42 +542,33 @@
         refreshCtx(); UI.renderHome();
         continue;
       }
-      // some providers (seen: minimax on NVIDIA) truncate STREAMING responses
-      // after a tool round — reasoning arrives, then nothing. Retry once
-      // non-streaming, which returns the full tool call.
-      if (!res.toolCalls && !(res.content || '').trim() && toolResults.length && !retriedNS) {
-        retriedNS = true;
-        setStatus('Re-syncing…');
-        try {
-          res = await callAI(prov, true);
-          if (res.toolCalls && res.toolCalls.length && iters < MAX_ITERS) {
-            apiMsgs.push({ role: 'assistant', content: res.content || '', tool_calls: res.toolCalls });
-            for (var j2 = 0; j2 < res.toolCalls.length; j2++) {
-              var tc2 = res.toolCalls[j2];
-              var args2 = {};
-              try { args2 = JSON.parse(tc2.function.arguments || '{}'); } catch (e) {}
-              var result2 = Tools.run(tc2.function.name, args2);
-              var info2 = Tools.brief(tc2.function.name, args2, result2);
-              info2.name = tc2.function.name;
-              toolResults.push(info2);
-              addToolRow(info2, result2);
-              apiMsgs.push({ role: 'tool', tool_call_id: tc2.id, content: String(result2).slice(0, 4000) });
-            }
-            acc = ''; contentEl = null;
-            refreshCtx(); UI.renderHome();
-            continue;
-          }
-          if ((res.content || '').trim()) break; // got a real answer
-        } catch (e3) { /* fall through to nudge */ }
-      }
-      // a post-tool round that ends empty is a provider hiccup, not a finished
-      // task — nudge once instead of giving up with "(empty reply)"
-      if (!res.toolCalls && !(res.content || '').trim() && toolResults.length && iters < MAX_ITERS && !nudged) {
-        nudged = true;
-        setStatus('Continuing…');
-        acc = ''; contentEl = null;
-        apiMsgs.push({ role: 'user', content: 'Continue and complete the task using your tools. Do not reply with empty content.' });
-        continue;
+      // EMPTY REPLY RECOVERY (the "(empty reply)" killer for long projects).
+      // Some providers truncate streaming after tool rounds, or return a bare
+      // empty completion. Ladder: 1× non-stream re-sync, 2× plain stream
+      // retries, then up to 2 nudges — each just re-enters the loop, so a
+      // recovered tool call goes through the SAME executor above.
+      if (!res.toolCalls && !(res.content || '').trim()) {
+        if (!nsTried) {
+          nsTried = true;
+          setStatus('Re-syncing…');
+          try { pendingRes = await callAI(prov, true); continue; }
+          catch (e3) { if (aborted(e3)) { stopped = true; break; } }
+        }
+        if (streamRetries < 2) {
+          streamRetries++;
+          setStatus('Empty reply — retrying ' + streamRetries + '/2…');
+          acc = ''; contentEl = null;
+          continue;
+        }
+        if (nudges < 2 && (toolResults.length || iters > 1)) {
+          nudges++;
+          setStatus('Continuing…');
+          acc = ''; contentEl = null;
+          activity.push({ k: 'note', icon: 'refresh-cw', text: 'Empty reply — nudged the model to continue', meta: '#' + nudges });
+          apiMsgs.push({ role: 'user', content: 'Your last reply was empty. Continue and complete the task using your tools; reply with real content.' });
+          continue;
+        }
+        break; // genuinely empty after the full ladder
       }
       break;
     }
@@ -892,6 +950,10 @@
 
   /* ================= boot: render everything ================= */
   function renderAll() {
+    Tools.reloadPlugins();
+    Tools.ensureStarterPack().then(function (added) {
+      if (added && added.length) { Tools.reloadPlugins(); UI.renderPlugins(); H.toast('Starter pack installed: ' + added.join(', ')); }
+    });
     var ws = Store.ws();
     UI.renderHome(); UI.renderFiles(ws ? (ws.vfs[state.curPath] || []) : [], state.curPath, false);
     UI.renderPlugins(); UI.renderMarket(''); UI.renderSkills(); UI.renderRules();
@@ -991,9 +1053,22 @@
       Store.save(); UI.renderRules(); refreshCtx(); H.toast('Rule removed');
       return;
     }
+    /* tap a skill → open its body (skills/<name>.md) in the IDE */
+    if ((t = e.target.closest('[data-editskill]'))) {
+      var skn = t.getAttribute('data-editskill');
+      var fname = 'skills/' + skn.replace(/[^\w.-]+/g, '-') + '.md';
+      try {
+        var wsv = Store.ws();
+        if (wsv && wsv.vfsContent[fname] === undefined) {
+          Tools.run('write_file', { path: fname, content: '# Skill: ' + skn + '\n\n<!-- Full instructions the agent follows when this skill applies. -->\n' });
+        }
+      } catch (e2) { }
+      IDE.open();
+      setTimeout(function () { try { App.openFile({ n: fname.split('/').pop(), t: 'code' }, 'skills'); } catch (e3) { } }, 250);
+      return;
+    }
     if ((t = e.target.closest('[data-delskill]'))) {
-      var sid = t.getAttribute('data-delskill');
-      db.skills = db.skills.filter(function (x) { return x.id !== sid; });
+      var sid = t.getAttribute('data-delskill');      db.skills = db.skills.filter(function (x) { return x.id !== sid; });
       Store.save(); UI.renderSkills(); UI.renderSettingsSubs(); refreshCtx(); H.toast('Skill deleted');
       return;
     }
@@ -1279,8 +1354,17 @@
     } else {
       db.skills.push({ id: 'sk' + H.uid(), name: name, desc: desc, on: true });
     }
-    Store.save(); UI.renderSkills(); UI.renderSettingsSubs(); refreshCtx(); H.closeSheets();
-    H.toast('Skill saved — announced to the model every turn');
+    // the skill's full instructions live in the workspace: skills/<name>.md —
+    // create a stub on first save; the agent (or IDE) fills it in
+    try {
+      var fname = 'skills/' + name.replace(/[^\w.-]+/g, '-') + '.md';
+      var ws = Store.ws();
+      if (ws && ws.vfsContent[fname] === undefined) {
+        Tools.run('write_file', { path: fname, content: '# Skill: ' + name + '\n\n' + (desc || '') + '\n\n<!-- Write the full step-by-step instructions the agent should follow when this skill applies. -->\n' });
+      }
+    } catch (e) { }
+    Store.save(); Tools.reloadPlugins(); UI.renderSkills(); UI.renderSettingsSubs(); refreshCtx(); H.closeSheets();
+    H.toast('Skill saved — index in prompt, body in skills/<name>.md');
   });
   $('#skDelete').addEventListener('click', function () {
     if (!skId) return;
@@ -1527,8 +1611,7 @@
     if (/^[\w-]+(\.[\w-]+)+([\/?#].*)?$/.test(q)) return 'https://' + q;
     return 'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(q);
   }
-  function wbShow(url, push) {
-    var frame = $('#wbFrame'), blocked = $('#wbBlocked');
+  function wbShow(url, push) {    var frame = $('#wbFrame'), blocked = $('#wbBlocked');
     blocked.style.display = 'none';
     $('#wbUrl').value = url === 'about:workspace' ? '' : url;
     if (url === 'about:workspace') {
@@ -1584,6 +1667,11 @@
   });
   $('#browserBtn').addEventListener('click', function () { H.push('ov-browser'); wbShow('about:workspace'); });
   $('#webPill').addEventListener('click', function () { H.push('ov-browser'); wbShow('about:workspace'); });
+  /* agent control surface for the built-in browser */
+  window.REVABrowser = {
+    open: function (url) { try { H.push('ov-browser'); wbShow(String(url || 'about:workspace')); return 'opened ' + url; } catch (e) { return 'Error: ' + e.message; } },
+    current: function () { return wbHist[wbPos] || 'about:workspace'; }
+  };
 
   /* ================= real terminal ================= */
   $('#termBtn').addEventListener('click', function () { Term.open(); });

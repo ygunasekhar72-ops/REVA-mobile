@@ -131,17 +131,12 @@
       </div>
       <div class="sec">Agent</div>
       <button class="row" data-go="ov-model"><span class="tile"><i data-lucide="brain-circuit"></i></span><span class="rtxt"><b>Model</b><small id="setModelSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
-      <button class="row" data-go="ov-skills"><span class="tile"><i data-lucide="zap"></i></span><span class="rtxt"><b>Skills system</b><small id="setSkillSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
-      <button class="row" data-go="ov-perms"><span class="tile"><i data-lucide="shield-check"></i></span><span class="rtxt"><b>Permissions</b><small id="setPermSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
-      <div class="sec">Extensions</div>
-      <button class="row" data-go="ov-market"><span class="tile"><i data-lucide="store"></i></span><span class="rtxt"><b>Plugin marketplace</b><small id="setPlugSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
-      <button class="row" data-go="ov-mcp"><span class="tile"><i data-lucide="server"></i></span><span class="rtxt"><b>MCP servers</b><small id="setMcpSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
-      <button class="row" data-go="ov-hooks"><span class="tile"><i data-lucide="webhook"></i></span><span class="rtxt"><b>Hooks</b><small id="setHookSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-market"><span class="tile"><i data-lucide="store"></i></span><span class="rtxt"><b>Plugins</b><small id="setPlugSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-skills"><span class="tile"><i data-lucide="zap"></i></span><span class="rtxt"><b>Skills</b><small id="setSkillSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
       <div class="sec">App</div>
-      <button class="row" data-go="ov-general"><span class="tile"><i data-lucide="sliders-horizontal"></i></span><span class="rtxt"><b>General</b><small>Sessions, compaction, language</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-general"><span class="tile"><i data-lucide="sliders-horizontal"></i></span><span class="rtxt"><b>General</b><small>Appearance, language, chat, advanced</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
       <button class="row" data-go="ov-cron"><span class="tile"><i data-lucide="calendar-clock"></i></span><span class="rtxt"><b>Automations</b><small id="setAutoSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
-      <button class="row" data-go="ov-appearance"><span class="tile"><i data-lucide="contrast"></i></span><span class="rtxt"><b>Appearance</b><small id="setAppSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
-      <button class="row" data-toast="REVA 1.0.0 — local build"><span class="tile"><i data-lucide="info"></i></span><span class="rtxt"><b>About</b><small>REVA · Version 1.0.0 · local-first</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-toast="REVA — local build"><span class="tile"><i data-lucide="info"></i></span><span class="rtxt"><b>About</b><small id="aboutVer">REVA · local-first</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
     </section>
 
     <!-- ================= CHAT ================= -->
@@ -199,6 +194,11 @@
       <div class="row"><span class="rtxt"><b>Notifications</b><small>Alert when a reply finishes in background</small></span><label class="sw"><input type="checkbox" id="swNotify"/><i></i></label></div>
       <div class="row"><span class="rtxt"><b>Language</b></span><select class="inp" id="selLang"><option value="en">English</option><option value="hi">हिन्दी</option><option value="de">Deutsch</option></select></div>
       <div class="row" id="dirRow" style="cursor:pointer"><span class="rtxt"><b>Working directory</b><small id="dirSub">Virtual workspace (mount a folder)</small></span><i data-lucide="folder-open" class="chev" style="width:16px;height:16px"></i></div>
+      <button class="row" data-go="ov-appearance"><span class="tile"><i data-lucide="contrast"></i></span><span class="rtxt"><b>Appearance</b><small id="setAppSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <div class="sec">Advanced</div>
+      <button class="row" data-go="ov-perms"><span class="tile"><i data-lucide="shield-check"></i></span><span class="rtxt"><b>Permissions</b><small id="setPermSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-mcp"><span class="tile"><i data-lucide="server"></i></span><span class="rtxt"><b>MCP servers</b><small id="setMcpSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-hooks"><span class="tile"><i data-lucide="webhook"></i></span><span class="rtxt"><b>Hooks</b><small id="setHookSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
       <div class="sec">Privacy</div>
       <div class="row"><span class="rtxt"><b>Clear all session data</b><small>Chats, memory and buffers</small></span><button class="btnGhost" style="padding:8px 13px;font-size:12.5px;border-radius:11px" id="clearData">Clear</button></div>
     </section>

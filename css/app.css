@@ -360,6 +360,10 @@
 #mono-harness .act-row:last-child{border:0}
 #mono-harness .act-row b{font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #mono-harness .act-row .meta{margin-left:auto;color:var(--ink3);font-size:11px;flex:none}
+/* live steps pulse with trailing dots; finished steps sit still */
+#mono-harness .act-row.live{animation:revaPulse 1.5s ease-in-out infinite}
+#mono-harness .act-row.live b::after{content:'…'}
+@keyframes revaPulse{0%,100%{opacity:1}50%{opacity:.45}}
 #mono-harness .act-row svg{width:13px;height:13px;color:var(--ink3);flex:none}
 #mono-harness .act-row.failed b{color:var(--ink3)}
 #mono-harness .act-out{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--ink3);padding:0 0 7px 21px;margin:0;white-space:pre-wrap;word-break:break-word}

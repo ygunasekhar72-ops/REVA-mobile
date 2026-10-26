@@ -105,6 +105,10 @@ public class MainActivity extends Activity {
 
         web.loadUrl("file:///android_asset/index.html");
 
+        // Start the background engine: the process stays alive (agent loops,
+        // shells, downloads) even after the task is swiped from recents.
+        try { startForegroundService(new Intent(this, EngineService.class)); } catch (Exception ignored) { }
+
         // Debug-only test hook: if /data/local/tmp/reva-seed.txt exists (pushed
         // via adb), evaluate it once after the page loads. Lets device E2E
         // configure the provider and drive a chat without blind UI taps. The

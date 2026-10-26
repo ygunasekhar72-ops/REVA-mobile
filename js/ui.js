@@ -93,9 +93,12 @@
     /* ---------- PLUGINS / MARKET ---------- */
     renderPlugins: function () {
       var list = Store.db.plugins;
+      var srcIcon = function (p) { return p.source === 'starter' ? 'package' : (p.source === 'ai' ? 'sparkles' : 'puzzle'); };
+      var srcTag = function (p) { return p.code ? ' · real tools' : ''; };
+      var errTag = function (p) { return p.error ? ' · error: ' + p.error : ''; };
       $('#plugList').innerHTML = list.map(function (p) {
-        return '<div class="row"><span class="tile"><i data-lucide="puzzle"></i></span>' +
-          '<span class="rtxt"><b>' + H.esc(p.name) + '</b><small>' + H.esc(p.desc || '') + (p.source === 'ai' ? ' · built by AI' : '') + '</small></span>' +
+        return '<div class="row"><span class="tile"><i data-lucide="' + srcIcon(p) + '"></i></span>' +
+          '<span class="rtxt"><b>' + H.esc(p.name) + '</b><small>' + H.esc((p.desc || '') + srcTag(p) + (p.source === 'ai' ? ' · built by AI' : '') + errTag(p)) + '</small></span>' +
           '<i data-lucide="x" class="chev" style="width:15px;height:15px;cursor:pointer" data-delplugin="' + p.id + '"></i>' +
           '<label class="sw"><input type="checkbox" data-toggle="plugin:' + p.id + '"' + (p.on ? ' checked' : '') + '/><i></i></label></div>';
       }).join('') ||
@@ -123,7 +126,7 @@
       var skills = Store.db.skills;
       $('#skillList').innerHTML = skills.map(function (s) {
         return '<div class="row"><span class="tile"><i data-lucide="zap"></i></span>' +
-          '<span class="rtxt"><b>' + H.esc(s.name) + '</b><small>' + H.esc(s.desc || '') + '</small></span>' +
+          '<span class="rtxt" style="cursor:pointer" data-editskill="' + H.esc(s.name) + '"><b>' + H.esc(s.name) + '</b><small>' + H.esc(s.desc || '') + ' · tap to edit body</small></span>' +
           '<i data-lucide="x" class="chev" style="width:15px;height:15px;cursor:pointer" data-delskill="' + s.id + '"></i>' +
           '<label class="sw"><input type="checkbox" data-toggle="skill:' + s.id + '"' + (s.on ? ' checked' : '') + '/><i></i></label></div>';
       }).join('') ||

@@ -101,19 +101,76 @@
     add_plugin: function (a) {
       var name = String(a.name || '').trim();
       var prompt = String(a.prompt || '').trim();
-      if (!name || !prompt) return 'Error: plugin needs name and prompt';
+      var code = a.code ? String(a.code) : '';
+      if (!name || (!prompt && !code)) return 'Error: plugin needs name and prompt (or code)';
       var id = 'p' + H.uid();
-      Store.db.plugins.push({ id: id, name: name, desc: String(a.description || '').slice(0, 120), prompt: prompt.slice(0, 1200), source: 'ai', on: true });
+      Store.db.plugins.push({ id: id, name: name, desc: String(a.description || '').slice(0, 120), prompt: prompt.slice(0, 1200), code: code, source: 'ai', on: true });
       Store.save();
-      return 'Added plugin "' + name + '" (' + id + ') — enabled; applies from the next turn.';
+      Tools.reloadPlugins();
+      return 'Added plugin "' + name + '" (' + id + ')' + (code ? ' with real tools' : '') + ' — enabled; applies from the next turn.';
     },
     run_command: function (a) {
       return Console.exec(String(a.command || '')).out;
     }
   };
 
-  function brief(name, args, result) {
-    var s = String(result || '');
+  /* ---------- real plugin system ----------
+     A plugin is JS code evaluated once with a `register` capability object.
+     register({ name, description, parameters, run }) adds a REAL tool: it
+     joins the schema list sent to the model and its run(args) is executed
+     exactly like a built-in (async allowed). Nothing is simulated. */
+  var pluginTools = [];
+
+  function reloadPlugins() {
+    pluginTools = [];
+    (Store.db.plugins || []).forEach(function (p) {
+      if (!p.on || !p.code) return;
+      try {
+        new Function('register', 'Tools', p.code)(function (spec) {
+          if (!spec || !spec.name || typeof spec.run !== 'function') return;
+          pluginTools.push({
+            name: String(spec.name),
+            desc: String(spec.description || spec.name),
+            params: spec.parameters || { type: 'object', properties: {} },
+            plugin: p.name,
+            run: spec.run
+          });
+        }, Tools);
+        p.loaded = true; p.error = '';
+      } catch (e) {
+        p.loaded = false; p.error = String(e && e.message || e);
+      }
+    });
+    Tools.schemas = SCHEMAS.concat(pluginTools.map(function (t) {
+      return { type: 'function', function: { name: t.name, description: t.desc + ' (plugin: ' + t.plugin + ')', parameters: t.params } };
+    }));
+  }
+
+  function ensureStarterPack() {
+    if (Store.db.starterInstalled) return Promise.resolve(false);
+    return fetch('plugins/index.json').then(function (r) { return r.json(); }).then(function (list) {
+      var added = [];
+      var chain = Promise.resolve();
+      (list.plugins || []).forEach(function (entry) {
+        chain = chain.then(function () {
+          var exists = (Store.db.plugins || []).some(function (p) { return p.starterId === entry.id; });
+          if (exists) return null;
+          return fetch('plugins/' + entry.file).then(function (r) { return r.text(); }).then(function (code) {
+            Store.db.plugins.push({ id: 'sp_' + entry.id, starterId: entry.id, name: entry.name, desc: entry.desc, source: 'starter', on: true, code: code });
+            added.push(entry.name);
+          });
+        });
+      });
+      return chain.then(function () {
+        Store.db.starterInstalled = true;
+        Store.save();
+        if (added.length) reloadPlugins();
+        return added;
+      });
+    }).catch(function () { return false; });
+  }
+
+  function brief(name, args, result) {    var s = String(result || '');
     var ok = s.indexOf('Error') !== 0;
     if (name === 'write_file') return { label: 'Writing ' + (args.path || ''), meta: fmtSize(String(args.content || '').length), ok: ok, path: normPath(args.path) };
     if (name === 'read_file') return { label: 'Reading ' + (args.path || ''), meta: s.split('\n').length + ' lines', ok: ok };
@@ -124,6 +181,8 @@
     if (name === 'run_command') return { label: '❯ ' + (args.command || ''), meta: '', ok: ok, cmd: args.command, out: s };
     if (name === 'web_search') return { label: 'Search · ' + String(args.query || '').slice(0, 40), meta: '', ok: ok };
     if (name === 'web_read') return { label: 'Read · ' + String((args.url || '').replace(/^https?:\/\//, '')).slice(0, 40), meta: '', ok: ok };
+    if (name === 'browser_open') return { label: 'Browser · ' + String((args.url || '').replace(/^https?:\/\//, '')).slice(0, 40), meta: '', ok: ok, target: String(args.url || '') };
+    if (name === 'browser_read') return { label: 'Read · ' + String((args.url || '').replace(/^https?:\/\//, '')).slice(0, 40), meta: '', ok: ok, target: String(args.url || '') };
     if (name === 'shell_exec') return { label: '❯ ' + String(args.command || '').slice(0, 46), meta: '', ok: ok, cmd: args.command, out: s };
     return { label: name, meta: '', ok: ok };
   }
@@ -134,11 +193,13 @@
     { type: 'function', function: { name: 'list_files', description: 'List a workspace folder.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'defaults to workspace root' } } } } },
     { type: 'function', function: { name: 'delete_file', description: 'Delete a workspace file.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'save_memory', description: 'Persist something the user wants remembered across sessions. tag: user | feedback | project | reference.', parameters: { type: 'object', properties: { title: { type: 'string', description: 'file-style name, e.g. deploy-notes.md' }, body: { type: 'string' }, tag: { type: 'string' } }, required: ['title', 'body'] } } },
-    { type: 'function', function: { name: 'add_plugin', description: 'Create and install a plugin (a persistent instruction pack) for the user. Use when the user asks for a plugin, persona, or standing behavior.', parameters: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, prompt: { type: 'string', description: 'the instruction block injected into the system prompt while enabled' } }, required: ['name', 'prompt'] } } },
+    { type: 'function', function: { name: 'add_plugin', description: 'Create and install a plugin for the user. Two kinds: (a) instruction pack — a persistent prompt block; (b) real tool plugin — provide `code` that calls register({name, description, parameters, run}) to add real tools the model can call. Use when the user asks for a plugin, persona, automation, or new capability.', parameters: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, prompt: { type: 'string', description: 'instruction block (instruction-pack plugins)' }, code: { type: 'string', description: 'JS source calling register({name, description, parameters, run}) — creates REAL callable tools' } }, required: ['name'] } } },
     { type: 'function', function: { name: 'run_command', description: 'Run a harness console command. Available: ls [path], tree, cat <file>, rm <file>, mkdir <dir>, mv <a> <b>, echo <text>, wc <file>, grep <pat> <file>, date, model, memories, plugins, status, help.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
     { type: 'function', function: { name: 'web_search', description: 'Search the live web. Returns result links with titles plus a snippet digest. Use for current events, docs, APIs, anything you are unsure about or that may have changed.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
     { type: 'function', function: { name: 'web_read', description: 'Fetch and read a web page as clean text (markdown). Use after web_search to study a promising result, or for any URL the user gives you.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
-    { type: 'function', function: { name: 'shell_exec', description: 'Run a REAL shell command on the device (Android app builds). Returns combined stdout+stderr and the true exit code; the working directory persists across calls within the session. Use it to build, test, inspect processes, and verify work. A nonzero exit means failure — read the output and react. Long output is truncated to 64KB.', parameters: { type: 'object', properties: { command: { type: 'string' }, cwd: { type: 'string', description: 'working directory for this command (absolute or relative to the session cwd)' }, timeout_seconds: { type: 'number', description: 'default 120' } }, required: ['command'] } } }
+    { type: 'function', function: { name: 'shell_exec', description: 'Run a REAL shell command on the device (Android app builds). Returns combined stdout+stderr and the true exit code; the working directory persists across calls within the session. Use it to build, test, inspect processes, and verify work. A nonzero exit means failure — read the output and react. Long output is truncated to 64KB.', parameters: { type: 'object', properties: { command: { type: 'string' }, cwd: { type: 'string', description: 'working directory for this command (absolute or relative to the session cwd)' }, timeout_seconds: { type: 'number', description: 'default 120' } }, required: ['command'] } } },
+    { type: 'function', function: { name: 'browser_open', description: 'Open a URL in the built-in browser overlay (user-visible). Returns immediately after navigation starts; pair with browser_read for the page text.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+    { type: 'function', function: { name: 'browser_read', description: 'Read a web page as clean markdown AND open it in the built-in browser so the user can see it. Best way to show a page to the user while studying it.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } }
   ];
 
   /* ---------- harness console (user terminal + run_command) ---------- */
@@ -202,8 +263,18 @@
   var Tools = {
     schemas: SCHEMAS,
     brief: brief,
+    reloadPlugins: reloadPlugins,
+    ensureStarterPack: ensureStarterPack,
+    exists: function (path) {
+      try { var s = WS(); return s.vfsContent[normPath(path)] !== undefined; } catch (e) { return false; }
+    },
     run: function (name, args) {
       args = args || {};
+      var pt = null;
+      for (var i = 0; i < pluginTools.length; i++) if (pluginTools[i].name === name) { pt = pluginTools[i]; break; }
+      if (pt) {
+        return Promise.resolve().then(function () { return pt.run(args); }).catch(function (e) { return 'Error: ' + (e && e.message || e); });
+      }
       var fn = IMPL[name];
       if (!fn) return 'Error: unknown tool ' + name;
       try { return fn(args); } catch (e) { return 'Error: ' + e.message; }

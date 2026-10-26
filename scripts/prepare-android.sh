@@ -66,7 +66,7 @@ done
 echo "== web app assets =="
 mkdir -p "$ASDIR"
 cp index.html manifest.webmanifest "$ASDIR/"
-cp -r css js assets "$ASDIR/"
-echo "  copied index.html, css/, js/, assets/"
+cp -r css js assets plugins "$ASDIR/"
+echo "  copied index.html, css/, js/, assets/, plugins/"
 
 echo "done — build with: gradle -p android assembleDebug (or assembleRelease)"
