@@ -990,6 +990,7 @@
     { id: 'nvidia/nemotron-3.5-super-vl-120b-a12b', name: 'Nemotron 3.5 Super VL', desc: 'vision-language (images in)' },
     { id: 'black-forest-labs/flux.2-klein', name: 'FLUX.2 Klein', desc: 'image generation — hosted API, image saved to workspace', image: true }
   ];
+  window.REVA_BUILTIN_MODELS = BUILTIN_MODELS;
   function renderBuiltinModels() {
     var host = $('#builtinModels');
     if (!host) return;
@@ -1012,6 +1013,7 @@
     db.settings.model = m.id;
     Store.save();
     UI.renderModels(); UI.renderModelSheet(db.settings.providerId); UI.renderSettingsSubs(); renderBuiltinModels(); refreshCtx();
+    H.closeSheets();
     H.toast(m.name + ' selected');
   });
   /* image generation: FLUX models are HOSTED on NVIDIA's API (the weights are

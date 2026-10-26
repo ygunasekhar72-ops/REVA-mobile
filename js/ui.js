@@ -181,13 +181,33 @@
     renderModelSheet: function (selId) {
       var db = Store.db;
       var prov = Store.provider(selId || db.settings.providerId);
-      $('#provChips').innerHTML = db.providers.map(function (p) {
+      /* truly connected providers only: a key is set (or it's the active
+         provider). Untouched presets (OpenAI, Groq, Ollama…) stay in
+         Settings → Model where they can be configured. */
+      var connected = db.providers.filter(function (p) {
+        return (p.key && String(p.key).trim()) || p.id === db.settings.providerId;
+      });
+      $('#provChips').innerHTML = connected.map(function (p) {
         return '<button class="chip' + (p.id === prov.id ? ' sel' : '') + '" data-prov-chip="' + p.id + '">' + H.esc(p.name) + '</button>';
       }).join('');
-      $('#modelSheetList').innerHTML = prov.models.length ? prov.models.map(function (m) {
-        return '<button class="mcard' + (m === db.settings.model && prov.id === db.settings.providerId ? ' sel' : '') + '" data-sheet-model="' + H.esc(m) + '" data-from-prov="' + prov.id + '">' +
-          '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b><small>' + H.esc(prov.name) + '</small></span></span></button>';
-      }).join('') : '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:14px">No models — fetch them in Settings → Model</p>';
+      var html = '<div class="sec">Built-in models · free via NVIDIA</div>';
+      var BI = window.REVA_BUILTIN_MODELS || [];
+      html += BI.map(function (m, i) {
+        return '<button class="mcard' + (m.id === db.settings.model ? ' sel' : '') + '" data-builtin="' + i + '">' +
+          '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m.name) + '</b><small>' + H.esc(m.desc) + '</small></span></span></button>';
+      }).join('');
+      html += '<div class="sec">Connected models</div>';
+      var anyConnected = false;
+      connected.forEach(function (p) {
+        if (!p.models.length) return;
+        anyConnected = true;
+        p.models.forEach(function (m) {
+          html += '<button class="mcard' + (m === db.settings.model && p.id === db.settings.providerId ? ' sel' : '') + '" data-sheet-model="' + H.esc(m) + '" data-from-prov="' + p.id + '">' +
+            '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b><small>' + H.esc(p.name) + '</small></span></span></button>';
+        });
+      });
+      if (!anyConnected) html += '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:10px">No connected providers yet — add a key in Settings → Model</p>';
+      $('#modelSheetList').innerHTML = html;
       H.icons();
     },
 
