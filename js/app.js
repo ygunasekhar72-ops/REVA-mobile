@@ -1127,7 +1127,10 @@
     }
     if ((t = e.target.closest('[data-sheet]'))) {
       var sheetId = t.getAttribute('data-sheet');
-      if (sheetId === 'sheet-model') UI.renderModelSheet(db.settings.providerId);
+      if (sheetId === 'sheet-model') {
+        UI.renderModelSheet(db.settings.providerId);
+        var msIn = $('#modelSearch'); if (msIn) msIn.value = '';
+      }
       H.openSheet(sheetId);
       return;
     }
@@ -1889,6 +1892,28 @@
   storeUse();
   Store.onChange(function () { storeUse(); });
   H.icons();
+  /* model search in the switch-model sheet: filter cards across every
+     section, hide sections that end up empty */
+  $('#modelSearch').addEventListener('input', function (e) {
+    var q = e.target.value.trim().toLowerCase();
+    var host = $('#modelSheetList');
+    if (!host) return;
+    var sec = null, secVisible = 0;
+    Array.prototype.forEach.call(host.children, function (el) {
+      if (el.classList.contains('sec')) {
+        if (sec && secVisible === 0) sec.style.display = 'none';
+        sec = el; secVisible = 0;
+        el.style.display = '';
+        return;
+      }
+      if (!el.classList.contains('mcard')) return;
+      var hit = !q || el.textContent.toLowerCase().indexOf(q) >= 0;
+      el.style.display = hit ? '' : 'none';
+      if (hit) { secVisible++; if (sec) sec.style.display = ''; }
+    });
+    if (sec && secVisible === 0) sec.style.display = 'none';
+  });
+
   fireHook('Session start', { at: Date.now() });
   window.addEventListener('pagehide', function () { fireHook('Session end', { at: Date.now() }); });
   window.__appBooted = true;
