@@ -104,6 +104,31 @@ public class MainActivity extends Activity {
         }).start();
 
         web.loadUrl("file:///android_asset/index.html");
+
+        // Debug-only test hook: if /data/local/tmp/reva-seed.txt exists (pushed
+        // via adb), evaluate it once after the page loads. Lets device E2E
+        // configure the provider and drive a chat without blind UI taps. The
+        // seed should self-disable via a localStorage flag; remove the file
+        // with adb when done (the app cannot delete shell-owned files there).
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            final File seed = new File("/data/local/tmp/reva-seed.txt");
+            if (seed.exists()) {
+                web.setWebViewClient(new android.webkit.WebViewClient() {
+                    @Override
+                    public void onPageFinished(WebView v, String url) {
+                        if (!seed.exists()) return;
+                        try {
+                            byte[] b = new byte[(int) seed.length()];
+                            java.io.FileInputStream in = new java.io.FileInputStream(seed);
+                            int n = 0;
+                            while (n < b.length) { int r = in.read(b, n, b.length - n); if (r < 0) break; n += r; }
+                            in.close();
+                            v.evaluateJavascript(new String(b, java.nio.charset.StandardCharsets.UTF_8), null);
+                        } catch (Exception ignored) { }
+                    }
+                });
+            }
+        }
     }
 
     /** One persistent shell session emitting output to a JS collector.
@@ -193,6 +218,25 @@ public class MainActivity extends Activity {
             return null;
         }
 
+        /** Termux's proot links "libtalloc.so.2"; AGP only packages "lib*.so",
+         *  so the lib ships as libtalloc.so and is copied under the .2 name
+         *  into the app bin dir, which joins LD_LIBRARY_PATH. */
+        private String tallocPath() {
+            try {
+                File src = new File(getApplicationInfo().nativeLibraryDir, "libtalloc.so");
+                if (!src.exists()) return "";
+                File dst = new File(getFilesDir(), "bin/libtalloc.so.2");
+                if (!dst.exists() || dst.length() != src.length()) {
+                    java.io.FileInputStream in = new java.io.FileInputStream(src);
+                    java.io.FileOutputStream outS = new java.io.FileOutputStream(dst);
+                    byte[] b = new byte[65536]; int n;
+                    while ((n = in.read(b)) > 0) outS.write(b, 0, n);
+                    in.close(); outS.close();
+                }
+                return dst.getAbsolutePath();
+            } catch (Exception e) { return ""; }
+        }
+
         private void ensureLinux() {
             synchronized (LINUX_LOCK) {
                 if (linuxReady != null) return;
@@ -235,15 +279,21 @@ public class MainActivity extends Activity {
         /** executable launcher the pty runs via SHELL= — paths baked at write time */
         private void writeShellWrapper() throws Exception {
             String nd = new File(prootBin()).getParent();
+            tallocPath();
             new File(getFilesDir(), ".proot").mkdirs(); // proot's PROOT_TMP_DIR must exist before first exec
             StringBuilder sb = new StringBuilder();
             sb.append("#!/system/bin/sh\n");
             sb.append("PROOT_LOADER='").append(new File(nd, "libproot-loader.so").getAbsolutePath()).append("'\n");
-            sb.append("LD_LIBRARY_PATH='").append(nd).append("'\n");
+            sb.append("LD_LIBRARY_PATH='").append(nd)
+              .append(':').append(getFilesDir().getAbsolutePath())
+              .append("/bin'\n");
             sb.append("PROOT_TMP_DIR='").append(new File(getFilesDir(), ".proot").getAbsolutePath()).append("'\n");
             sb.append("PROOT_F2FS_WORKAROUND=0\n");
-            sb.append("PROOT_NO_SECCOMP=1\n");
-            sb.append("export PROOT_LOADER LD_LIBRARY_PATH PROOT_TMP_DIR PROOT_F2FS_WORKAROUND PROOT_NO_SECCOMP\n");
+            // NB: proot's OWN seccomp filter must stay ENABLED: the app's
+            // zygote seccomp policy is inherited by every child and returns
+            // ENOSYS to fork() before pure-ptrace translation can intercept —
+            // proot's own (newer) filter runs first and wins.
+            sb.append("export PROOT_LOADER LD_LIBRARY_PATH PROOT_TMP_DIR PROOT_F2FS_WORKAROUND\n");
             // NB: `apk add` installs and runs packages fine but reports a
             // cosmetic "1 error" at commit under proot (known apk/proot
             // accounting quirk); exit code 1 does not mean failure.
@@ -397,6 +447,7 @@ public class MainActivity extends Activity {
                         proc = launchLinux(new String[]{ rs });
                     }
                     stdin = proc.getOutputStream();
+                    startWriter();
                     pump(proc.getInputStream());
                     pump(proc.getErrorStream());
                     if (pty) emit("\r\n\u001b[2mREVA Linux (Alpine, proot) \u2014 pkg install adds packages\u001b[0m\r\n");
@@ -421,6 +472,7 @@ public class MainActivity extends Activity {
                 catch (Exception e) { emit("shell error: " + e.getMessage() + "\n"); return; }
             }
             stdin = proc.getOutputStream();
+            startWriter();
             pump(proc.getInputStream());
             pump(proc.getErrorStream());
         }
@@ -459,17 +511,38 @@ public class MainActivity extends Activity {
             return pb.start();
         }
 
-        /** Raw byte passthrough (pty mode: keystrokes go through untouched). */
-        @JavascriptInterface
-        public void writeRaw(final String data) {
-            final java.io.OutputStream s = stdin;
-            if (s == null || data == null) return;
+        /** Raw byte passthrough (pty mode: keystrokes go through untouched).
+         *  Writes are FUNNELED through one FIFO writer thread: the JS bridge
+         *  calls writeRaw several times per exec (task, newline, marker, id,
+         *  newline) and per-call threads could interleave, splitting the
+         *  marker line. The bridge thread only enqueues, so a slow reader
+         *  never blocks interrupt() or other bridge calls. */
+        private final java.util.ArrayDeque<byte[]> writeQueue = new java.util.ArrayDeque<>();
+
+        private void startWriter() {
+            final java.util.ArrayDeque<byte[]> q = writeQueue;
             new Thread(new Runnable() {
                 public void run() {
-                    try { s.write(data.getBytes()); s.flush(); }
-                    catch (Exception e) { emit("\n[shell closed — reopen the terminal]\n"); }
+                    while (true) {
+                        byte[] chunk;
+                        synchronized (q) {
+                            while (q.isEmpty()) {
+                                try { q.wait(); } catch (Exception e) { return; }
+                            }
+                            chunk = q.poll();
+                        }
+                        if (chunk == null || chunk.length == 0) return; // poisoned by stop()
+                        try { stdin.write(chunk); stdin.flush(); }
+                        catch (Exception e) { emit("\n[shell closed — reopen the terminal]\n"); return; }
+                    }
                 }
             }).start();
+        }
+
+        @JavascriptInterface
+        public void writeRaw(final String data) {
+            if (data == null || stdin == null) return;
+            synchronized (writeQueue) { writeQueue.add(data.getBytes()); writeQueue.notifyAll(); }
         }
 
         /** Line helper (compat; appends newline). */
@@ -490,6 +563,7 @@ public class MainActivity extends Activity {
                 proc = null;
                 stdin = null;
             }
+            synchronized (writeQueue) { writeQueue.add(new byte[0]); writeQueue.notifyAll(); } // poison pill: wake + stop the writer
         }
     }
 

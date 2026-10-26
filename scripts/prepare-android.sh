@@ -23,14 +23,35 @@ for pair in "arm64 arm64-v8a" "arm armeabi-v7a" "x86_64 x86_64"; do
   [ -f "$TMP/$1/bin/busybox" ] && cp "$TMP/$1/bin/busybox" "$JNIDIR/$2/libbusybox.so" && echo "  bundled $2"
 done
 
-echo "== proot + deps (TermFold, Apache-2.0) =="
-BASE="https://raw.githubusercontent.com/Bibarud/TermFold/HEAD/app/src/main/jniLibs"
+echo "== proot + loader + talloc (Termux build — seccomp-aware; required so fork works when spawned by the app under zygote's seccomp policy) =="
+BASE="https://packages.termux.dev/apt/termux-main/pool/main"
+extract_deb() {
+  # $1 = deb url — extracts proot/loader/talloc members into $TMP
+  curl -sL -o "$TMP/pkg.deb" "$1"
+  mkdir -p "$TMP/pkg"
+  (command -v bsdtar >/dev/null && bsdtar -xf "$TMP/pkg.deb" -C "$TMP/pkg" data.tar.xz && bsdtar -xf "$TMP/pkg/data.tar.xz" -C "$TMP/pkg") \
+    || python3 - "$TMP/pkg" <<'PYEOF'
+import sys, tarfile
+tarfile.open(sys.argv[1] + '/pkg.deb').extractall(sys.argv[1] + '/pkg', filter='data')
+PYEOF
+  find "$TMP/pkg/data" -type f -name proot -exec cp {} "$TMP/proot.bin" \;
+  find "$TMP/pkg/data" -type f -path "*libexec/proot/loader" -exec cp {} "$TMP/proot-loader.bin" \;
+  find "$TMP/pkg/data" -type f -name "libtalloc.so.*.*.*" -exec cp {} "$TMP/libtalloc.bin" \;
+}
 for abi in arm64-v8a x86_64; do
+  case $abi in
+    arm64-v8a) AARCH=aarch64 ;;
+    x86_64)    AARCH=x86_64 ;;
+  esac
   mkdir -p "$JNIDIR/$abi"
-  for lib in libproot.so libproot-loader.so libtalloc.so libandroid-shmem.so; do
-    curl -sL -o "$JNIDIR/$abi/$lib" "$BASE/$abi/$lib"
-  done
-  echo "  bundled $abi (proot + loader + talloc + shmem)"
+  rm -f "$TMP/proot.bin" "$TMP/proot-loader.bin" "$TMP/libtalloc.bin"
+  extract_deb "$BASE/p/proot/proot_5.1.107.101_$AARCH.deb"
+  cp "$TMP/proot.bin" "$JNIDIR/$abi/libproot.so"
+  cp "$TMP/proot-loader.bin" "$JNIDIR/$abi/libproot-loader.so"
+  extract_deb "$BASE/libt/libtalloc/libtalloc_2.5.0_$AARCH.deb"
+  cp "$TMP/libtalloc.bin" "$JNIDIR/$abi/libtalloc.so"
+  curl -sL -o "$JNIDIR/$abi/libandroid-shmem.so" "https://raw.githubusercontent.com/Bibarud/TermFold/HEAD/app/src/main/jniLibs/$abi/libandroid-shmem.so"
+  echo "  bundled $abi (Termux proot + loader + talloc + shmem)"
 done
 
 echo "== REVA Linux rootfs (Alpine minirootfs 3.20.3) =="

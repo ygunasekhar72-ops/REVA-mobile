@@ -39,15 +39,42 @@ jobs:
           done
           ls -la "$JNIDIR"/*/libbusybox.so
 
-      - name: Bundle proot (Linux userspace support, from TermFold, Apache-2.0)
+      - name: Bundle proot (Termux build — its seccomp filter is what makes fork work under the app's zygote seccomp policy; the TermFold build returns ENOSYS on fork when spawned by the app)
         run: |
           JNIDIR="$GITHUB_WORKSPACE/android/app/src/main/jniLibs"
-          BASE="https://raw.githubusercontent.com/Bibarud/TermFold/HEAD/app/src/main/jniLibs"
+          BASE="https://packages.termux.dev/apt/termux-main/pool/main"
+          extract_deb() {
+            # $1 = deb url, $2 = abi dir — pulls the proot/loader/talloc members
+            curl -sL -o /tmp/pkg.deb "$1"
+            python3 - "$2" <<'PYEOF'
+            import sys, tarfile
+            abi = sys.argv[1]
+            t = tarfile.open('/tmp/pkg.deb')
+            t.extractall('/tmp/pkg', filter='data')
+            import glob, shutil, os
+            for src in glob.glob('/tmp/pkg/data/data/com.termux/files/usr/bin/proot'):
+                shutil.copy(src, f'/tmp/proot.bin')
+            for src in glob.glob('/tmp/pkg/data/data/com.termux/files/usr/libexec/proot/loader'):
+                shutil.copy(src, f'/tmp/proot-loader.bin')
+            for src in glob.glob('/tmp/pkg/data/data/com.termux/files/usr/lib/libtalloc.so.*.*.*'):
+                shutil.copy(src, f'/tmp/libtalloc.bin')
+            PYEOF
+            cp /tmp/proot.bin "$JNIDIR/$2/libproot.so"
+            cp /tmp/proot-loader.bin "$JNIDIR/$2/libproot-loader.so"
+            cp /tmp/libtalloc.bin "$JNIDIR/$2/libtalloc.so"
+          }
           for abi in arm64-v8a x86_64; do
+            case $abi in
+              arm64-v8a) AARCH=aarch64 ;;
+              x86_64)    AARCH=x86_64 ;;
+            esac
             mkdir -p "$JNIDIR/$abi"
-            for lib in libproot.so libproot-loader.so libtalloc.so libandroid-shmem.so; do
-              curl -sL -o "$JNIDIR/$abi/$lib" "$BASE/$abi/$lib"
-            done
+            PROOT_URL=$BASE/p/proot/proot_5.1.107.101_$AARCH.deb
+            TALLOC_URL=$BASE/libt/libtalloc/libtalloc_2.5.0_$AARCH.deb
+            extract_deb "$PROOT_URL" "$abi"
+            extract_deb "$TALLOC_URL" "$abi"
+            # android shm shim still comes from TermFold's bundle
+            curl -sL -o "$JNIDIR/$abi/libandroid-shmem.so" "https://raw.githubusercontent.com/Bibarud/TermFold/HEAD/app/src/main/jniLibs/$abi/libandroid-shmem.so"
             ls -la "$JNIDIR/$abi"
           done
 
