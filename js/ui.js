@@ -304,6 +304,11 @@
           '<div class="uacts"><button class="uact" data-editmsg="' + i + '" aria-label="Edit message"><i data-lucide="pencil" style="width:12px;height:12px"></i></button>' +
           '<button class="uact" data-copymsg="' + i + '" aria-label="Copy message"><i data-lucide="copy" style="width:12px;height:12px"></i></button></div></div>');
         u.querySelector('.utext').textContent = m.content;
+        if (m.image) {
+          var im = H.el('<img class="uimg" alt="attached image"/>');
+          im.src = m.image;
+          u.insertBefore(im, u.firstChild);
+        }
         return u;
       }
       var a = H.el('<div class="msg ai"></div>');

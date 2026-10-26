@@ -166,7 +166,16 @@
   function apiMessages() {
     var vis = visibleMessages();
     return [{ role: 'system', content: sysPrompt() }].concat(
-      vis.map(function (m) { return { role: m.role, content: m.content }; })
+      vis.map(function (m) {
+        if (m.role === 'user' && m.image) {
+          // vision: multipart content carries the image to the model
+          return { role: 'user', content: [
+            { type: 'text', text: m.content },
+            { type: 'image_url', image_url: { url: m.image } }
+          ] };
+        }
+        return { role: m.role, content: m.content };
+      })
     );
   }
   function histTokens() {
@@ -200,7 +209,9 @@
     $('#chatInput').value = '';
     var s = ensureSession();
     if (!s.messages.length) s.title = text.slice(0, 38).replace(/\n/g, ' ');
-    s.messages.push({ role: 'user', content: text, ts: Date.now() });
+    var um = { role: 'user', content: text, ts: Date.now() };
+    if (pendingImg) { um.image = pendingImg; pendingImg = null; }
+    s.messages.push(um);
     s.updatedAt = Date.now(); s.model = db.settings.model;
     Store.save();
     UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); UI.renderHome();
@@ -821,9 +832,67 @@
     });
     return out;
   }
+  /* ---- real uploads from the phone: pick → store → (images) show to the
+     model. Images are downscaled via canvas so photos fit the localStorage
+     budget; images attached in chat go to the model as image_url parts
+     (vision models, e.g. Nemotron Super VL). ---- */
+  function readMobileFile(f, cb) {
+    var isImg = /^image\//.test(f.type) || /\.(png|jpe?g|gif|webp|svg|ico)$/i.test(f.name);
+    if (!isImg && f.size > 8 * 1024 * 1024) { cb(null, f.name + ' too large (8 MB limit)'); return; }
+    var r = new FileReader();
+    r.onload = function () {
+      if (!isImg) { cb(String(r.result)); return; }
+      var dataUrl = String(r.result);
+      var img = new Image();
+      img.onload = function () {
+        var MAX = 1280;
+        var w = img.width, h = img.height;
+        if (w > MAX || h > MAX || f.size > 300 * 1024) {
+          var sc = Math.min(MAX / w, MAX / h, 1);
+          var cv = document.createElement('canvas');
+          cv.width = Math.round(w * sc); cv.height = Math.round(h * sc);
+          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          try { dataUrl = cv.toDataURL('image/jpeg', 0.85); } catch (e) { }
+        }
+        cb(dataUrl);
+      };
+      img.onerror = function () { cb(dataUrl); }; // svg etc. — keep as-is
+      img.src = dataUrl;
+    };
+    r.onerror = function () { cb(null, 'could not read ' + f.name); };
+    if (isImg) r.readAsDataURL(f); else r.readAsText(f);
+  }
+  var pendingImg = null;
+  $('#phoneFile').addEventListener('change', function (e) {
+    var files = Array.prototype.slice.call(e.target.files || []);
+    if (!files.length) return;
+    var left = files.length;
+    files.forEach(function (f) {
+      readMobileFile(f, function (data, err) {
+        if (err) { H.toast(err); }
+        else {
+          var path = 'workspace/imported/' + f.name;
+          Tools.run('write_file', { path: path, content: data });
+          if (/^data:image\//.test(data)) {
+            pendingImg = data;
+            $('#chatInput').value += '\n\n[image: ' + f.name + ' — attached for vision]\n';
+            H.toast('Image attached — send it to a vision model');
+          } else {
+            $('#chatInput').value += '\n\n[file: ' + path + ']\n```\n' + String(data).slice(0, 4000) + '\n```';
+            H.toast('Attached ' + f.name);
+          }
+          UI.renderFiles((Store.ws() || {}).vfs['workspace/imported'] || [], 'workspace/imported', false);
+        }
+        if (--left === 0) { H.closeSheets(); $('#chatInput').focus(); }
+      });
+    });
+    e.target.value = '';
+  });
   function renderAttach() {
     var files = vfsFiles();
-    $('#attList').innerHTML = files.map(function (f, i) {
+    $('#attList').innerHTML = '<button class="cmdrow" id="attachPhone"><span class="tile sm"><i data-lucide="smartphone"></i></span>' +
+      '<span class="rtxt"><b style="font-size:13.5px;font-weight:500">Pick from phone</b><small class="kbd" style="font-size:11px">files & images from this device</small></span></button>' +
+      files.map(function (f, i) {
       return '<button class="cmdrow" data-att="' + i + '"><span class="tile sm"><i data-lucide="paperclip"></i></span>' +
         '<span class="rtxt"><b style="font-size:13.5px;font-weight:500">' + H.esc(f.n) + '</b><small class="kbd" style="font-size:11px">' + H.esc(f.path) + '</small></span></button>';
     }).join('') || '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:10px">No files in workspace</p>';

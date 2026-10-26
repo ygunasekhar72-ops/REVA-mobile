@@ -408,3 +408,4 @@
 #terminal{position:fixed;inset:0;z-index:310;display:none;flex-direction:column;background:#0a0a0c}
 #terminal #termHost{flex:1;min-height:0;padding:10px 12px}
 #terminal .ide-head{flex:none}
+#mono-harness .msg.user .uimg{max-width:100%;border-radius:12px;margin-bottom:8px;display:block}
