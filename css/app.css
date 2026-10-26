@@ -368,11 +368,11 @@
 /* ---------- LIVE ACTIVITY FEED (ZCode-style) ---------- */
 #mono-harness .msg.ai .activity{margin:2px 0 8px;border-radius:12px;background:var(--fld);box-shadow:inset 1.5px 1.5px 4px var(--sd),inset -1px -1px 3px var(--sl);padding:3px 11px}
 #mono-harness .act-row{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;color:var(--ink2);border-bottom:1px dashed var(--line)}
-/* switch-model sheet: built-in models | other providers, two columns */
-#mono-harness .model-cols{display:flex;gap:12px;align-items:stretch}
-#mono-harness .model-cols .mcol{flex:1;min-width:0;max-height:54vh;overflow-y:auto;padding-right:2px}
-#mono-harness .model-cols .mcol .sec{margin:0 0 6px}
-#mono-harness .provhead{font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--ink3);padding:8px 2px 4px}
+/* switch-model sheet: one column per provider — [Built-in][Provider 1][Provider 2]… */
+#mono-harness .model-strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:4px}
+#mono-harness .model-strip .mcol{flex:0 0 46%;min-width:150px;display:flex;flex-direction:column;max-height:54vh}
+#mono-harness .mcolhead{font-size:10.5px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--ink3);padding:0 2px 6px;flex:none}
+#mono-harness .mcolbody{flex:1;overflow-y:auto;min-height:0}
 #mono-harness .act-row:last-child{border:0}
 #mono-harness .act-row b{font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #mono-harness .act-row .meta{margin-left:auto;color:var(--ink3);font-size:11px;flex:none}

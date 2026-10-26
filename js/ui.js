@@ -180,31 +180,37 @@
     },
     renderModelSheet: function (selId) {
       var db = Store.db;
-      /* truly connected providers only: a key is set (or it's the active
-         provider). Untouched presets (OpenAI, Groq, Ollama…) stay in
-         Settings → Model where they can be configured. */
+      /* columns: [Built-in models][Provider 1][Provider 2]… — one column per
+         connected provider, the strip scrolls horizontally, each column
+         vertically. Truly connected only (key set or currently active). */
       var connected = db.providers.filter(function (p) {
         return (p.key && String(p.key).trim()) || p.id === db.settings.providerId;
       });
-      var biCol = $('#builtinCol'), otherCol = $('#otherCol');
-      if (!biCol || !otherCol) return;
+      var strip = $('#modelStrip');
+      if (!strip) return;
       var BI = window.REVA_BUILTIN_MODELS || [];
-      biCol.innerHTML = BI.map(function (m, i) {
-        return '<button class="mcard' + (m.id === db.settings.model ? ' sel' : '') + '" data-builtin="' + i + '">' +
-          '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m.name) + '</b><small>' + H.esc(m.desc) + '</small></span></span></button>';
-      }).join('');
-      var html = '';
-      var any = false;
+      var cols = [];
+      cols.push({
+        name: 'Built-in models',
+        cards: BI.map(function (m, i) {
+          return '<button class="mcard' + (m.id === db.settings.model ? ' sel' : '') + '" data-builtin="' + i + '">' +
+            '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m.name) + '</b><small>' + H.esc(m.desc) + '</small></span></span></button>';
+        }).join('')
+      });
       connected.forEach(function (p) {
         if (!p.models.length) return;
-        any = true;
-        html += '<div class="provhead">' + H.esc(p.name) + '</div>';
-        p.models.forEach(function (m) {
-          html += '<button class="mcard' + (m === db.settings.model && p.id === db.settings.providerId ? ' sel' : '') + '" data-sheet-model="' + H.esc(m) + '" data-from-prov="' + p.id + '">' +
-            '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b></span></span></button>';
+        cols.push({
+          name: p.name,
+          cards: p.models.map(function (m) {
+            return '<button class="mcard' + (m === db.settings.model && p.id === db.settings.providerId ? ' sel' : '') + '" data-sheet-model="' + H.esc(m) + '" data-from-prov="' + p.id + '">' +
+              '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b></span></span></button>';
+          }).join('')
         });
       });
-      otherCol.innerHTML = html || '<p style="text-align:center;color:var(--ink3);font-size:12.5px;padding:10px">No connected providers — add a key in Settings → Model</p>';
+      strip.innerHTML = cols.map(function (c) {
+        return '<div class="mcol"><div class="mcolhead">' + H.esc(c.name) + '</div><div class="mcolbody">' +
+          (c.cards || '<p class="ide-empty">no models</p>') + '</div></div>';
+      }).join('');
       H.icons();
     },
 
