@@ -1007,7 +1007,11 @@
     if (!b) return;
     var m = BUILTIN_MODELS[+b.getAttribute('data-builtin')];
     var nv = (db.providers || []).find(function (p) { return /nvidia/i.test(p.name) && p.key; });
-    if (!nv) { H.toast('Add your NVIDIA API key under Providers first'); return; }
+    if (!nv) {
+      // BYOK onboarding: get a free NVIDIA key, paste, done
+      H.openSheet('sheet-onboard');
+      return;
+    }
     if (!nv.models.some(function (x) { return x === m.id; })) nv.models.push(m.id);
     db.settings.providerId = nv.id;
     db.settings.model = m.id;
@@ -1015,6 +1019,28 @@
     UI.renderModels(); UI.renderModelSheet(db.settings.providerId); UI.renderSettingsSubs(); renderBuiltinModels(); refreshCtx();
     H.closeSheets();
     H.toast(m.name + ' selected');
+  });
+  /* onboarding sheet */
+  $('#obGetKey').addEventListener('click', function () {
+    H.closeSheets();
+    try { H.push('ov-browser'); if (window.REVABrowser) window.REVABrowser.open('https://build.nvidia.com'); } catch (e) { }
+    setTimeout(function () { H.openSheet('sheet-onboard'); }, 600);
+  });
+  $('#obSave').addEventListener('click', function () {
+    var key = $('#obKey').value.trim();
+    if (key.indexOf('nvapi-') !== 0) { H.toast('That does not look like an NVIDIA key (starts with nvapi-)'); return; }
+    var p = (db.providers || []).find(function (x) { return /nvidia/i.test(x.name); });
+    if (!p) { p = { id: 'nvd', name: 'NVIDIA NIM', base: '', key: '', models: [] }; db.providers.push(p); }
+    p.base = 'https://integrate.api.nvidia.com/v1';
+    p.key = key;
+    if (!p.models.length) p.models = BUILTIN_MODELS.filter(function (m) { return !m.image; }).map(function (m) { return m.id; });
+    db.settings.providerId = p.id;
+    db.settings.model = 'z-ai/glm-5.3-flash';
+    db.settings.fallbackId = '';
+    Store.save();
+    UI.renderModels(); UI.renderModelSheet(p.id); UI.renderSettingsSubs(); renderBuiltinModels(); refreshCtx();
+    H.closeSheets();
+    H.toast('Connected — built-in models are ready');
   });
   /* image generation: FLUX models are HOSTED on NVIDIA's API (the weights are
      not downloadable for mobile) — call the image endpoint with the user's
