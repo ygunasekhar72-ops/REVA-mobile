@@ -59,8 +59,29 @@
   }
   async function fetchWithRetry(url, init, opts) {
     var retries = (opts && opts.retries) != null ? opts.retries : 3;
+    /* hard request timeout: a model that hangs (NVIDIA deepseek/glm do this
+       intermittently) must abort into the retry/fallback ladder, not stall
+       the chat forever */
+    var TIMEOUT_MS = 180000;
     for (var attempt = 0; ; attempt++) {
-      var res = await fetch(url, init);
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { try { ctrl.abort(); } catch (e) { } }, TIMEOUT_MS);
+      var onOuterAbort = function () { try { ctrl.abort(); } catch (e) { } };
+      if (init.signal) {
+        if (init.signal.aborted) onOuterAbort();
+        else init.signal.addEventListener('abort', onOuterAbort);
+      }
+      var res;
+      try {
+        res = await fetch(url, Object.assign({}, init, { signal: ctrl.signal }));
+      } catch (e) {
+        clearTimeout(timer);
+        if (init.signal && init.signal.aborted) throw e; // user stop — propagate
+        if (attempt >= retries) throw e;
+        await sleep(1000 * Math.pow(2, attempt) + attempt * 250, init.signal);
+        continue;
+      }
+      clearTimeout(timer);
       if (res.status !== 429 && res.status !== 503) return res;
       if (attempt >= retries) return res;
       await sleep(1000 * Math.pow(2, attempt) + attempt * 250, init.signal);

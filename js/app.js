@@ -984,7 +984,7 @@
   /* ================= built-in models (free, via NVIDIA) ================= */
   var BUILTIN_MODELS = [
     { id: 'z-ai/glm-5.3-flash', name: 'GLM 5.3 Flash', desc: 'fast all-rounder · best default agent' },
-    { id: 'minimaxai/minimax-m3.1', name: 'MiniMax M3.1', desc: 'agentic, long-context' },
+    { id: 'minimaxai/minimax-m3.1-flash', name: 'MiniMax M3.1 Flash', desc: 'agentic, long-context' },
     { id: 'deepseek-ai/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', desc: 'strong reasoning (can hang on some accounts)' },
     { id: 'nvidia/nemotron-3-ultra-550b-a55b', name: 'Nemotron 3 Ultra 550B', desc: 'flagship, heavyweight' },
     { id: 'nvidia/nemotron-3.5-super-vl-120b-a12b', name: 'Nemotron 3.5 Super VL', desc: 'vision-language (images in)' },
