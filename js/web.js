@@ -133,9 +133,23 @@
     return { results: interleaved.slice(0, 14), text: text, via: via.join('+') };
   }
 
+  /* SSRF guard for AGENT-driven retrieval (web_read/web_search): the model
+     must not probe loopback, private, or link-local targets on the device.
+     The built-in browser stays unrestricted — that navigation is
+     user-directed. */
+  var BLOCKED_HOST = /^(localhost$|127\.|10\.|192\.168\.|169\.254\.|0\.|\[::1\]|\[fc|\[fd|\[fe80)/i;
+  var BLOCKED_SUFFIX = /\.(local|internal|lan|home)$/i;
+  function isPrivateTarget(u) {
+    try {
+      var h = new URL(u).hostname.toLowerCase();
+      return BLOCKED_HOST.test(h) || BLOCKED_SUFFIX.test(h);
+    } catch (e) { return true; }
+  }
+
   async function read(url) {
     url = String(url || '').trim();
     if (!/^https?:\/\//i.test(url)) return 'Error: provide a full http(s) URL';
+    if (isPrivateTarget(url)) return 'Error: private/loopback addresses are not reachable through web_read';
     try {
       var md = cleanJina(await get('https://r.jina.ai/' + url, 20000));
       if (!md) return 'Error: empty page';
@@ -145,5 +159,5 @@
     }
   }
 
-  window.WebSearch = { search: search, read: read, parseLinks: parseLinks };
+  window.WebSearch = { search: search, read: read, parseLinks: parseLinks, isPrivateTarget: isPrivateTarget };
 })();

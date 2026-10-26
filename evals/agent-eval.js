@@ -138,6 +138,42 @@ async function main() {
       app.indexOf('todo_write first') >= 0 && app.indexOf('Never claim success without evidence') >= 0, 'static check', 0);
   }
 
+  // 7. filesystem containment + edit_file (filesystem server parity)
+  {
+    const fs = require('fs');
+    const tools = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'tools.js'), 'utf8');
+    const containment = tools.indexOf("out[0] !== 'workspace'") >= 0;
+    const editFile = tools.indexOf('edit_file: function') >= 0 && tools.indexOf('oldString not found') >= 0;
+    const offsetRead = tools.indexOf("a.offset") >= 0;
+    const createDir = tools.indexOf('create_directory: function') >= 0;
+    record('filesystem: containment clamp + edit_file + offset reads + create_directory',
+      containment && editFile && offsetRead && createDir, 'static check', 0);
+  }
+
+  // 8. web SSRF guard (fetch-server hardening)
+  {
+    const fs = require('fs');
+    const web = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'web.js'), 'utf8');
+    const guard = web.indexOf('isPrivateTarget') >= 0 && web.indexOf('BLOCKED_HOST') >= 0 && web.indexOf('BLOCKED_SUFFIX') >= 0;
+    record('web: SSRF guard blocks loopback/private/link-local in agent retrieval', guard, 'static check', 0);
+  }
+
+  // 9. memory: delete_memory + dedupe-update present (memory-server parity)
+  {
+    const fs = require('fs');
+    const tools = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'tools.js'), 'utf8');
+    record('memory: delete_memory tool + duplicate-title update present',
+      tools.indexOf('delete_memory: function') >= 0 && tools.indexOf('Updated memory') >= 0, 'static check', 0);
+  }
+
+  // 10. MCP progressive discovery cap
+  {
+    const fs = require('fs');
+    const app = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
+    record('MCP: progressive tool discovery (15-per-server cap in schemas)',
+      app.indexOf('sorted.slice(0, 15)') >= 0, 'static check', 0);
+  }
+
   const pass = results.filter(r => r.pass).length;
   console.log('\n' + pass + '/' + results.length + ' scenarios passed');
   require('fs').writeFileSync(require('path').join(__dirname, 'results.json'), JSON.stringify({ date: new Date().toISOString(), pass, total: results.length, results }, null, 2));

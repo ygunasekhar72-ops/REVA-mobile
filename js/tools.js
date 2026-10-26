@@ -15,10 +15,13 @@
     var parts = p.split('/'), out = [];
     for (var i = 0; i < parts.length; i++) {
       if (!parts[i] || parts[i] === '.') continue;
-      if (parts[i] === '..') { out.pop(); continue; }
+      if (parts[i] === '..') { if (out.length > 1) out.pop(); continue; }
       out.push(parts[i]);
     }
-    return out.join('/') || 'workspace';
+    /* containment: resolution must never leave workspace/ — a leading '..'
+       that pops past the root would otherwise address sibling keys */
+    if (!out.length || out[0] !== 'workspace') return 'workspace';
+    return out.join('/');
   }
   function parentOf(path) {
     var i = path.lastIndexOf('/');
@@ -75,7 +78,41 @@
       var path = normPath(a.path);
       var c = s.vfsContent[path];
       if (c === undefined) return 'Error: no such file: ' + path;
-      return String(c).slice(0, 6000);
+      /* optional offset: large files are read in segments (6000-char window)
+         so the agent can verify big writes end-to-end */
+      var off = Math.max(0, parseInt(a.offset, 10) || 0);
+      var part = String(c).slice(off, off + 6000);
+      if (off > 0) return '[read from offset ' + off + ']\n' + part;
+      return part;
+    },
+    create_directory: function (a) {
+      var s = WS();
+      var dir = normPath(a.path);
+      if (!dir || dir === 'workspace') return 'Error: directory path required';
+      ensureDirs(dir);
+      Store.save();
+      return 'Created directory ' + dir;
+    },
+    edit_file: function (a) {
+      var s = WS();
+      var path = normPath(a.path);
+      var c = s.vfsContent[path];
+      if (c === undefined) return 'Error: no such file: ' + path;
+      var oldStr = String(a.oldString == null ? '' : a.oldString);
+      var newStr = String(a.newString == null ? '' : a.newString);
+      if (!oldStr) return 'Error: oldString required';
+      var text = String(c);
+      var count = text.split(oldStr).length - 1;
+      if (count === 0) return 'Error: oldString not found in ' + path;
+      if (count > 1 && !a.replaceAll) return 'Error: oldString matches ' + count + ' places in ' + path + ' — provide more surrounding context or set replaceAll:true';
+      var updated = a.replaceAll ? text.split(oldStr).join(newStr) : text.replace(oldStr, newStr);
+      s.vfsContent[path] = updated;
+      var dir = parentOf(path) || 'workspace';
+      var list = s.vfs[dir] || (s.vfs[dir] = []);
+      var ex = list.find(function (e) { return e.n === baseOf(path); });
+      if (ex) ex.s = fmtSize(updated.length);
+      Store.save();
+      return 'Edited ' + path + ' (' + count + (a.replaceAll ? ' replacement(s)' : ' replacement') + ')';
     },
     list_files: function (a) {
       var s = WS();
@@ -122,6 +159,18 @@
         .slice(0, 5);
       if (!scored.length) return 'No memories match "' + String(a.query || '') + '".';
       return scored.map(function (x) { return '- [' + x.m.tag + '] ' + x.m.title + ': ' + x.m.body.slice(0, 200); }).join('\n');
+    },
+    delete_memory: function (a) {
+      var title = String(a.title || '').trim().toLowerCase();
+      var ms = Store.db.memories || [];
+      var idx = -1;
+      for (var i = 0; i < ms.length; i++) {
+        if (ms[i].title.toLowerCase() === title || ms[i].title.toLowerCase().indexOf(title) >= 0 && title.length > 3) { idx = i; break; }
+      }
+      if (idx < 0) return 'Error: no memory matching "' + title + '"';
+      var gone = ms.splice(idx, 1)[0];
+      Store.save();
+      return 'Deleted memory "' + gone.title + '"';
     },
     todo_write: function (a) {
       var s = Store.active();
@@ -318,13 +367,16 @@
 
   var SCHEMAS = [
     { type: 'function', function: { name: 'write_file', description: 'Create or overwrite a file in this chat\'s workspace. For LARGE files (>150 lines: games, big apps) ALWAYS write in sections: first call writes the opening, then subsequent calls pass mode:"append" to add the next section — long single generations get dropped. path is relative to workspace.', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, mode: { type: 'string', enum: ['append'], description: 'pass "append" to add this content to the end of the existing file instead of overwriting' } }, required: ['path', 'content'] } } },
-    { type: 'function', function: { name: 'read_file', description: 'Read a workspace file (up to 6000 chars).', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+    { type: 'function', function: { name: 'read_file', description: 'Read a workspace file (6000 chars per call). For large files pass offset (characters) to read further segments, e.g. offset:6000.', parameters: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'number', description: 'character offset for reading large files in segments' } }, required: ['path'] } } },
+    { type: 'function', function: { name: 'edit_file', description: 'Edit an existing workspace file by exact string replacement (like the filesystem edit server). Fails unless oldString is unique unless replaceAll is set. Prefer this over rewriting whole files for small changes.', parameters: { type: 'object', properties: { path: { type: 'string' }, oldString: { type: 'string' }, newString: { type: 'string' }, replaceAll: { type: 'boolean' } }, required: ['path', 'oldString', 'newString'] } } },
+    { type: 'function', function: { name: 'create_directory', description: 'Create a directory in the workspace.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'list_files', description: 'List a workspace folder.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'defaults to workspace root' } } } } },
     { type: 'function', function: { name: 'delete_file', description: 'Delete a workspace file.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'todo_write', description: 'Plan and track your work: write the ordered steps for the current task BEFORE starting (analyze → implement → verify), and mark steps done as you complete them. The user sees this list live. Rewrite the whole list each call.', parameters: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { t: { type: 'string' }, done: { type: 'boolean' } }, required: ['t'] } } }, required: ['items'] } } },
     { type: 'function', function: { name: 'workspace_search', description: 'Fast recursive search over the workspace (ripgrep-style): exact text or regex, optional glob filter, skips node_modules/dist/binaries, returns file:line matches (bounded). Use this instead of reading whole files when locating code.', parameters: { type: 'object', properties: { pattern: { type: 'string' }, isRegex: { type: 'boolean' }, glob: { type: 'string', description: 'path substring filter, e.g. ".js"' }, dir: { type: 'string' }, maxResults: { type: 'number' } }, required: ['pattern'] } } },
     { type: 'function', function: { name: 'code_symbols', description: 'Structural outline of a code file: functions, classes, imports, exports with line numbers (tree-sitter-style symbol extraction for js/ts/py/css and similar). Use to navigate a file and find the right spot before editing.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'memory_search', description: 'Search saved memories by relevance before relying on context. Returns the top matching memories.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+    { type: 'function', function: { name: 'delete_memory', description: 'Delete a saved memory by title (or unique title fragment) — use when the user asks to forget something or a memory is outdated.', parameters: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] } } },
     { type: 'function', function: { name: 'save_memory', description: 'Persist something the user wants remembered across sessions. tag: user | feedback | project | reference. Saving with an existing title UPDATES that memory instead of duplicating.', parameters: { type: 'object', properties: { title: { type: 'string', description: 'file-style name, e.g. deploy-notes.md' }, body: { type: 'string' }, tag: { type: 'string' } }, required: ['title', 'body'] } } },
     { type: 'function', function: { name: 'add_plugin', description: 'Create and install a plugin for the user. Two kinds: (a) instruction pack — a persistent prompt block; (b) real tool plugin — provide `code` that calls register({name, description, parameters, run}) to add real tools the model can call. Use when the user asks for a plugin, persona, automation, or new capability.', parameters: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, prompt: { type: 'string', description: 'instruction block (instruction-pack plugins)' }, code: { type: 'string', description: 'JS source calling register({name, description, parameters, run}) — creates REAL callable tools' } }, required: ['name'] } } },
     { type: 'function', function: { name: 'run_command', description: 'Run a harness console command. Available: ls [path], tree, cat <file>, rm <file>, mkdir <dir>, mv <a> <b>, echo <text>, wc <file>, grep <pat> <file>, date, model, memories, plugins, status, help.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },

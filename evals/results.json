@@ -1,31 +1,31 @@
 {
-  "date": "2026-10-26T18:40:33.828Z",
-  "pass": 6,
-  "total": 6,
+  "date": "2026-10-26T22:34:17.890Z",
+  "pass": 10,
+  "total": 10,
   "results": [
     {
       "name": "shell task: correct tool + success report",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 4
+      "ms": 9
     },
     {
       "name": "failure honesty: exit 1 reported as failure",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 1
+      "ms": 3
     },
     {
       "name": "fragmented args: write completes with full payload",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 1
+      "ms": 3
     },
     {
       "name": "empty-reply ladder: bounded, no hang, honest stop",
       "pass": true,
       "detail": "iters=6",
-      "ms": 6
+      "ms": 8
     },
     {
       "name": "Guard gating: shell_exec + MCP tools excluded in Guard mode",
@@ -35,6 +35,30 @@
     },
     {
       "name": "discipline protocol: todo_write plan + verify-before-success in prompt",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "filesystem: containment clamp + edit_file + offset reads + create_directory",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "web: SSRF guard blocks loopback/private/link-local in agent retrieval",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "memory: delete_memory tool + duplicate-title update present",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "MCP: progressive tool discovery (15-per-server cap in schemas)",
       "pass": true,
       "detail": "static check",
       "ms": 0
