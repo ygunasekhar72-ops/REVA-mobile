@@ -91,12 +91,111 @@
       return s.vfs[dir].length < before ? 'Deleted ' + path : 'Error: no such file: ' + path;
     },
     save_memory: function (a) {
-      var title = String(a.title || '').trim() || 'note.md';
-      if (!/\.md$/.test(title)) title += '.md';
+      var title = String(a.title || '').trim().slice(0, 60);
+      if (!title) return 'Error: memory needs a title';
       var tag = ['user', 'feedback', 'project', 'reference'].indexOf(a.tag) >= 0 ? a.tag : 'project';
-      Store.db.memories.push({ id: 'm' + H.uid(), title: title, tag: tag, body: String(a.body || '').slice(0, 600) });
+      var body = String(a.body || '').slice(0, 600);
+      // mem0-style: same title = update, not a duplicate
+      var ex = Store.db.memories.find(function (m) { return m.title.toLowerCase() === title.toLowerCase(); });
+      if (ex) { ex.body = body; ex.tag = tag; ex.updated = Date.now(); Store.save(); return 'Updated memory "' + title + '"'; }
+      Store.db.memories.push({ id: 'm' + H.uid(), title: title, tag: tag, body: body, updated: Date.now() });
       Store.save();
-      return 'Saved memory ' + title + ' (' + tag + ')';
+      return 'Saved memory "' + title + '" (tag: ' + tag + ')';
+    },
+    memory_search: function (a) {
+      var q = String(a.query || '').toLowerCase().split(/\s+/).filter(function (w) { return w.length > 2; });
+      var ms = Store.db.memories || [];
+      if (!ms.length) return 'No memories saved yet.';
+      var scored = ms.map(function (m) {
+        var hay = (m.title + ' ' + m.body + ' ' + m.tag).toLowerCase();
+        var score = q.reduce(function (acc, w) { return acc + (hay.indexOf(w) >= 0 ? 1 : 0); }, 0);
+        return { m: m, score: score };
+      }).filter(function (x) { return x.score > 0; })
+        .sort(function (a, b) { return b.score - a.score; })
+        .slice(0, 5);
+      if (!scored.length) return 'No memories match "' + String(a.query || '') + '".';
+      return scored.map(function (x) { return '- [' + x.m.tag + '] ' + x.m.title + ': ' + x.m.body.slice(0, 200); }).join('\n');
+    },
+    todo_write: function (a) {
+      var s = Store.active();
+      if (!s) return 'Error: no active session';
+      var items = a.items || a.todos;
+      if (!Array.isArray(items)) return 'Error: items must be an array of {t: "step", done: false}';
+      s.todos = items.slice(0, 20).map(function (it) {
+        return { t: String(it.t || it.text || '').slice(0, 120), done: !!it.done };
+      }).filter(function (it) { return it.t; });
+      Store.save();
+      try { UI.renderTodoCard(s); } catch (e) { }
+      return 'Todo list updated (' + s.todos.filter(function (t) { return t.done; }).length + '/' + s.todos.length + ' done) — shown to the user. Keep it current as you work.';
+    },
+    workspace_search: function (a) {
+      // ripgrep-style recursive search over the workspace: regex or plain
+      // text, glob filter, ignore rules, bounded results with line numbers
+      var s = WS();
+      var pat = String(a.pattern || '');
+      if (!pat) return 'Error: pattern required';
+      var re;
+      try { re = new RegExp(a.isRegex ? pat : pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); } catch (e) { return 'Error: bad regex: ' + e.message; }
+      var glob = String(a.glob || '').toLowerCase();
+      var base = normPath(a.dir || 'workspace');
+      var SKIP = /(^|\/)(node_modules|dist|build|\.git|\.gradle|__pycache__|\.proot)(\/|$)/;
+      var BIN = /\.(png|jpe?g|gif|webp|ico|woff2?|ttf|mp4|mp3|zip|gz|tar|so|dll|exe|pdf)$/i;
+      var max = Math.min(+a.maxResults || 60, 200);
+      var out = [], scanned = 0;
+      Object.keys(s.vfsContent).forEach(function (path) {
+        if (out.length >= max) return;
+        if (path.indexOf(base) !== 0) return;
+        if (SKIP.test(path) || BIN.test(path)) return;
+        if (glob && path.toLowerCase().indexOf(glob.replace(/^\*/, '')) < 0) return;
+        var content = String(s.vfsContent[path] || '');
+        if (content.indexOf('data:') === 0) return; // stored binaries
+        scanned++;
+        content.split('\n').forEach(function (line, i) {
+          if (out.length >= max) return;
+          re.lastIndex = 0;
+          if (re.test(line)) out.push(path + ':' + (i + 1) + ': ' + line.trim().slice(0, 160));
+        });
+      });
+      if (!out.length) return 'No matches for /' + pat + '/ (' + scanned + ' files scanned)';
+      return out.join('\n') + (out.length >= max ? '\n… (bounded at ' + max + ' results)' : '');
+    },
+    code_symbols: function (a) {
+      // tree-sitter-style structural outline: functions, classes, imports,
+      // exports with line numbers — enough to navigate before editing
+      var s = WS();
+      var path = normPath(a.path || '');
+      var content = s.vfsContent[path];
+      if (content === undefined) return 'Error: no such file: ' + path;
+      content = String(content);
+      if (content.indexOf('data:') === 0) return 'Error: binary file';
+      var ext = path.split('.').pop().toLowerCase();
+      var out = [];
+      var lines = content.split('\n');
+      var pats;
+      if (ext === 'py') {
+        pats = [
+          [/^\s*def\s+([A-Za-z_]\w*)/, 'function'], [/^\s*class\s+([A-Za-z_]\w*)/, 'class'],
+          [/^\s*import\s+(\S+)/, 'import'], [/^\s*from\s+(\S+)/, 'import']
+        ];
+      } else if (/^(css|scss)$/.test(ext)) {
+        pats = [[/^\s*([.#][\w-][^{]*)\{/, 'rule']];
+      } else { // js/ts/tsx/jsx/java/c-like
+        pats = [
+          [/^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/, 'function'],
+          [/^\s*(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/, 'class'],
+          [/^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>/, 'function'],
+          [/^\s*import\s.+from\s+['"]([^'"]+)['"]/, 'import'],
+          [/^\s*export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)/, 'export']
+        ];
+      }
+      lines.forEach(function (line, i) {
+        pats.forEach(function (p) {
+          var m = p[0].exec(line);
+          if (m) out.push('L' + (i + 1) + ' ' + p[1] + ': ' + m[1].trim().slice(0, 80));
+        });
+      });
+      if (!out.length) return 'No symbols found in ' + path + ' (' + lines.length + ' lines, .' + ext + ')';
+      return path + ' — ' + out.length + ' symbols\n' + out.slice(0, 100).join('\n');
     },
     add_plugin: function (a) {
       var name = String(a.name || '').trim();
@@ -177,6 +276,10 @@
     if (name === 'list_files') return { label: 'Listing ' + (args.path || 'workspace'), meta: s.split('\n').length + ' entries', ok: ok };
     if (name === 'delete_file') return { label: 'Deleting ' + (args.path || ''), meta: ok ? 'done' : 'failed', ok: ok };
     if (name === 'save_memory') return { label: 'Saving memory ' + (args.title || ''), meta: args.tag || 'project', ok: ok };
+    if (name === 'memory_search') return { label: 'Recalling ' + String(args.query || '').slice(0, 30), meta: '', ok: ok };
+    if (name === 'todo_write') return { label: 'Planning', meta: (Store.active() && Store.active().todos ? Store.active().todos.length : 0) + ' steps', ok: ok };
+    if (name === 'workspace_search') return { label: 'Searching workspace', meta: 'ripgrep-style', ok: ok };
+    if (name === 'code_symbols') return { label: 'Symbols · ' + String(args.path || '').slice(0, 34), meta: '', ok: ok };
     if (name === 'add_plugin') return { label: 'Adding plugin ' + (args.name || ''), meta: 'by AI', ok: ok };
     if (name === 'run_command') return { label: '❯ ' + (args.command || ''), meta: '', ok: ok, cmd: args.command, out: s };
     if (name === 'web_search') return { label: 'Search · ' + String(args.query || '').slice(0, 40), meta: '', ok: ok };
@@ -193,7 +296,11 @@
     { type: 'function', function: { name: 'read_file', description: 'Read a workspace file (up to 6000 chars).', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'list_files', description: 'List a workspace folder.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'defaults to workspace root' } } } } },
     { type: 'function', function: { name: 'delete_file', description: 'Delete a workspace file.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
-    { type: 'function', function: { name: 'save_memory', description: 'Persist something the user wants remembered across sessions. tag: user | feedback | project | reference.', parameters: { type: 'object', properties: { title: { type: 'string', description: 'file-style name, e.g. deploy-notes.md' }, body: { type: 'string' }, tag: { type: 'string' } }, required: ['title', 'body'] } } },
+    { type: 'function', function: { name: 'todo_write', description: 'Plan and track your work: write the ordered steps for the current task BEFORE starting (analyze → implement → verify), and mark steps done as you complete them. The user sees this list live. Rewrite the whole list each call.', parameters: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { t: { type: 'string' }, done: { type: 'boolean' } }, required: ['t'] } } }, required: ['items'] } } },
+    { type: 'function', function: { name: 'workspace_search', description: 'Fast recursive search over the workspace (ripgrep-style): exact text or regex, optional glob filter, skips node_modules/dist/binaries, returns file:line matches (bounded). Use this instead of reading whole files when locating code.', parameters: { type: 'object', properties: { pattern: { type: 'string' }, isRegex: { type: 'boolean' }, glob: { type: 'string', description: 'path substring filter, e.g. ".js"' }, dir: { type: 'string' }, maxResults: { type: 'number' } }, required: ['pattern'] } } },
+    { type: 'function', function: { name: 'code_symbols', description: 'Structural outline of a code file: functions, classes, imports, exports with line numbers (tree-sitter-style symbol extraction for js/ts/py/css and similar). Use to navigate a file and find the right spot before editing.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+    { type: 'function', function: { name: 'memory_search', description: 'Search saved memories by relevance before relying on context. Returns the top matching memories.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+    { type: 'function', function: { name: 'save_memory', description: 'Persist something the user wants remembered across sessions. tag: user | feedback | project | reference. Saving with an existing title UPDATES that memory instead of duplicating.', parameters: { type: 'object', properties: { title: { type: 'string', description: 'file-style name, e.g. deploy-notes.md' }, body: { type: 'string' }, tag: { type: 'string' } }, required: ['title', 'body'] } } },
     { type: 'function', function: { name: 'add_plugin', description: 'Create and install a plugin for the user. Two kinds: (a) instruction pack — a persistent prompt block; (b) real tool plugin — provide `code` that calls register({name, description, parameters, run}) to add real tools the model can call. Use when the user asks for a plugin, persona, automation, or new capability.', parameters: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, prompt: { type: 'string', description: 'instruction block (instruction-pack plugins)' }, code: { type: 'string', description: 'JS source calling register({name, description, parameters, run}) — creates REAL callable tools' } }, required: ['name'] } } },
     { type: 'function', function: { name: 'run_command', description: 'Run a harness console command. Available: ls [path], tree, cat <file>, rm <file>, mkdir <dir>, mv <a> <b>, echo <text>, wc <file>, grep <pat> <file>, date, model, memories, plugins, status, help.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
     { type: 'function', function: { name: 'web_search', description: 'Search the live web. Returns result links with titles plus a snippet digest. Use for current events, docs, APIs, anything you are unsure about or that may have changed.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },

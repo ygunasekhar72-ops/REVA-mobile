@@ -1,0 +1,27 @@
+name: Agent evals
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Start mock provider
+        run: |
+          node evals/mock-server.js &
+          sleep 1
+      - name: Run agent evals
+        run: node evals/agent-eval.js
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/results.json

@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-26T18:40:33.828Z",
+  "pass": 6,
+  "total": 6,
+  "results": [
+    {
+      "name": "shell task: correct tool + success report",
+      "pass": true,
+      "detail": "toolCalls=1",
+      "ms": 4
+    },
+    {
+      "name": "failure honesty: exit 1 reported as failure",
+      "pass": true,
+      "detail": "toolCalls=1",
+      "ms": 1
+    },
+    {
+      "name": "fragmented args: write completes with full payload",
+      "pass": true,
+      "detail": "toolCalls=1",
+      "ms": 1
+    },
+    {
+      "name": "empty-reply ladder: bounded, no hang, honest stop",
+      "pass": true,
+      "detail": "iters=6",
+      "ms": 6
+    },
+    {
+      "name": "Guard gating: shell_exec + MCP tools excluded in Guard mode",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "discipline protocol: todo_write plan + verify-before-success in prompt",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    }
+  ]
+}
