@@ -1,9 +1,0 @@
-{
-  "plugins": [
-    { "id": "calculator", "name": "Calculator", "file": "calculator.js", "desc": "Precise math evaluation tool (calc)" },
-    { "id": "http-fetch", "name": "HTTP Fetch", "file": "http-fetch.js", "desc": "Raw GET of any API/URL as text (http_get)" },
-    { "id": "notes", "name": "Notes Vault", "file": "notes.js", "desc": "Persistent markdown notes in the workspace (notes_write/notes_read/notes_list)" },
-    { "id": "pdf-toolkit", "name": "PDF Toolkit", "file": "pdf-toolkit.js", "desc": "Extract real text from PDFs via poppler in the REVA Linux guest (pdf_read)" },
-    { "id": "unit-convert", "name": "Units & Time", "file": "unit-convert.js", "desc": "Conversions and current time in any timezone (convert, now)" }
-  ]
-}

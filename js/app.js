@@ -132,12 +132,8 @@
         p.push('- ' + k.name + (k.desc ? ': ' + k.desc : '') + ' — full instructions: skills/' + k.name.replace(/[^\w.-]+/g, '-') + '.md');
       });
     }
-    var packs = db.plugins.filter(function (p) { return p.on && p.prompt; });
-    packs.forEach(function (r) { p.push('Plugin ' + r.name + ':\n' + r.prompt); });
-    var realPlugins = db.plugins.filter(function (p) { return p.on && p.code && p.loaded; }).map(function (p) { return p.name; });
-    if (realPlugins.length) p.push('Real tool plugins active: ' + realPlugins.join(', ') + '. Their tools appear in your tool list; use them like built-ins.');
     if (db.settings.tools !== false) {
-      p.push('You have tools: write_file, edit_file (exact string replacement), read_file (supports offset for large files), list_files, create_directory, delete_file, save_memory, memory_search, add_plugin, run_command, shell_exec (device builds), web_search, web_read, browser_open, browser_read (open pages in the built-in browser for the user), plus any active plugin tools. ' +
+      p.push('You have tools: write_file, edit_file (exact string replacement), read_file (supports offset for large files), list_files, create_directory, delete_file, save_memory, memory_search, delete_memory, run_command, shell_exec (device builds), web_search, web_read, browser_open, browser_read (open pages in the built-in browser for the user). ' +
         'When asked to build or change anything, DO IT with write_file instead of pasting large code blocks in chat — ' +
         'the harness renders your tool calls as file cards and the user can run the result. ' +
         'Use edit_file for small changes to existing files; write_file for new files or full rewrites. ' +
@@ -577,7 +573,7 @@
         if (n === 'shell_exec') return !!window.REVAShell; // real device shell — Android builds only
         if (n.indexOf('mcp_') === 0) return mode !== 'Guard';
         if (n === 'web_search' || n === 'web_read' || n === 'browser_open' || n === 'browser_read') return true; // read-only, allowed everywhere incl. Plan
-        if (mode === 'Plan') return ['read_file', 'list_files', 'save_memory', 'memory_search', 'add_plugin', 'web_search', 'web_read', 'browser_open', 'browser_read', 'workspace_search', 'code_symbols'].indexOf(n) >= 0;
+        if (mode === 'Plan') return ['read_file', 'list_files', 'save_memory', 'memory_search', 'delete_memory', 'web_search', 'web_read', 'browser_open', 'browser_read', 'workspace_search', 'code_symbols'].indexOf(n) >= 0;
         if (mode === 'Guard') return ['delete_file', 'run_command', 'shell_exec'].indexOf(n) < 0;
         return true;
       });
@@ -1371,10 +1367,6 @@
         Store.save();
       }
     } catch (e) { }
-    Tools.reloadPlugins();
-    Tools.ensureStarterPack().then(function (added) {
-      if (added && added.length) { Tools.reloadPlugins(); UI.renderPlugins(); H.toast('Starter pack installed: ' + added.join(', ')); }
-    });
     renderBuiltinModels();
     fillAbout();
     fillAutoApps();
@@ -1389,7 +1381,7 @@
     });
     var ws = Store.ws();
     UI.renderHome(); UI.renderFiles(ws ? (ws.vfs[state.curPath] || []) : [], state.curPath, false);
-    UI.renderPlugins(); UI.renderMarket(''); UI.renderSkills(); UI.renderRules();
+    UI.renderSkills(); UI.renderRules();
     UI.renderModels(); UI.renderModelSheet(db.settings.providerId);
     UI.renderMemory(); UI.renderMCP(); UI.renderHooks(); UI.renderAutos();
     UI.renderSettingsSubs();
@@ -1476,13 +1468,6 @@
       db.settings.mode = 'Plan'; Store.save(); applyAppearance(); UI.renderChatHead(Store.active());
       H.toast('Mode → Plan (propose first)'); return;
     }
-    if ((t = e.target.closest('[data-delplugin]'))) {
-      var pid = t.getAttribute('data-delplugin');
-      db.plugins = db.plugins.filter(function (x) { return x.id !== pid; });
-      Store.save(); UI.renderPlugins(); UI.renderMarket($('#mktSearch').value); UI.renderSettingsSubs(); refreshCtx();
-      H.toast('Plugin removed');
-      return;
-    }
     if ((t = e.target.closest('[data-delrule]'))) {
       var rid = t.getAttribute('data-delrule');
       db.allowRules = db.allowRules.filter(function (x) { return x.id !== rid; });
@@ -1553,20 +1538,11 @@
   $('#toolsPill').addEventListener('click', function () {
     db.settings.tools = db.settings.tools === false;
     Store.save(); renderToolsPill(); refreshCtx();
-    H.toast(db.settings.tools === false ? 'Tools off — plain chat only' : 'Tools on — the model can write files, save memories, add plugins');
+    H.toast(db.settings.tools === false ? 'Tools off — plain chat only' : 'Tools on — the model can write files, edit code, run commands');
   });
   // IDE
   $('#idePill').addEventListener('click', function () { IDE.open(); });
   $('#ideBtn').addEventListener('click', function () { IDE.open(); });
-  // AI-built plugins
-  $('#aiPluginBtn').addEventListener('click', function () {
-    H.setTab('home');
-    var s = Store.active();
-    if (s && s.messages.length) s = Store.newSession();
-    UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); openChat();
-    $('#chatInput').value = 'Use the add_plugin tool to create a plugin that ';
-    $('#chatInput').focus();
-  });
   $('#qResume').addEventListener('click', function () {
     var last = db.sessions.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; })[0];
     if (!last) { H.toast('No sessions yet'); return; }
@@ -1673,9 +1649,6 @@
       r.style.display = r.textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
     });
   });
-
-  // marketplace search
-  $('#mktSearch').addEventListener('input', function (e) { UI.renderMarket(e.target.value); });
 
   // memory sheet
   function openMemorySheet(id) {
@@ -1828,7 +1801,7 @@
         Tools.run('write_file', { path: fname, content: '---\nname: ' + name + '\ndescription: ' + (desc || name) + '\n---\n\n# Skill: ' + name + '\n\n' + (desc || '') + '\n\n<!-- Agent Skills standard: write the full step-by-step instructions the agent follows when this skill applies. Optional scripts/ and reference files live next to this SKILL.md. -->\n' });
       }
     } catch (e) { }
-    Store.save(); Tools.reloadPlugins(); UI.renderSkills(); UI.renderSettingsSubs(); refreshCtx(); H.closeSheets();
+    Store.save(); UI.renderSkills(); UI.renderSettingsSubs(); refreshCtx(); H.closeSheets();
     H.toast('Skill saved — index in prompt, body in skills/<name>.md');
   });
   $('#skDelete').addEventListener('click', function () {
@@ -1848,49 +1821,12 @@
     H.toast('Rule added');
   });
 
-  // plugin sheet (user-authored plugins; the AI adds its own via the add_plugin tool)
-  var plId = null;
-  function openPluginSheet(id) {
-    plId = id || null;
-    var p = id ? db.plugins.find(function (x) { return x.id === id; }) : null;
-    $('#plTitle').innerHTML = '<i data-lucide="puzzle" style="width:17px;height:17px"></i>' + (p ? H.esc(p.name) : 'New plugin');
-    $('#plName').value = p ? p.name : '';
-    $('#plDesc').value = p ? (p.desc || '') : '';
-    $('#plPrompt').value = p ? p.prompt : '';
-    $('#plDelete').style.display = p ? '' : 'none';
-    H.openSheet('sheet-plugin'); H.icons();
-  }
-  $('#plugAdd').addEventListener('click', function () { openPluginSheet(null); });
-  $('#mktAdd').addEventListener('click', function () { openPluginSheet(null); });
-  $('#plSave').addEventListener('click', function () {
-    var name = $('#plName').value.trim(), prompt = $('#plPrompt').value.trim();
-    if (!name || !prompt) { H.toast('Name and instruction block required'); return; }
-    if (plId) {
-      var p = db.plugins.find(function (x) { return x.id === plId; });
-      p.name = name; p.desc = $('#plDesc').value.trim(); p.prompt = prompt;
-    } else {
-      db.plugins.push({ id: 'p' + H.uid(), name: name, desc: $('#plDesc').value.trim(), prompt: prompt, source: 'user', on: true });
-    }
-    Store.save(); UI.renderPlugins(); UI.renderMarket($('#mktSearch').value); UI.renderSettingsSubs(); refreshCtx(); H.closeSheets();
-    H.toast('Plugin saved');
-  });
-  $('#plDelete').addEventListener('click', function () {
-    if (!plId) return;
-    db.plugins = db.plugins.filter(function (x) { return x.id !== plId; });
-    Store.save(); UI.renderPlugins(); UI.renderMarket($('#mktSearch').value); UI.renderSettingsSubs(); refreshCtx(); H.closeSheets();
-    H.toast('Plugin deleted');
-  });
-
   // toggles inside rendered lists (delegated change)
   root.addEventListener('change', function (e) {
     var t = e.target;
     var tog = t.getAttribute && t.getAttribute('data-toggle');
     if (tog) {
       var kind = tog.split(':')[0], id = tog.split(':')[1];
-      if (kind === 'plugin') {
-        var pk = db.plugins.find(function (x) { return x.id === id; });
-        if (pk) pk.on = t.checked;
-      }
       if (kind === 'skill') {
         var sk = db.skills.find(function (x) { return x.id === id; });
         if (sk) sk.on = t.checked;

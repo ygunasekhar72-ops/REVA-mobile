@@ -2,7 +2,7 @@
 (function () {
   var $ = H.$, $$ = H.$$;
   var ICON = { dir: 'folder', code: 'file-code', doc: 'file-text', img: 'image' };
-  var TOOL_ICON = { write_file: 'file-plus-2', read_file: 'file-search', list_files: 'folder-open', delete_file: 'trash-2', save_memory: 'book-marked', add_plugin: 'puzzle', run_command: 'terminal' };
+  var TOOL_ICON = { write_file: 'file-plus-2', read_file: 'file-search', list_files: 'folder-open', delete_file: 'trash-2', save_memory: 'book-marked', run_command: 'terminal' };
 
   function switchRow(icon, title, sub, on, attr) {
     return '<div class="row"><span class="tile"><i data-lucide="' + icon + '"></i></span>' +
@@ -87,37 +87,6 @@
       });
       $('#mountBtn').innerHTML = '<i data-lucide="' + (mounted ? 'x' : 'folder-open') + '"></i>';
       $('#mountBtn').setAttribute('aria-label', mounted ? 'Unmount folder' : 'Mount device folder');
-      H.icons();
-    },
-
-    /* ---------- PLUGINS / MARKET ---------- */
-    renderPlugins: function () {
-      var list = Store.db.plugins;
-      var srcIcon = function (p) { return p.source === 'starter' ? 'package' : (p.source === 'ai' ? 'sparkles' : 'puzzle'); };
-      var srcTag = function (p) { return p.code ? ' · real tools' : ''; };
-      var errTag = function (p) { return p.error ? ' · error: ' + p.error : ''; };
-      $('#plugList').innerHTML = list.map(function (p) {
-        return '<div class="row"><span class="tile"><i data-lucide="' + srcIcon(p) + '"></i></span>' +
-          '<span class="rtxt"><b>' + H.esc(p.name) + '</b><small>' + H.esc((p.desc || '') + srcTag(p) + (p.source === 'ai' ? ' · built by AI' : '') + errTag(p)) + '</small></span>' +
-          '<i data-lucide="x" class="chev" style="width:15px;height:15px;cursor:pointer" data-delplugin="' + p.id + '"></i>' +
-          '<label class="sw"><input type="checkbox" data-toggle="plugin:' + p.id + '"' + (p.on ? ' checked' : '') + '/><i></i></label></div>';
-      }).join('') ||
-        '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:14px 0 6px">No plugins — add one below or let the AI build it</p>';
-      var n = list.filter(function (p) { return p.on; }).length;
-      $('#setPlugSub').textContent = n + ' enabled · ' + list.length + ' installed';
-      $('#mktCount').textContent = list.length + ' plugins installed';
-      H.icons();
-    },
-    renderMarket: function (q) {
-      q = (q || '').toLowerCase();
-      var list = Store.db.plugins.filter(function (p) { return p.name.toLowerCase().indexOf(q) > -1; });
-      $('#mktList').innerHTML = list.map(function (p) {
-        var icon = p.source === 'ai' ? 'sparkles' : 'puzzle';
-        return '<div class="row"><span class="tile"><i data-lucide="' + icon + '"></i></span>' +
-          '<span class="rtxt"><b>' + H.esc(p.name) + '</b><small>' + H.esc(p.desc || '') + (p.source === 'ai' ? ' · built by AI' : '') + '</small></span>' +
-          '<i data-lucide="x" class="chev" style="width:15px;height:15px;cursor:pointer" data-delplugin="' + p.id + '"></i>' +
-          '<label class="sw"><input type="checkbox" data-toggle="plugin:' + p.id + '"' + (p.on ? ' checked' : '') + '/><i></i></label></div>';
-      }).join('') || '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:18px">No plugins yet — build one with the AI above</p>';
       H.icons();
     },
 
@@ -418,8 +387,6 @@
       var skills = db.skills; var n = skills.filter(function (s) { return s.on; }).length;
       $('#setSkillSub').textContent = n + ' of ' + skills.length + ' enabled';
       $('#setPermSub').textContent = 'Mode: ' + db.settings.mode + ' · ' + db.allowRules.length + ' rule' + (db.allowRules.length === 1 ? '' : 's');
-      var pn = db.plugins.filter(function (p) { return p.on; }).length;
-      $('#setPlugSub').textContent = pn + ' enabled · ' + db.plugins.length + ' installed';
       var ok = db.mcp.filter(function (s) { return s.ok && s.on; }).length;
       $('#setMcpSub').textContent = ok + ' connected · ' + (db.mcp.length - ok) + ' unreachable';
       $('#setHookSub').textContent = db.hooks.filter(function (h) { return h.on; }).length + ' of ' + db.hooks.length + ' active';

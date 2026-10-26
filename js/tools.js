@@ -253,97 +253,13 @@
       if (!out.length) return 'No symbols found in ' + path + ' (' + lines.length + ' lines, .' + ext + ')';
       return path + ' — ' + out.length + ' symbols\n' + out.slice(0, 100).join('\n');
     },
-    add_plugin: function (a) {
-      var name = String(a.name || '').trim();
-      var prompt = String(a.prompt || '').trim();
-      var code = a.code ? String(a.code) : '';
-      if (!name || (!prompt && !code)) return 'Error: plugin needs name and prompt (or code)';
-      var id = 'p' + H.uid();
-      Store.db.plugins.push({ id: id, name: name, desc: String(a.description || '').slice(0, 120), prompt: prompt.slice(0, 1200), code: code, source: 'ai', on: true });
-      Store.save();
-      Tools.reloadPlugins();
-      return 'Added plugin "' + name + '" (' + id + ')' + (code ? ' with real tools' : '') + ' — enabled; applies from the next turn.';
-    },
     run_command: function (a) {
       return Console.exec(String(a.command || '')).out;
     }
   };
 
-  /* ---------- real plugin system ----------
-     A plugin is JS code evaluated once with a `register` capability object.
-     register({ name, description, parameters, run }) adds a REAL tool: it
-     joins the schema list sent to the model and its run(args) is executed
-     exactly like a built-in (async allowed). Nothing is simulated. */
-  var pluginTools = [];
-
-  function reloadPlugins() {
-    pluginTools = [];
-    (Store.db.plugins || []).forEach(function (p) {
-      if (!p.on || !p.code) return;
-      try {
-        new Function('register', 'Tools', p.code)(function (spec) {
-          if (!spec || !spec.name || typeof spec.run !== 'function') return;
-          pluginTools.push({
-            name: String(spec.name),
-            desc: String(spec.description || spec.name),
-            params: spec.parameters || { type: 'object', properties: {} },
-            plugin: p.name,
-            run: spec.run
-          });
-        }, Tools);
-        p.loaded = true; p.error = '';
-      } catch (e) {
-        p.loaded = false; p.error = String(e && e.message || e);
-      }
-    });
-    Tools.schemas = SCHEMAS.concat(pluginTools.map(function (t) {
-      return { type: 'function', function: { name: t.name, description: t.desc + ' (plugin: ' + t.plugin + ')', parameters: t.params } };
-    }));
-  }
-
-  /* XHR-based text loader: fetch() cannot load file:// URLs, but the APK
-     serves the app from android_asset — XHR handles both http and file */
-  function fetchText(url) {
-    return new Promise(function (resolve, reject) {
-      try {
-        var x = new XMLHttpRequest();
-        x.open('GET', url, true);
-        x.onload = function () {
-          if (x.status === 200 || (x.responseText && x.status === 0)) resolve(x.responseText);
-          else reject(new Error('HTTP ' + x.status));
-        };
-        x.onerror = function () { reject(new Error('load failed (file or network)')); };
-        x.send();
-      } catch (e) { reject(e); }
-    });
-  }
-
-  function ensureStarterPack() {
-    if (Store.db.starterInstalled) return Promise.resolve(false);
-    return fetchText('plugins/index.json').then(function (listTxt) {
-      var list = JSON.parse(listTxt);
-      var added = [];
-      var chain = Promise.resolve();
-      (list.plugins || []).forEach(function (entry) {
-        chain = chain.then(function () {
-          var exists = (Store.db.plugins || []).some(function (p) { return p.starterId === entry.id; });
-          if (exists) return null;
-          return fetchText('plugins/' + entry.file).then(function (code) {
-            Store.db.plugins.push({ id: 'sp_' + entry.id, starterId: entry.id, name: entry.name, desc: entry.desc, source: 'starter', on: true, code: code });
-            added.push(entry.name);
-          });
-        });
-      });
-      return chain.then(function () {
-        Store.db.starterInstalled = true;
-        Store.save();
-        if (added.length) reloadPlugins();
-        return added;
-      });
-    }).catch(function () { return false; });
-  }
-
-  function brief(name, args, result) {    var s = String(result || '');
+  function brief(name, args, result) {
+    var s = String(result || '');
     var ok = s.indexOf('Error') !== 0;
     if (name === 'write_file') return { label: 'Writing ' + (args.path || ''), meta: fmtSize(String(args.content || '').length), ok: ok, path: normPath(args.path) };
     if (name === 'read_file') return { label: 'Reading ' + (args.path || ''), meta: s.split('\n').length + ' lines', ok: ok };
@@ -354,7 +270,6 @@
     if (name === 'todo_write') return { label: 'Planning', meta: (Store.active() && Store.active().todos ? Store.active().todos.length : 0) + ' steps', ok: ok };
     if (name === 'workspace_search') return { label: 'Searching workspace', meta: 'ripgrep-style', ok: ok };
     if (name === 'code_symbols') return { label: 'Symbols · ' + String(args.path || '').slice(0, 34), meta: '', ok: ok };
-    if (name === 'add_plugin') return { label: 'Adding plugin ' + (args.name || ''), meta: 'by AI', ok: ok };
     if (name === 'run_command') return { label: '❯ ' + (args.command || ''), meta: '', ok: ok, cmd: args.command, out: s };
     if (name === 'web_search') return { label: 'Search · ' + String(args.query || '').slice(0, 40), meta: '', ok: ok };
     if (name === 'web_read') return { label: 'Read · ' + String((args.url || '').replace(/^https?:\/\//, '')).slice(0, 40), meta: '', ok: ok };
@@ -378,8 +293,7 @@
     { type: 'function', function: { name: 'memory_search', description: 'Search saved memories by relevance before relying on context. Returns the top matching memories.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
     { type: 'function', function: { name: 'delete_memory', description: 'Delete a saved memory by title (or unique title fragment) — use when the user asks to forget something or a memory is outdated.', parameters: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] } } },
     { type: 'function', function: { name: 'save_memory', description: 'Persist something the user wants remembered across sessions. tag: user | feedback | project | reference. Saving with an existing title UPDATES that memory instead of duplicating.', parameters: { type: 'object', properties: { title: { type: 'string', description: 'file-style name, e.g. deploy-notes.md' }, body: { type: 'string' }, tag: { type: 'string' } }, required: ['title', 'body'] } } },
-    { type: 'function', function: { name: 'add_plugin', description: 'Create and install a plugin for the user. Two kinds: (a) instruction pack — a persistent prompt block; (b) real tool plugin — provide `code` that calls register({name, description, parameters, run}) to add real tools the model can call. Use when the user asks for a plugin, persona, automation, or new capability.', parameters: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, prompt: { type: 'string', description: 'instruction block (instruction-pack plugins)' }, code: { type: 'string', description: 'JS source calling register({name, description, parameters, run}) — creates REAL callable tools' } }, required: ['name'] } } },
-    { type: 'function', function: { name: 'run_command', description: 'Run a harness console command. Available: ls [path], tree, cat <file>, rm <file>, mkdir <dir>, mv <a> <b>, echo <text>, wc <file>, grep <pat> <file>, date, model, memories, plugins, status, help.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
+    { type: 'function', function: { name: 'run_command', description: 'Run a harness console command. Available: ls [path], tree, cat <file>, rm <file>, mkdir <dir>, mv <a> <b>, echo <text>, wc <file>, grep <pat> <file>, date, model, memories, status, help.', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } } },
     { type: 'function', function: { name: 'web_search', description: 'Search the live web. Returns result links with titles plus a snippet digest. Use for current events, docs, APIs, anything you are unsure about or that may have changed.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
     { type: 'function', function: { name: 'web_read', description: 'Fetch and read a web page as clean text (markdown). Use after web_search to study a promising result, or for any URL the user gives you.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     { type: 'function', function: { name: 'shell_exec', description: 'Run a REAL shell command on the device (Android app builds). Returns combined stdout+stderr and the true exit code; the working directory persists across calls within the session. Use it to build, test, inspect processes, and verify work. A nonzero exit means failure — read the output and react. Long output is truncated to 64KB.', parameters: { type: 'object', properties: { command: { type: 'string' }, cwd: { type: 'string', description: 'working directory for this command (absolute or relative to the session cwd)' }, timeout_seconds: { type: 'number', description: 'default 120' } }, required: ['command'] } } },
@@ -390,7 +304,7 @@
 
   /* ---------- harness console (user terminal + run_command) ---------- */
   var Console = {
-    HELP: 'commands: ls [path] · tree · cat <file> · rm <file> · mkdir <dir> · mv <a> <b> · echo <text> · wc <file> · grep <pat> <file> · date · model · memories · plugins · status · clear · help',
+    HELP: 'commands: ls [path] · tree · cat <file> · rm <file> · mkdir <dir> · mv <a> <b> · echo <text> · wc <file> · grep <pat> <file> · date · model · memories · status · clear · help',
     exec: function (line) {
       line = String(line || '').trim();
       var parts = line.split(/\s+/);
@@ -437,7 +351,6 @@
         else if (cmd === 'date') out = new Date().toLocaleString();
         else if (cmd === 'model') out = Store.db.settings.model + ' · ' + Store.activeProvider().name;
         else if (cmd === 'memories') out = Store.db.memories.length ? Store.db.memories.map(function (m) { return m.tag + ' · ' + m.title; }).join('\n') : '(none)';
-        else if (cmd === 'plugins') out = Store.db.plugins.length ? Store.db.plugins.map(function (p) { return (p.on ? 'on  ' : 'off ') + p.name + (p.source === 'ai' ? ' · built by AI' : ''); }).join('\n') : '(none)';
         else if (cmd === 'status') out = 'provider ' + Store.activeProvider().name + ' · model ' + Store.db.settings.model + ' · tools ' + (Store.db.settings.tools !== false ? 'on' : 'off') + ' · mode ' + Store.db.settings.mode + ' · effort ' + Store.db.settings.effort;
         else if (cmd === 'clear') return { out: '', clear: true };
         else out = 'Unknown command: ' + cmd + '\n' + Console.HELP;
@@ -449,18 +362,11 @@
   var Tools = {
     schemas: SCHEMAS,
     brief: brief,
-    reloadPlugins: reloadPlugins,
-    ensureStarterPack: ensureStarterPack,
     exists: function (path) {
       try { var s = WS(); return s.vfsContent[normPath(path)] !== undefined; } catch (e) { return false; }
     },
     run: function (name, args) {
       args = args || {};
-      var pt = null;
-      for (var i = 0; i < pluginTools.length; i++) if (pluginTools[i].name === name) { pt = pluginTools[i]; break; }
-      if (pt) {
-        return Promise.resolve().then(function () { return pt.run(args); }).catch(function (e) { return 'Error: ' + (e && e.message || e); });
-      }
       var fn = IMPL[name];
       if (!fn) return 'Error: unknown tool ' + name;
       try { return fn(args); } catch (e) { return 'Error: ' + e.message; }

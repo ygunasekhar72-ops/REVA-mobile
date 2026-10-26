@@ -57,7 +57,7 @@ jobs:
         run: |
           mkdir -p android/app/src/main/assets
           cp index.html manifest.webmanifest android/app/src/main/assets/
-          cp -r css js assets plugins android/app/src/main/assets/
+          cp -r css js assets android/app/src/main/assets/
 
       - name: Create signing keystore (first run only, committed for stable signatures)
         run: |
