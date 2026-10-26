@@ -339,7 +339,10 @@
       if (thoughtRow) return;
       thoughtStart = Date.now();
       var act = ensureAct();
-      thoughtRow = H.el('<div class="act-row live"><i data-lucide="brain"></i><b>Thinking</b><span class="meta">…</span></div>');
+      /* ZCode-style Thinking row: brain icon + "Thinking" + a live faded
+         preview of the actual reasoning text + ticking duration — all on
+         one inline row, never a separate panel above the reply */
+      thoughtRow = H.el('<div class="act-row live"><i data-lucide="brain"></i><b>Thinking</b><span class="sep">·</span><span class="rprev"></span><span class="meta">a few seconds</span></div>');
       act.insertBefore(thoughtRow, pendRow || spinRow || null);
       H.icons();
     }
@@ -347,8 +350,12 @@
       if (!thoughtRow) return;
       var secs = Math.max(1, Math.round((Date.now() - thoughtStart) / 1000));
       thoughtRow.classList.remove('live');
-      thoughtRow.querySelector('.meta').textContent = secs + 's';
-      activity.push({ k: 't', icon: 'brain', text: 'Thought', meta: secs + 's' });
+      var rp = thoughtRow.querySelector('.rprev');
+      if (rp) rp.remove();
+      var sp = thoughtRow.querySelector('.sep');
+      if (sp) sp.remove();
+      thoughtRow.querySelector('.meta').textContent = secs < 3 ? 'a few seconds' : secs + 's';
+      activity.push({ k: 't', icon: 'brain', text: 'Thought', meta: secs < 3 ? 'a few seconds' : secs + 's' });
       thoughtRow = null;
     }
     /* ZCode-style verb rows: the label states what is happening right now
@@ -410,6 +417,7 @@
       var v = verbFor(info.name, info.args || {});
       var row = null;
       var diffHtml = '';
+      var bits = info.args ? fileBits(info.args.path) : null;
       /* real diff stats for writes/edits, path chip, Failed badge */
       if (info.name === 'write_file' && info.args && info.args.path) {
         var oldC = info._oldC;
@@ -420,16 +428,20 @@
           diffHtml = '<span class="diff plus">+' + String(info.args.content || '').split('\n').length + '</span>';
         }
       }
+      /* ZCode flat row: [icon][Verb][lang icon][fname][dir][+N -N][Failed] */
+      var flat = '<b>' + H.esc(v.done) + '</b>' +
+        (bits && (info.name === 'write_file' || info.name === 'read_file' || info.name === 'delete_file') ? '<i data-lucide="' + bits.langIcon + '"></i><span class="fname">' + H.esc(bits.fname) + '</span>' + (bits.dir ? '<span class="dchip">' + H.esc(bits.dir) + '</span>' : '') : '') +
+        (info.name === 'shell_exec' || info.name === 'run_command' ? '<span class="rprev">' + H.esc(String(info.args && info.args.command || '').slice(0, 90)) + '</span>' : '') +
+        diffHtml +
+        (info.ok === false && info.cmd ? '<span class="badge fail">Failed</span>' : '') +
+        (info.meta && !info.cmd ? '<span class="meta">' + H.esc(info.meta) + '</span>' : '');
       if (liveToolRow) {
         row = liveToolRow; liveToolRow = null;
         row.classList.remove('live');
-        row.innerHTML = '<i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i><b>' + H.esc(v.done) + '</b>' +
-          (info.path ? '<span class="apath">' + H.esc(info.path) + '</span>' : '') +
-          diffHtml +
-          (info.ok === false && info.cmd ? '<span class="badge fail">Failed</span>' : '') +
-          (info.meta && !info.cmd ? '<span class="meta">' + H.esc(info.meta) + '</span>' : '');
+        row.innerHTML = '<i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i>' + flat;
       } else {
-        row = actRow(info.ok === false ? 'alert-circle' : verbIconFor(info.name), v.done, info.meta || '');
+        row = H.el('<div class="act-row"><i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i>' + flat + '</div>');
+        ensureAct().appendChild(row);
       }
       H.icons();
       if (info.cmd) {
@@ -437,7 +449,7 @@
         ensureAct().appendChild(pre);
         activity.push({ k: 'cmd', icon: 'terminal', text: '❯ ' + info.cmd, meta: info.meta || '', out: String(out || '').slice(0, 500), ok: info.ok });
       } else {
-        activity.push({ k: 'tool', icon: verbIconFor(info.name), text: v.done + ' ' + (info.target || ''), meta: info.meta || '', ok: info.ok, path: info.path || '' });
+        activity.push({ k: 'tool', icon: verbIconFor(info.name), verb: v.done, fname: bits ? bits.fname : '', dir: bits ? bits.dir : '', diff: diffHtml, ok: info.ok, path: info.path || '' });
       }
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
@@ -486,12 +498,15 @@
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
     function onReasoningFn(d) {
+      setStatus(null);
       beginThought();
-      setStatus('Thinking…');
-      var body = ensureThink();
       accRe += d;
-      body.textContent = accRe.slice(-4000);
-      body.scrollTop = body.scrollHeight;
+      /* the reasoning preview lives INSIDE the Thinking row (ZCode style):
+         show the freshest fragment, faded, always the tail */
+      if (thoughtRow) {
+        var rp = thoughtRow.querySelector('.rprev');
+        if (rp) rp.textContent = accRe.replace(/\s+/g, ' ').slice(-140);
+      }
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
     function appendToolCard(info, out) {

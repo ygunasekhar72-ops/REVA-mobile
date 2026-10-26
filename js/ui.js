@@ -318,8 +318,16 @@
       });
       if (acts.length) {
         var rows = acts.map(function (a) {
-          if (a.k === 'cmd') return '<div class="act-row"><i data-lucide="terminal"></i><b>' + H.esc(a.text) + '</b></div>' + (a.out ? '<pre class="act-out">' + H.esc(a.out) + '</pre>' : '');
-          return '<div class="act-row' + (a.ok === false ? ' failed' : '') + '" data-open="' + H.esc(a.path || '') + '"><i data-lucide="' + (a.ok === false ? 'alert-circle' : a.icon) + '"></i><b>' + H.esc(a.text) + '</b>' + (a.meta ? '<span class="meta">' + H.esc(a.meta) + '</span>' : '') + '</div>';
+          if (a.k === 'cmd') {
+            return '<div class="act-row"><i data-lucide="terminal"></i><b>❯ ' + H.esc(a.text.replace(/^❯ /, '')) + '</b>' + (a.ok === false ? '<span class="badge fail">Failed</span>' : '') + '</div>' + (a.out ? '<pre class="act-out">' + H.esc(a.out) + '</pre>' : '');
+          }
+          if (a.k === 't') return '<div class="act-row"><i data-lucide="brain"></i><b>' + H.esc(a.text || 'Thought') + '</b>' + (a.meta ? '<span class="meta">· ' + H.esc(a.meta) + '</span>' : '') + '</div>';
+          var flat = '<b>' + H.esc(a.verb || a.text || '') + '</b>' +
+            (a.fname ? '<i data-lucide="' + H.esc(a.icon || 'file') + '"></i><span class="fname">' + H.esc(a.fname) + '</span>' + (a.dir ? '<span class="dchip">' + H.esc(a.dir) + '</span>' : '') : '') +
+            (a.diff || '') +
+            (a.ok === false ? '<span class="badge fail">Failed</span>' : '') +
+            (a.meta && !a.fname ? '<span class="meta">' + H.esc(a.meta) + '</span>' : '');
+          return '<div class="act-row' + (a.ok === false ? ' failed' : '') + '" data-open="' + H.esc(a.path || '') + '"><i data-lucide="' + (a.ok === false ? 'alert-circle' : a.icon) + '"></i>' + flat + '</div>';
         }).join('');
         if (acts.length > 4) inner += '<details class="actwrap"><summary>' + acts.length + ' steps</summary><div class="activity">' + rows + '</div></details>';
         else inner += '<div class="activity">' + rows + '</div>';
