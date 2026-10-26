@@ -180,34 +180,31 @@
     },
     renderModelSheet: function (selId) {
       var db = Store.db;
-      var prov = Store.provider(selId || db.settings.providerId);
       /* truly connected providers only: a key is set (or it's the active
          provider). Untouched presets (OpenAI, Groq, Ollama…) stay in
          Settings → Model where they can be configured. */
       var connected = db.providers.filter(function (p) {
         return (p.key && String(p.key).trim()) || p.id === db.settings.providerId;
       });
-      $('#provChips').innerHTML = connected.map(function (p) {
-        return '<button class="chip' + (p.id === prov.id ? ' sel' : '') + '" data-prov-chip="' + p.id + '">' + H.esc(p.name) + '</button>';
-      }).join('');
-      var html = '<div class="sec">Built-in models · free via NVIDIA</div>';
+      var biCol = $('#builtinCol'), otherCol = $('#otherCol');
+      if (!biCol || !otherCol) return;
       var BI = window.REVA_BUILTIN_MODELS || [];
-      html += BI.map(function (m, i) {
+      biCol.innerHTML = BI.map(function (m, i) {
         return '<button class="mcard' + (m.id === db.settings.model ? ' sel' : '') + '" data-builtin="' + i + '">' +
           '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m.name) + '</b><small>' + H.esc(m.desc) + '</small></span></span></button>';
       }).join('');
-      html += '<div class="sec">Connected models</div>';
-      var anyConnected = false;
+      var html = '';
+      var any = false;
       connected.forEach(function (p) {
         if (!p.models.length) return;
-        anyConnected = true;
+        any = true;
+        html += '<div class="provhead">' + H.esc(p.name) + '</div>';
         p.models.forEach(function (m) {
           html += '<button class="mcard' + (m === db.settings.model && p.id === db.settings.providerId ? ' sel' : '') + '" data-sheet-model="' + H.esc(m) + '" data-from-prov="' + p.id + '">' +
-            '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b><small>' + H.esc(p.name) + '</small></span></span></button>';
+            '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b></span></span></button>';
         });
       });
-      if (!anyConnected) html += '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:10px">No connected providers yet — add a key in Settings → Model</p>';
-      $('#modelSheetList').innerHTML = html;
+      otherCol.innerHTML = html || '<p style="text-align:center;color:var(--ink3);font-size:12.5px;padding:10px">No connected providers — add a key in Settings → Model</p>';
       H.icons();
     },
 
