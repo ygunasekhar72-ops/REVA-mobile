@@ -180,37 +180,28 @@
     },
     renderModelSheet: function (selId) {
       var db = Store.db;
-      /* columns: [Built-in models][Provider 1][Provider 2]… — one column per
-         connected provider, the strip scrolls horizontally, each column
-         vertically. Truly connected only (key set or currently active). */
+      /* clean single list: "Built-in models" section first, then one section
+         per connected provider. Full-width cards, image-2 style. */
       var connected = db.providers.filter(function (p) {
         return (p.key && String(p.key).trim()) || p.id === db.settings.providerId;
       });
-      var strip = $('#modelStrip');
-      if (!strip) return;
+      var host = $('#modelSheetList');
+      if (!host) return;
       var BI = window.REVA_BUILTIN_MODELS || [];
-      var cols = [];
-      cols.push({
-        name: 'Built-in models',
-        cards: BI.map(function (m, i) {
-          return '<button class="mcard' + (m.id === db.settings.model ? ' sel' : '') + '" data-builtin="' + i + '">' +
-            '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m.name) + '</b><small>' + H.esc(m.desc) + '</small></span></span></button>';
-        }).join('')
-      });
+      var html = '<div class="sec">Built-in models</div>';
+      html += BI.map(function (m) {
+        return '<button class="mcard' + (m.id === db.settings.model ? ' sel' : '') + '" data-builtin="' + BI.indexOf(m) + '">' +
+          '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m.name) + '</b><small>' + H.esc(m.desc) + '</small></span></span></button>';
+      }).join('');
       connected.forEach(function (p) {
         if (!p.models.length) return;
-        cols.push({
-          name: p.name,
-          cards: p.models.map(function (m) {
-            return '<button class="mcard' + (m === db.settings.model && p.id === db.settings.providerId ? ' sel' : '') + '" data-sheet-model="' + H.esc(m) + '" data-from-prov="' + p.id + '">' +
-              '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b></span></span></button>';
-          }).join('')
-        });
+        html += '<div class="sec">' + H.esc(p.name) + '</div>';
+        html += p.models.map(function (m) {
+          return '<button class="mcard' + (m === db.settings.model && p.id === db.settings.providerId ? ' sel' : '') + '" data-sheet-model="' + H.esc(m) + '" data-from-prov="' + p.id + '">' +
+            '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b><small>' + H.esc(p.name) + '</small></span></span></button>';
+        }).join('');
       });
-      strip.innerHTML = cols.map(function (c) {
-        return '<div class="mcol"><div class="mcolhead">' + H.esc(c.name) + '</div><div class="mcolbody">' +
-          (c.cards || '<p class="ide-empty">no models</p>') + '</div></div>';
-      }).join('');
+      host.innerHTML = html;
       H.icons();
     },
 
