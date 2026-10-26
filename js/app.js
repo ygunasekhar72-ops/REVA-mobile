@@ -659,6 +659,21 @@
           setStatus('Continuing…');
           acc = ''; contentEl = null;
           activity.push({ k: 'note', icon: 'refresh-cw', text: 'Empty reply — nudged the model to continue', meta: '#' + nudges });
+          /* auto effort step-down: repeated empties at high reasoning effort
+             usually mean the model is over-thinking past its streaming limit
+             (MiniMax M3.1 at Max does this constantly) — step Max→High→Low
+             so the ladder gives the model a shape it can actually finish */
+          if (nudges === 1 && db.settings.effort === 'Max') {
+            db.settings.effort = 'High';
+            Store.save(); UI.renderSettingsSubs();
+            var ep = $('#effPill'); if (ep) ep.textContent = 'Effort · High';
+            activity.push({ k: 'note', icon: 'gauge', text: 'Effort stepped down to High — the model kept returning empty replies' });
+          } else if (nudges === 2 && db.settings.effort === 'High') {
+            db.settings.effort = 'Low';
+            Store.save(); UI.renderSettingsSubs();
+            var ep2 = $('#effPill'); if (ep2) ep2.textContent = 'Effort · Low';
+            activity.push({ k: 'note', icon: 'gauge', text: 'Effort stepped down to Low' });
+          }
           apiMsgs.push({ role: 'user', content: 'Your last reply was empty. Continue and complete the task using your tools; reply with real content.' });
           continue;
         }

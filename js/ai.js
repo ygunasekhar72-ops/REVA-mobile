@@ -82,9 +82,15 @@
         continue;
       }
       clearTimeout(timer);
-      if (res.status !== 429 && res.status !== 503) return res;
-      if (attempt >= retries) return res;
-      await sleep(1000 * Math.pow(2, attempt) + attempt * 250, init.signal);
+      /* 429/503 on NVIDIA free-tier models resets per-minute: back off in
+         10s steps (up to 4 tries) instead of the fast generic ladder, so a
+         rate limit never surfaces to the user mid-task */
+      if (res.status === 429 || res.status === 503) {
+        if (attempt >= Math.max(retries, 4)) return res;
+        await sleep(10000 * (attempt + 1), init.signal);
+        continue;
+      }
+      return res;
     }
   }
 
