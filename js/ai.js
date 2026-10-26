@@ -59,10 +59,8 @@
   }
   async function fetchWithRetry(url, init, opts) {
     var retries = (opts && opts.retries) != null ? opts.retries : 3;
-    /* hard request timeout: a model that hangs (NVIDIA deepseek/glm do this
-       intermittently) must abort into the retry/fallback ladder, not stall
-       the chat forever */
-    var TIMEOUT_MS = 180000;
+    /* request cap: generous (big generations stream for minutes), but bounded */
+    var TIMEOUT_MS = 300000;
     for (var attempt = 0; ; attempt++) {
       var ctrl = new AbortController();
       var timer = setTimeout(function () { try { ctrl.abort(); } catch (e) { } }, TIMEOUT_MS);
@@ -82,12 +80,15 @@
         continue;
       }
       clearTimeout(timer);
-      /* 429/503 on NVIDIA free-tier models resets per-minute: back off in
-         10s steps (up to 4 tries) instead of the fast generic ladder, so a
-         rate limit never surfaces to the user mid-task */
+      /* 429/503 — NVIDIA free-tier windows are ~per-minute. The ONLY thing
+         that works is WAITING OUT THE WINDOW: honor Retry-After, else wait
+         a full minute, up to 3 times (≈3 min patience). Fast ladders just
+         hammer the limit and surface "(empty reply)" errors. */
       if (res.status === 429 || res.status === 503) {
-        if (attempt >= Math.max(retries, 4)) return res;
-        await sleep(10000 * (attempt + 1), init.signal);
+        if (attempt >= 3) return res;
+        var ra = parseInt(res.headers.get('retry-after') || '0', 10);
+        var waitMs = ra > 0 ? ra * 1000 : 60000;
+        await sleep(waitMs, init.signal);
         continue;
       }
       return res;
@@ -172,91 +173,114 @@
       return echoResult(lastUser, onDelta, onReasoning, signal);
     }
 
-    var res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
-      method: 'POST', headers: headers(p), body: JSON.stringify(buildBody(opts)), signal: signal
-    });
-    // if this endpoint rejects the reasoning_effort parameter, remember and retry without it
-    if (!res.ok && res.status === 400 && opts.effort && !opts.provider.noEffort) {
-      var errText = await res.text().catch(function () { return ''; });
-      if (/reasoning_effort|unrecognized|unexpected|unknown field|unsupported/i.test(errText)) {
-        opts.provider.noEffort = true;
-        var body2 = buildBody(opts);
-        delete body2.reasoning_effort;
-        res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
-          method: 'POST', headers: headers(p), body: JSON.stringify(body2), signal: signal
-        });
+    /* BUDGET-AWARE REQUEST LOOP — the permanent "(empty reply)" fix.
+       Reasoning models spend max_tokens on thinking FIRST; when the budget
+       runs out the response ends with finish_reason:'length' and NO
+       content/tool_calls. opencode/continue avoid this by never capping
+       low (models.dev gives GLM ~98K output) and handling length-finish.
+       We default to 64K and auto-double up to 256K on length-finish. */
+    var maxTok = Math.max(32, opts.maxTokens || 64) * 1024;
+    var result = null;
+    for (var budgetTry = 0; budgetTry < 3 && !result; budgetTry++) {
+      var body0 = buildBody(opts);
+      body0.max_tokens = maxTok;
+      if (budgetTry > 0 && opts.onReasoning) {
+        onReasoning('\n\n[token budget raised to ' + Math.round(maxTok / 1024) + 'K — the previous round ended mid-reasoning]\n\n');
       }
-    }
-
-    if (!res.ok) {
-      var t = await res.text().catch(function () { return ''; });
-      var hint = '';
-      if (res.status === 401 || res.status === 403) hint = ' — check your API key';
-      if (res.status === 404) hint = ' — check the base URL and model name';
-      if (res.status === 429) hint = ' — rate limit or quota reached';
-      throw new Error('HTTP ' + res.status + hint + (t ? '\n' + t.slice(0, 220) : ''));
-    }
-
-    if (!opts.stream) {
-      var j = await res.json();
-      var m = (j.choices && j.choices[0] && j.choices[0].message) || {};
-      var content0 = m.content || '';
-      var reas0 = m.reasoning_content || m.reasoning || '';
-      if (reas0) onReasoning(reas0);
-      var lifted = liftTextToolCalls(content0);
-      if (lifted) content0 = content0.replace(/(?:\]<\][a-z0-9._-]*\[>\[)?<tool_call>[\s\S]*?<\/tool_call>/gi, '').trim();
-      if (content0) onDelta(content0);
-      var tc0 = (m.tool_calls && m.tool_calls.length) ? cleanToolCalls(m.tool_calls.slice()) : null;
-      if (!tc0 && lifted) tc0 = lifted;
-      if (opts.onToolCall && tc0) {
-        for (var q = 0; q < tc0.length; q++) opts.onToolCall(tc0[q].function.name, (tc0[q].function.arguments || '').length);
+      var res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
+        method: 'POST', headers: headers(p), body: JSON.stringify(body0), signal: signal
+      });
+      // if this endpoint rejects the reasoning_effort parameter, remember and retry without it
+      if (!res.ok && res.status === 400 && opts.effort && !opts.provider.noEffort) {
+        var errText = await res.text().catch(function () { return ''; });
+        if (/reasoning_effort|unrecognized|unexpected|unknown field|unsupported/i.test(errText)) {
+          opts.provider.noEffort = true;
+          var body2 = buildBody(opts);
+          body2.max_tokens = maxTok;
+          delete body2.reasoning_effort;
+          res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
+            method: 'POST', headers: headers(p), body: JSON.stringify(body2), signal: signal
+          });
+        }
       }
-      return { content: content0, reasoning: reas0, toolCalls: tc0 };
-    }
 
-    var reader = res.body.getReader();
-    var dec = new TextDecoder();
-    var buf = '', full = '', reasoning = '', tcAcc = [];
-    while (true) {
-      var r = await reader.read();
-      if (r.done) break;
-      buf += dec.decode(r.value, { stream: true });
-      var idx;
-      while ((idx = buf.indexOf('\n')) >= 0) {
-        var line = buf.slice(0, idx).trim();
-        buf = buf.slice(idx + 1);
-        if (!line.startsWith('data:')) continue;
-        var d = line.slice(5).trim();
-        if (d === '[DONE]') continue;
-        try {
-          var jr = JSON.parse(d);
-          var delta = jr.choices && jr.choices[0] && jr.choices[0].delta;
-          if (!delta) continue;
-          var piece = delta.content;
-          if (piece) { full += piece; onDelta(piece); }
-          var reas = delta.reasoning_content || delta.reasoning;
-          if (reas) { reasoning += reas; onReasoning(reas); }
-          if (delta.tool_calls) {
-            for (var k = 0; k < delta.tool_calls.length; k++) {
-              mergeToolCall(tcAcc, delta.tool_calls[k]);
-              var t = delta.tool_calls[k];
-              var ix = t.index || 0;
-              if (opts.onToolCall && tcAcc[ix]) {
-                opts.onToolCall(tcAcc[ix].function.name, (tcAcc[ix].function.arguments || '').length);
+      if (!res.ok) {
+        var t = await res.text().catch(function () { return ''; });
+        var hint = '';
+        if (res.status === 401 || res.status === 403) hint = ' — check your API key';
+        if (res.status === 404) hint = ' — check the base URL and model name';
+        if (res.status === 429) hint = ' — rate limit or quota reached';
+        throw new Error('HTTP ' + res.status + hint + (t ? '\n' + t.slice(0, 220) : ''));
+      }
+
+      if (!opts.stream) {
+        var j = await res.json();
+        var m = (j.choices && j.choices[0] && j.choices[0].message) || {};
+        var fin0 = (j.choices && j.choices[0] && j.choices[0].finish_reason) || '';
+        var content0 = m.content || '';
+        var reas0 = m.reasoning_content || m.reasoning || '';
+        if (reas0) onReasoning(reas0);
+        var lifted0 = liftTextToolCalls(content0);
+        if (lifted0) content0 = content0.replace(/(?:\]<\][a-z0-9._-]*\[>\[)?<tool_call>[\s\S]*?<\/tool_call>/gi, '').trim();
+        if (content0) onDelta(content0);
+        var tc0 = (m.tool_calls && m.tool_calls.length) ? cleanToolCalls(m.tool_calls.slice()) : null;
+        if (!tc0 && lifted0) tc0 = lifted0;
+        if (opts.onToolCall && tc0) {
+          for (var q = 0; q < tc0.length; q++) opts.onToolCall(tc0[q].function.name, (tc0[q].function.arguments || '').length);
+        }
+        if (fin0 === 'length' && !content0 && !tc0 && budgetTry < 2) { maxTok *= 2; continue; }
+        result = { content: content0, reasoning: reas0, toolCalls: tc0, finishReason: fin0 };
+      } else {
+        var reader = res.body.getReader();
+        var dec = new TextDecoder();
+        var buf = '', full = '', reasoning = '', tcAcc = [];
+        var finS = '';
+        while (true) {
+          var r = await reader.read();
+          if (r.done) break;
+          buf += dec.decode(r.value, { stream: true });
+          var idx;
+          while ((idx = buf.indexOf('\n')) >= 0) {
+            var line = buf.slice(0, idx).trim();
+            buf = buf.slice(idx + 1);
+            if (!line.startsWith('data:')) continue;
+            var d = line.slice(5).trim();
+            if (d === '[DONE]') continue;
+            try {
+              var jr = JSON.parse(d);
+              var ch0 = jr.choices && jr.choices[0];
+              var delta = ch0 && ch0.delta;
+              if (ch0 && ch0.finish_reason) finS = ch0.finish_reason;
+              if (!delta) continue;
+              var piece = delta.content;
+              if (piece) { full += piece; onDelta(piece); }
+              var reas = delta.reasoning_content || delta.reasoning;
+              if (reas) { reasoning += reas; onReasoning(reas); }
+              if (delta.tool_calls) {
+                for (var k = 0; k < delta.tool_calls.length; k++) {
+                  mergeToolCall(tcAcc, delta.tool_calls[k]);
+                  var t2 = delta.tool_calls[k];
+                  var ix = t2.index || 0;
+                  if (opts.onToolCall && tcAcc[ix]) {
+                    opts.onToolCall(tcAcc[ix].function.name, (tcAcc[ix].function.arguments || '').length);
+                  }
+                }
               }
-            }
+            } catch (e) { /* keepalive or partial json — ignore */ }
           }
-        } catch (e) { /* keepalive or partial json — ignore */ }
+        }
+        var acc2 = {};
+        var lifted = liftTextToolCalls(full, acc2);
+        if (lifted) {
+          // re-render the content without the textual protocol block
+          full = acc2.out || '';
+          if (opts.onDeltaClean && full) opts.onDeltaClean(full);
+        }
+        if (finS === 'length' && !full && !tcAcc.length && budgetTry < 2) { maxTok *= 2; continue; }
+        result = { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) || lifted, finishReason: finS };
       }
     }
-    var acc2 = {};
-    var lifted = liftTextToolCalls(full, acc2);
-    if (lifted) {
-      // re-render the content without the textual protocol block
-      full = acc2.out || '';
-      if (opts.onDeltaClean && full) opts.onDeltaClean(full);
-    }
-    return { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) || lifted };
+    return result || { content: '', reasoning: '', toolCalls: null };
   }
 
   /* --- model verification: does this model actually serve chat on this endpoint? --- */

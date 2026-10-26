@@ -5,7 +5,7 @@
   var DEFAULTS = {
     settings: {
       providerId: 'echo', model: 'echo-1',
-      effort: 'High', maxTokens: 16, stream: true, fallbackId: '',
+      effort: 'High', maxTokens: 64, stream: true, fallbackId: '',
       ctxK: 128, tools: true,
       theme: 'obsidian', depth: 100, radius: 18, font: 15, motion: true, icons: 'line',
       mode: 'Build', compactAt: 80, notify: false, lang: 'en',

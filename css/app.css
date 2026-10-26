@@ -409,3 +409,7 @@
 #terminal #termHost{flex:1;min-height:0;padding:10px 12px}
 #terminal .ide-head{flex:none}
 #mono-harness .msg.user .uimg{max-width:100%;border-radius:12px;margin-bottom:8px;display:block}
+#mono-harness .act-row .apath{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40%}
+#mono-harness .diff.plus{color:#57c78f;font-size:11px;flex:none;font-family:ui-monospace,Consolas,monospace}
+#mono-harness .diff.minus{color:#e06c60;font-size:11px;flex:none;font-family:ui-monospace,Consolas,monospace}
+#mono-harness .badge.fail{color:#e06c60;font-size:10px;border:1px solid rgba(224,108,96,.45);border-radius:6px;padding:1px 7px;flex:none;letter-spacing:.4px}

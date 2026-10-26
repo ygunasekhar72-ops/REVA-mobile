@@ -155,6 +155,7 @@
        plan → inspect → focused edits → verify with real evidence → report */
     if (db.settings.tools !== false) {
       p.push('Work with discipline on any non-trivial task: (1) write your plan with todo_write first and keep it updated; (2) INSPECT before editing — workspace_search to locate, read_file/code_symbols to understand the exact code; (3) make focused edits; (4) VERIFY before claiming success — run the result via shell_exec, or re-read the changed file and quote the real output; (5) report what you verified and what remains. Never claim success without evidence.');
+      p.push('CRITICAL — large files: NEVER write a big file (game, app, >150 lines) in one write_file call; the long generation gets dropped and your reply comes back empty. Instead: plan the file structure, then write it in SECTIONS of at most ~120 lines using write_file (first call creates the file, every later call uses mode:"append" to continue). Verify with read_file after major sections.');
     }
     if (db.allowRules.length) {
       p.push('The user has pre-approved these commands without confirmation: ' + db.allowRules.map(function (r) { return r.rule; }).join(', ') + '.');
@@ -352,7 +353,8 @@
     }
     /* ZCode-style verb rows: the label states what is happening right now
        (Writing/Editing/Terminal…), and freezes to the past-tense form when
-       the step finishes. */
+       the step finishes. Rows carry REAL data: path chips, +added/-removed
+       diff counts, Failed badges. */
     function verbFor(name, args) {
       var n = String(name || '');
       if (n === 'write_file') {
@@ -378,12 +380,24 @@
       if (n === 'save_memory') return 'brain';
       return 'wrench';
     }
+    /* quick line diff: added vs removed between old and new content */
+    function diffStat(oldC, newC) {
+      var o = oldC ? String(oldC).split('\n') : [];
+      var nn = String(newC).split('\n');
+      var oldSet = {}, newSet = {};
+      o.forEach(function (l) { oldSet[l] = (oldSet[l] || 0) + 1; });
+      nn.forEach(function (l) { newSet[l] = (newSet[l] || 0) + 1; });
+      var added = 0, removed = 0;
+      nn.forEach(function (l) { if (oldSet[l] > 0) oldSet[l]--; else added++; });
+      o.forEach(function (l) { if (newSet[l] > 0) newSet[l]--; else removed++; });
+      return { added: added, removed: removed };
+    }
     /* live row shown the moment execution starts; finalized by addToolRow */
     var liveToolRow = null;
     function beginToolRow(name, args) {
       clearPend();
       var v = verbFor(name, args);
-      liveToolRow = H.el('<div class="act-row live"><i data-lucide="' + verbIconFor(name) + '"></i><b>' + H.esc(v.live) + '</b><span class="meta"></span></div>');
+      liveToolRow = H.el('<div class="act-row live"><i data-lucide="' + verbIconFor(name) + '"></i><b>' + H.esc(v.live) + '</b><span class="apath">' + H.esc(args && (args.path || args.command || args.query || args.url) || '') + '</span><span class="meta"></span></div>');
       var act = ensureAct();
       if (spinRow && spinRow.parentNode === act) act.insertBefore(liveToolRow, spinRow);
       else act.appendChild(liveToolRow);
@@ -395,10 +409,25 @@
       endThought();
       var v = verbFor(info.name, info.args || {});
       var row = null;
+      var diffHtml = '';
+      /* real diff stats for writes/edits, path chip, Failed badge */
+      if (info.name === 'write_file' && info.args && info.args.path) {
+        var oldC = info._oldC;
+        if (oldC && String(oldC).indexOf('Error') !== 0) {
+          var d = diffStat(oldC, info.args.content || '');
+          diffHtml = '<span class="diff plus">+' + d.added + '</span>' + (d.removed ? '<span class="diff minus">-' + d.removed + '</span>' : '');
+        } else {
+          diffHtml = '<span class="diff plus">+' + String(info.args.content || '').split('\n').length + '</span>';
+        }
+      }
       if (liveToolRow) {
         row = liveToolRow; liveToolRow = null;
         row.classList.remove('live');
-        row.innerHTML = '<i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i><b>' + H.esc(v.done) + '</b>' + (info.meta ? '<span class="meta">' + H.esc(info.meta) + '</span>' : '');
+        row.innerHTML = '<i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i><b>' + H.esc(v.done) + '</b>' +
+          (info.path ? '<span class="apath">' + H.esc(info.path) + '</span>' : '') +
+          diffHtml +
+          (info.ok === false && info.cmd ? '<span class="badge fail">Failed</span>' : '') +
+          (info.meta && !info.cmd ? '<span class="meta">' + H.esc(info.meta) + '</span>' : '');
       } else {
         row = actRow(info.ok === false ? 'alert-circle' : verbIconFor(info.name), v.done, info.meta || '');
       }
@@ -406,7 +435,7 @@
       if (info.cmd) {
         var pre = H.el('<pre class="act-out">' + H.esc(String(out || '').slice(0, 500)) + '</pre>');
         ensureAct().appendChild(pre);
-        activity.push({ k: 'cmd', icon: 'terminal', text: '❯ ' + info.cmd, meta: info.meta || '', out: String(out || '').slice(0, 500) });
+        activity.push({ k: 'cmd', icon: 'terminal', text: '❯ ' + info.cmd, meta: info.meta || '', out: String(out || '').slice(0, 500), ok: info.ok });
       } else {
         activity.push({ k: 'tool', icon: verbIconFor(info.name), text: v.done + ' ' + (info.target || ''), meta: info.meta || '', ok: info.ok, path: info.path || '' });
       }
@@ -581,7 +610,37 @@
       if (state.ctrl.signal.aborted) { stopped = true; break; }
 
       if (res.toolCalls && res.toolCalls.length && iters < MAX_ITERS) {
+        /* mid-run context trimming: tool arguments + old results balloon the
+           context on long tasks and the provider starts dropping generations
+           (the serious empty-reply cause). The pass below keeps the protocol
+           valid: older assistant args are replaced with VALID JSON notes
+           (a mid-JSON slice causes HTTP 400 on providers that re-validate),
+           and all but the last 3 tool results become completion notes. */
+        var toolResultCount = apiMsgs.filter(function (m) { return m.role === 'tool'; }).length;
         apiMsgs.push({ role: 'assistant', content: res.content || '', tool_calls: res.toolCalls });
+        if (toolResultCount > 5) {
+          var keptToolIds = {};
+          res.toolCalls.forEach(function (t) { keptToolIds[t.id] = 1; });
+          var seenRecent = 0;
+          var lastIdx = apiMsgs.length - 1; // don't trim the exchange just pushed
+          for (var mi = apiMsgs.length - 1; mi >= 0; mi--) {
+            var mm = apiMsgs[mi];
+            if (mi === lastIdx) continue;
+            if (mm.role === 'tool') {
+              seenRecent++;
+              if (seenRecent > 3) mm.content = '[completed — output trimmed to save context]';
+            } else if (mm.role === 'assistant' && mm.tool_calls) {
+              var anyKept = mm.tool_calls.some(function (t) { return keptToolIds[t.id]; });
+              if (!anyKept && seenRecent > 3) {
+                /* args must stay VALID JSON — providers parse tool_calls on
+                   history replay; a mid-JSON slice causes HTTP 400 */
+                mm.tool_calls.forEach(function (t) {
+                  t.function.arguments = JSON.stringify({ _note: 'earlier step completed — full args trimmed to save context' });
+                });
+              }
+            }
+          }
+        }
         for (var i = 0; i < res.toolCalls.length; i++) {
           var tc = res.toolCalls[i];
           var args = {};
@@ -592,6 +651,10 @@
           var hookBlocked = await fireHook('PreToolUse', { name: tc.function.name, args: args }, tc.function.name);
           beginToolRow(tc.function.name, args);
           var result, ex = null;
+          var oldContent = null; // captured BEFORE the write for diff stats
+          if (tc.function.name === 'write_file') {
+            try { if (Tools.exists(String(args.path || ''))) oldContent = String(Tools.run('read_file', { path: args.path })); } catch (e0) { }
+          }
           if (hookBlocked) {
             result = 'BLOCKED: a PreToolUse hook vetoed this tool call. Tell the user and continue without it.';
             info.ok = false;
@@ -628,29 +691,26 @@
           if (!info.meta) info = Tools.brief(tc.function.name, args, result);
           if (ex && (ex.timedOut || ex.exit !== 0)) info.ok = false;
           info.name = tc.function.name;
+          info._oldC = oldContent;
           toolResults.push(info);
           addToolRow(info, result);
-          apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(result).slice(0, 4000) });
+          var toolResultCount2 = apiMsgs.filter(function (m) { return m.role === 'tool'; }).length;
+          apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(result).slice(0, toolResultCount2 > 5 ? 600 : 4000) });
         }
         acc = ''; contentEl = null;
         refreshCtx(); UI.renderHome();
         continue;
       }
       // EMPTY REPLY RECOVERY (the "(empty reply)" killer for long projects).
-      // Some providers truncate streaming after tool rounds, or return a bare
-      // empty completion. Ladder: 1× non-stream re-sync, 2× plain stream
-      // retries, then up to 2 nudges — each just re-enters the loop, so a
-      // recovered tool call goes through the SAME executor above.
+      // Root cause found by deep research: reasoning models burn max_tokens
+      // on thinking; when the budget runs out, finish_reason:'length' arrives
+      // with no content. ai.js now auto-doubles the budget (64K→128K→256K)
+      // internally on length-finish, so this ladder just re-enters the loop
+      // streaming: 2 retries then up to 2 nudges with effort step-down.
       if (!res.toolCalls && !(res.content || '').trim()) {
-        if (!nsTried) {
-          nsTried = true;
-          setStatus('Re-syncing…');
-          try { pendingRes = await callAI(prov, true); continue; }
-          catch (e3) { if (aborted(e3)) { stopped = true; break; } }
-        }
         if (streamRetries < 2) {
           streamRetries++;
-          setStatus('Empty reply — retrying ' + streamRetries + '/2…');
+          setStatus('Thinking hit the token budget — retrying ' + streamRetries + '/2…');
           acc = ''; contentEl = null;
           continue;
         }

@@ -50,6 +50,12 @@
       var s = WS();
       var path = normPath(a.path);
       var content = String(a.content || '');
+      /* append mode: large files get written in sections — long single
+         generations get silently dropped by free-tier providers */
+      if (a.mode === 'append') {
+        var prevContent = s.vfsContent[path];
+        if (prevContent !== undefined) content = String(prevContent) + content;
+      }
       ensureDirs(parentOf(path) || 'workspace');
       var dir = parentOf(path) || 'workspace';
       var list = s.vfs[dir] || (s.vfs[dir] = []);
@@ -61,7 +67,8 @@
       else list.push({ n: name, t: isImg ? 'img' : (/\.(md|txt)$/.test(name) ? 'doc' : 'code'), s: size });
       s.vfsContent[path] = content;
       Store.save();
-      return 'Wrote ' + path + ' (' + size + ')';
+      var totalLines = content.split('\n').length;
+      return 'Wrote ' + path + ' (' + size + (a.mode === 'append' ? ', appended' : '') + ') — file now ' + totalLines + ' lines total';
     },
     read_file: function (a) {
       var s = WS();
@@ -292,7 +299,7 @@
   }
 
   var SCHEMAS = [
-    { type: 'function', function: { name: 'write_file', description: 'Create or overwrite a file in this chat\'s workspace. Use for code, notes, HTML apps. path is relative to workspace, e.g. "app/index.html".', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },
+    { type: 'function', function: { name: 'write_file', description: 'Create or overwrite a file in this chat\'s workspace. For LARGE files (>150 lines: games, big apps) ALWAYS write in sections: first call writes the opening, then subsequent calls pass mode:"append" to add the next section — long single generations get dropped. path is relative to workspace.', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, mode: { type: 'string', enum: ['append'], description: 'pass "append" to add this content to the end of the existing file instead of overwriting' } }, required: ['path', 'content'] } } },
     { type: 'function', function: { name: 'read_file', description: 'Read a workspace file (up to 6000 chars).', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'list_files', description: 'List a workspace folder.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'defaults to workspace root' } } } } },
     { type: 'function', function: { name: 'delete_file', description: 'Delete a workspace file.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
