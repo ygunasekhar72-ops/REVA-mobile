@@ -15,9 +15,15 @@
     /* ---------- HOME ---------- */
     renderHome: function () {
       var db = Store.db;
-      var sess = db.sessions.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; }).slice(0, 6);
+      var all = db.sessions.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+      /* chat search overrides pagination — it looks through every chat */
+      var q = String(UI.chatFilter || '').toLowerCase();
+      if (q) all = all.filter(function (s) { return (s.title || '').toLowerCase().indexOf(q) >= 0; });
+      /* drawer shows 6 chats, then a light-grey "See more" section */
+      var CHAT_PAGE = 6;
+      var sess = (UI.allChats || q) ? all : all.slice(0, CHAT_PAGE);
       var wrap = $('#sessList');
-      wrap.innerHTML = sess.length ? '' :
+      wrap.innerHTML = all.length ? '' :
         '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:14px 0 6px">No sessions yet — start a new chat</p>';
       sess.forEach(function (s) {
         var tok = s.messages.reduce(function (a, m) { return a + H.tok(m.content); }, 0);
@@ -38,6 +44,12 @@
         wrap.appendChild(row);
       });
 
+      if (all.length > CHAT_PAGE && !q) {
+        var more = H.el('<button class="dmore">' + (UI.allChats ? 'Show less' : 'See more chats (' + all.length + ')') + '</button>');
+        more.addEventListener('click', function () { UI.allChats = !UI.allChats; UI.renderHome(); });
+        wrap.appendChild(more);
+      }
+
       var wk = Date.now() - 7 * 86400e3;
       var recent = db.sessions.filter(function (s) { return s.updatedAt >= wk; });
       var toks = db.sessions.reduce(function (a, s) {
@@ -45,7 +57,8 @@
       }, 0);
       var models = {};
       db.sessions.forEach(function (s) { models[s.model] = 1; });
-      $('#statsRow').innerHTML =
+      var statsEl = $('#statsRow');
+      if (statsEl) statsEl.innerHTML =
         '<div style="flex:1"><b style="font-size:19px;font-variant-numeric:tabular-nums">' + recent.length + '</b><br><small style="font-size:11.5px;color:var(--ink3)">sessions</small></div>' +
         '<div style="flex:1"><b style="font-size:19px;font-variant-numeric:tabular-nums">' + H.fmtK(toks) + '</b><br><small style="font-size:11.5px;color:var(--ink3)">tokens</small></div>' +
         '<div style="flex:1"><b style="font-size:19px;font-variant-numeric:tabular-nums">' + Object.keys(models).length + '</b><br><small style="font-size:11.5px;color:var(--ink3)">models used</small></div>';
@@ -147,14 +160,14 @@
       $('#setModelSub').textContent = db.settings.model + ' · ' + prov.name;
       H.icons();
     },
-    renderModelSheet: function (selId) {
+    renderModelSheet: function (selId, hostSel) {
       var db = Store.db;
       /* clean single list: "Built-in models" section first, then one section
          per connected provider. Full-width cards, image-2 style. */
       var connected = db.providers.filter(function (p) {
         return (p.key && String(p.key).trim()) || p.id === db.settings.providerId;
       });
-      var host = $('#modelSheetList');
+      var host = $(hostSel || '#modelSheetList');
       if (!host) return;
       var BI = window.REVA_BUILTIN_MODELS || [];
       var html = '<div class="sec">Built-in models</div>';
@@ -186,8 +199,10 @@
         { n: 'History', v: histTok, o: .78 },
         { n: 'Free', v: free, o: .1 }
       ];
-      $('#ctxPct1').textContent = p + '%';
-      $('#ctxBarFill').style.width = p + '%';
+      var pct1 = $('#ctxPct1'); if (pct1) pct1.textContent = p + '%';
+      var barFill = $('#ctxBarFill'); if (barFill) barFill.style.width = p + '%';
+      var ringArc2 = $('#ctxRingArc');
+      if (ringArc2) ringArc2.setAttribute('stroke-dashoffset', (47.1 * (1 - p / 100)).toFixed(1));
       $('#ringPct').textContent = p + '%';
       var C = 2 * Math.PI * 47;
       var arc = $('#ringArc');
@@ -256,6 +271,13 @@
       empty.style.display = 'none';
       sess.messages.forEach(function (m, mi) { flow.appendChild(UI.msgEl(m, mi)); });
       if (live) flow.appendChild(live); // re-attach the in-flight stream after navigating back
+      /* resume chip: the run stopped/errored with unfinished work — one tap
+         continues exactly where it left off */
+      if (sess.resumeHint && !(window.App && App.isStreaming && App.isStreaming())) {
+        var chip = H.el('<button class="resume-chip"><i data-lucide="play"></i>Continue the task</button>');
+        chip.addEventListener('click', function () { if (window.App && App.resumeTask) App.resumeTask(); });
+        flow.appendChild(chip);
+      }
       UI.renderTodoCard(sess);
       scroller.scrollTop = scroller.scrollHeight;
       H.icons();
@@ -406,6 +428,25 @@
         AgentExec.execArgs(['tail', '-n', '60', '.reva-servers/' + parseInt(port, 10) + '.log'], { timeoutMs: 15000 })
           .then(function (ex) { done(ex.exit === 0 ? ex.out : '(no log yet for port ' + port + ')'); });
       } else done('(device shell needed for live logs)');
+    },
+
+    renderUsage: function () {
+      var l = $('#usageList');
+      var days = Object.keys(Store.db.usage || {}).sort().reverse().slice(0, 14);
+      if (!days.length) { l.innerHTML = '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:14px 0">No usage recorded yet — send a message first</p>'; return; }
+      var todayKey = (function () { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
+      var html = days.map(function (day) {
+        var rows = Object.keys(Store.db.usage[day]).map(function (k) {
+          var u = Store.db.usage[day][k];
+          return '<div class="row"><span class="rtxt"><b>' + H.esc(k) + '</b><small>' + u.reqs + ' request' + (u.reqs === 1 ? '' : 's') + (u.errs ? ' · ' + u.errs + ' error' + (u.errs === 1 ? '' : 's') : '') + '</small></span>' +
+            '<span class="dchip" style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--ink3)">↑' + H.fmtK(u.inTok) + ' ↓' + H.fmtK(u.outTok) + '</span></div>';
+        }).join('');
+        return '<div class="sec">' + day + (day === todayKey ? ' · today' : '') + '</div>' + rows;
+      }).join('');
+      l.innerHTML = html;
+      var sub = $('#usageSub');
+      var today = Store.db.usage[todayKey];
+      if (sub) sub.textContent = today ? (Object.keys(today).length + ' model' + (Object.keys(today).length === 1 ? '' : 's') + ' used today') : 'requests and tokens per model';
     },
 
     /* ---------- SETTINGS subs ---------- */

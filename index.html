@@ -8,7 +8,9 @@
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="css/app.css">
-<link rel="stylesheet" href="css/vendor/xterm.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   html,body{margin:0;padding:0}
   body{background:#101013;min-height:100vh;transition:background .45s ease}
@@ -19,50 +21,50 @@
 <body data-page-theme="obsidian">
 <div id="mono-harness">
 <div class="stage"><div class="scaler" id="scaler">
-<div class="phone" id="phone" data-theme="obsidian" data-ico="line">
-  <div class="p-island"></div>
-  <div class="p-status"><span id="clock">9:41</span><span class="stic"><i data-lucide="signal"></i><i data-lucide="wifi"></i><i data-lucide="battery-full"></i></span></div>
+<div class="phone" id="phone" data-theme="porcelain" data-ico="line">
 
   <div class="p-body">
-    <!-- ================= HOME ================= -->
-    <section class="screen tab-scr on" id="scr-home">
-      <div class="greet">
-        <div class="ava"><i data-lucide="user-round"></i></div>
-        <div><h1 id="greetTxt">Good evening</h1><small id="greetSub">REVA · local-first</small></div>
-      </div>
-      <div class="card banner" id="setupBanner" style="display:none">
-        <span class="bx"><i data-lucide="plug-zap"></i></span>
-        <span class="rtxt"><b>Connect an AI provider</b><small>Add any OpenAI-compatible endpoint + key</small></span>
-        <button class="btnX" id="setupGo" style="padding:9px 14px;font-size:12.5px;border-radius:11px">Set up</button>
-        <button class="iconb" id="setupDismiss" style="width:30px;height:30px" aria-label="Dismiss"><i data-lucide="x" style="width:15px;height:15px"></i></button>
-      </div>
-      <div class="hero">
-        <button class="hcard" id="hero">
-          <span class="plus"><i data-lucide="plus"></i></span>
-          <span style="flex:1"><h3>New chat</h3><p>Start a fresh session with the agent</p></span>
-          <span class="sheen"></span>
-        </button>
-      </div>
-      <div class="qrow">
-        <button class="chip" id="qResume"><i data-lucide="history" style="width:14px;height:14px"></i>Resume last</button>
-        <button class="chip" id="qPlan"><i data-lucide="compass" style="width:14px;height:14px"></i>Plan mode</button>
-        <button class="chip" data-tab="ai"><i data-lucide="brain" style="width:14px;height:14px"></i>Memory</button>
-      </div>
-      <div class="sec">Recent sessions</div>
+    <!-- ================= DRAWER ================= -->
+    <div id="scrim"></div>
+    <nav id="drawer" aria-label="Main menu">
+      <div class="dhead"><b>REVA</b><small>local-first AI harness</small></div>
+      <input class="inp" id="drawerSearch" placeholder="Search chats…" autocomplete="off"/>
+      <button class="dnew" id="hero"><i data-lucide="plus"></i>New chat</button>
+      <div class="dsec">Workspace</div>
+      <button class="ditem" data-tab="files" data-close><i data-lucide="folder"></i>Files</button>
+      <button class="ditem" id="webPill" data-close><i data-lucide="globe"></i>Browser</button>
+      <button class="ditem" id="idePill" data-close><i data-lucide="monitor"></i>IDE</button>
+      <button class="ditem" data-tab="ai" data-close><i data-lucide="brain"></i>Memory</button>
+      <button class="ditem" data-go="ov-servers" data-close><i data-lucide="monitor-dot"></i>Dev servers</button>
+      <div class="dsec">Chats</div>
       <div id="sessList"></div>
-      <div class="sec">All time</div>
-      <div class="card" style="display:flex;padding:14px 16px;gap:0;text-align:left" id="statsRow"></div>
-    </section>
+      <button class="ditem" id="qResume" data-close><i data-lucide="history"></i>Resume last chat</button>
+      <button class="ditem" id="qPlan" data-close><i data-lucide="compass"></i>Plan mode</button>
+      <div class="dfoot">
+        <button class="ditem" data-tab="settings" data-close><span class="dava"><i data-lucide="user-round"></i></span>Settings</button>
+      </div>
+    </nav>
 
     <!-- ================= FILES ================= -->
     <section class="screen tab-scr" id="scr-files">
-      <div class="shead"><h2>Files</h2>
-        <button class="iconb" id="termBtn" aria-label="Terminal"><i data-lucide="square-terminal"></i></button>
+      <div class="shead"><button class="iconb" data-drawer aria-label="Menu"><i data-lucide="menu"></i></button><h2>Files</h2>
         <button class="iconb" id="browserBtn" aria-label="Browser"><i data-lucide="globe"></i></button>
         <button class="iconb" id="ideBtn" aria-label="Open workspace IDE"><i data-lucide="monitor"></i></button>
         <button class="iconb" id="newFileBtn" aria-label="New file"><i data-lucide="file-plus-2"></i></button>
+        <button class="iconb" id="tplBtn" aria-label="New from template"><i data-lucide="layout-template"></i></button>
+        <button class="iconb" id="deployBtn" aria-label="Deploy workspace"><i data-lucide="cloud-upload"></i></button>
         <button class="iconb" id="folderBtn" aria-label="Upload folder"><i data-lucide="folder-up"></i></button>
         <button class="iconb" id="mountBtn" aria-label="Mount device folder"><i data-lucide="folder-open"></i></button>
+      </div>
+      <div class="lib-block">
+        <div class="lib-head"><span class="libtitle">Project Library</span>
+          <span style="flex:1"></span>
+          <button class="chip" id="libImportBtn"><i data-lucide="folder-up" style="width:13px;height:13px"></i>Import folder</button>
+          <button class="chip" id="libNativeBtn" style="display:none"><i data-lucide="smartphone" style="width:13px;height:13px"></i>From device</button>
+          <button class="chip" id="libNewBtn"><i data-lucide="plus" style="width:13px;height:13px"></i>New</button>
+        </div>
+        <div id="libList"></div>
+        <small id="libStatus" style="display:block;padding:2px 2px 6px;color:var(--ink3);font-size:11.5px;min-height:16px"></small>
       </div>
       <input class="inp" id="fileSearch" placeholder="Search files…" style="margin-bottom:12px" />
       <div class="crumbs" id="fileCrumbs"></div>
@@ -70,11 +72,12 @@
       <input type="file" id="fileImport" multiple style="display:none" />
       <input type="file" id="folderImport" webkitdirectory multiple style="display:none" />
       <input type="file" id="phoneFile" multiple accept="*/*" style="display:none" />
+      <input type="file" id="libFolderImport" webkitdirectory multiple style="display:none" />
     </section>
 
     <!-- ================= AI WORKSPACE ================= -->
     <section class="screen tab-scr" id="scr-ai">
-      <div class="shead"><h2>AI Workspace</h2><button class="iconb" id="memAdd" aria-label="New memory"><i data-lucide="plus"></i></button></div>
+      <div class="shead"><button class="iconb" data-drawer aria-label="Menu"><i data-lucide="menu"></i></button><h2>AI Workspace</h2><button class="iconb" id="memAdd" aria-label="New memory"><i data-lucide="plus"></i></button></div>
       <div class="lockban"><i data-lucide="shield"></i><span>Private to the assistant. Memories and pre-compaction context live here — the model reads them every turn.</span></div>
       <div class="sec">Context · live</div>
       <div class="card ringwrap">
@@ -107,14 +110,14 @@
 
     <!-- ================= SETTINGS ROOT ================= -->
     <section class="screen tab-scr" id="scr-settings">
-      <div class="shead"><h2>Settings</h2></div>
+      <div class="shead"><button class="iconb" data-drawer aria-label="Menu"><i data-lucide="menu"></i></button><h2>Settings</h2></div>
       <div class="card acct">
         <div class="ava" style="width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:var(--sur2);box-shadow:3px 3px 8px var(--sd);font-weight:600"><i data-lucide="user-round"></i></div>
         <div class="rtxt">
           <b style="font-size:15px">Local account</b>
           <small style="font-size:12px;color:var(--ink3)">Data stays on this device</small>
           <div class="usage meter"><b id="storeMeter" style="width:12%"></b></div>
-          <small style="font-size:11px;color:var(--ink3);display:block;margin-top:5px" id="storeUse">— of ~5 MB localStorage used</small>
+          <small style="font-size:11px;color:var(--ink3);display:block;margin-top:5px" id="storeUse">— of ~5 MB localStorage (files live in IndexedDB)</small>
         </div>
       </div>
       <div class="sec">Agent</div>
@@ -132,46 +135,44 @@
       <div class="sec">REVA</div>
       <div class="row" style="align-items:flex-start;flex-direction:column;gap:6px">
         <b style="font-size:15px" id="aboutVersion">REVA</b>
-        <small style="font-size:12.5px;color:var(--ink3);line-height:1.6">A local-first mobile AI harness. Your chats, files and keys never leave this device; the agent talks to the AI provider you configure, directly. REVA Linux (bundled Alpine + proot) gives the terminal and agent a real Linux environment, and the background engine keeps work running.</small>
+        <small style="font-size:12.5px;color:var(--ink3);line-height:1.6">A local-first mobile AI harness. Your chats, files and keys never leave this device; the agent talks to the AI provider you configure, directly. REVA Linux (bundled Alpine + proot) gives the agent a real Linux environment, and the background engine keeps work running.</small>
       </div>
       <div class="sec">What's inside</div>
       <div class="row"><span class="rtxt"><b>Agent with real tools</b><small>files, shell, web, browser, memory, skills</small></span></div>
       <div class="row"><span class="rtxt"><b>REVA Linux</b><small>Alpine guest · apk packages · /host workspace</small></span></div>
       <div class="row"><span class="rtxt"><b>Background engine</b><small>agent keeps running from the notification</small></span></div>
       <div class="row"><span class="rtxt"><b>Skills & memory</b><small>on-demand skill loading · durable recall</small></span></div>
-      <div class="row"><span class="rtxt"><b>Built-in browser, IDE & terminal</b><small>everything local-first</small></span></div>
+      <div class="row"><span class="rtxt"><b>Built-in browser & IDE</b><small>everything local-first</small></span></div>
       <div class="sec">Storage</div>
       <div class="row" style="align-items:center;flex-direction:column;gap:6px">
         <div class="usage meter" style="width:100%"><b id="aboutStore" style="width:12%"></b></div>
-        <small style="font-size:11px;color:var(--ink3)" id="aboutStoreTxt">— of ~5 MB localStorage used</small>
+        <small style="font-size:11px;color:var(--ink3)" id="aboutStoreTxt">— of ~5 MB localStorage (files live in IndexedDB)</small>
       </div>
       <div class="sec">Licenses & credits</div>
-      <div class="row"><span class="rtxt"><b>xterm.js · lucide</b><small>MIT · ISC — terminal + icons</small></span></div>
+      <div class="row"><span class="rtxt"><b>lucide</b><small>ISC — icons</small></span></div>
       <div class="row"><span class="rtxt"><b>BusyBox · PRoot · Alpine Linux</b><small>GPL-2.0 · GPL-2.0+ · aggregated binaries</small></span></div>
       <div class="row"><span class="rtxt"><b>Termux / TermFold builds</b><small>proot made app-friendly</small></span></div>
       <small style="display:block;text-align:center;color:var(--ink3);font-size:11px;padding:10px 0">REVA is MIT-licensed. Full notices in THIRD_PARTY_NOTICES.md.</small>
     </section>
 
     <!-- ================= CHAT ================= -->
-    <section class="screen ov ov-up" id="ov-chat" aria-label="Chat">
+    <section class="screen ov ov-up on" id="ov-chat" aria-label="Chat">
       <div class="chead">
         <div class="chrow">
-          <button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button>
+          <button class="iconb" data-drawer aria-label="Menu"><i data-lucide="menu"></i></button>
           <div class="tt"><b id="chatTitle">New chat</b><small id="chatSub">fresh context</small></div>
+          <button class="iconb" id="chatNew" aria-label="New chat" style="width:34px;height:34px"><i data-lucide="square-pen" style="width:15px;height:15px"></i></button>
           <button class="iconb" id="chatDel" aria-label="Delete chat" style="width:34px;height:34px"><i data-lucide="trash-2" style="width:15px;height:15px"></i></button>
-          <button class="ctxchip" data-sheet="sheet-ctx" aria-label="Context usage"><i data-lucide="gauge" style="width:13px;height:13px"></i><span class="m"><b id="ctxBarFill" style="width:0%"></b></span><span id="ctxPct1">0%</span></button>
-        </div>
-        <div class="pills">
-          <button class="pill" data-sheet="sheet-model" id="modelPillBtn" aria-label="Choose model"><i data-lucide="brain-circuit" style="width:13px;height:13px"></i><span id="modelPill">echo-1</span><i data-lucide="chevron-down" style="width:13px;height:13px"></i></button>
-          <button class="pill" id="modePill" aria-label="Cycle permission mode"><i data-lucide="shield-check" style="width:13px;height:13px"></i><span id="modeTxt">Build</span></button>
-          <button class="pill" id="toolsPill" aria-label="Toggle tools"><i data-lucide="wrench" style="width:13px;height:13px"></i><span id="toolsTxt">Tools</span></button>
-          <button class="pill" id="termPill" aria-label="Terminal"><i data-lucide="square-terminal" style="width:13px;height:13px"></i><span>Term</span></button>
-          <button class="pill" id="webPill" aria-label="Browser"><i data-lucide="globe" style="width:13px;height:13px"></i><span>Web</span></button>
-          <button class="pill" id="idePill" aria-label="Open IDE"><i data-lucide="monitor" style="width:13px;height:13px"></i><span>IDE</span></button>
-          <button class="pill" data-tab="ai" style="margin-left:auto" aria-label="AI workspace"><i data-lucide="brain" style="width:13px;height:13px"></i></button>
+          <button class="ctxchip" data-sheet="sheet-ctx" aria-label="Context usage" style="display:none"><i data-lucide="gauge" style="width:13px;height:13px"></i><span class="m"><b id="ctxBarFill" style="width:0%"></b></span><span id="ctxPct1">0%</span></button>
         </div>
       </div>
       <div class="msgs" id="chatMsgs">
+        <div class="card banner" id="setupBanner" style="display:none">
+          <span class="bx"><i data-lucide="plug-zap"></i></span>
+          <span class="rtxt"><b>Connect an AI provider</b><small>Add any OpenAI-compatible endpoint + key</small></span>
+          <button class="btnX" id="setupGo" style="padding:9px 14px;font-size:12.5px;border-radius:11px">Set up</button>
+          <button class="iconb" id="setupDismiss" style="width:30px;height:30px" aria-label="Dismiss"><i data-lucide="x" style="width:15px;height:15px"></i></button>
+        </div>
         <div class="empty-wrap" id="chatEmpty">
           <div class="orb"><i data-lucide="sparkles"></i></div>
           <p>Fresh context window.<br>Everything you send goes to your configured provider.</p>
@@ -183,16 +184,28 @@
         </div>
         <div class="tcard" id="todoCard" style="display:none"></div>
         <div id="msgFlow"></div>
+        <button id="jumpBottom" aria-label="Scroll to latest"><i data-lucide="arrow-down"></i></button>
       </div>
       <div class="composer">
-        <div class="cmods"><button class="pill" id="effortPill" aria-label="Cycle reasoning effort"><i data-lucide="gauge" style="width:12px;height:12px"></i><span id="effortPillTxt">Effort · High</span></button></div>
-        <div class="cbox">
-          <button class="iconb" style="width:34px;height:34px" id="attachBtn" aria-label="Attach file"><i data-lucide="paperclip"></i></button>
-          <button class="iconb" style="width:34px;height:34px" id="slashBtn" aria-label="Slash commands"><i data-lucide="terminal"></i></button>
-          <button class="iconb" style="width:34px;height:34px" id="todoBtn" aria-label="Session todos"><i data-lucide="list-todo"></i></button>
-          <input id="chatInput" placeholder="Message… try / for commands" autocomplete="off" />
-          <button class="send" id="sendBtn" aria-label="Send"><i data-lucide="arrow-up"></i></button>
+        <div class="cwrap">
+          <textarea id="chatInput" rows="1" placeholder="Ask REVA… try / for commands" autocomplete="off"></textarea>
+          <div class="crow2">
+            <button class="roundb sm" data-sheet="sheet-compose" aria-label="Actions"><i data-lucide="plus"></i></button>
+            <button class="ctxring" data-sheet="sheet-ctx" aria-label="Context usage"><svg viewBox="0 0 20 20" width="19" height="19"><circle cx="10" cy="10" r="7.5" fill="none" stroke="var(--fld)" stroke-width="2.7"/><circle id="ctxRingArc" cx="10" cy="10" r="7.5" fill="none" stroke="#7c5cff" stroke-width="2.7" stroke-linecap="round" stroke-dasharray="47.1" stroke-dashoffset="47.1" transform="rotate(-90 10 10)" style="transition:stroke-dashoffset .5s var(--ez)"/></svg></button>
+            <button class="modsel" id="modSel" aria-label="Model and effort"><b id="modelPill">model</b><span id="modSelEff">High</span><i data-lucide="chevron-up"></i></button>
+            <button class="send" id="sendBtn" aria-label="Send"><i data-lucide="arrow-up"></i></button>
+          </div>
         </div>
+      </div>
+
+      <!-- model + effort popover (opens from the ˅ in the composer) -->
+      <div id="popModel">
+        <input class="inp" id="popModelSearch" placeholder="Search models…" autocomplete="off"/>
+        <div class="pmSec">Models</div>
+        <div id="popModelList"></div>
+        <div class="pmEff"><span>Effort</span><b id="pmEffVal">High</b></div>
+        <input type="range" id="pmEffort" min="0" max="2" step="1" value="1"/>
+        <div class="pmMarks"><span>Low</span><span>High</span><span>Max</span></div>
       </div>
     </section>
 
@@ -214,6 +227,7 @@
       <button class="row" data-go="ov-servers"><span class="tile"><i data-lucide="monitor-dot"></i></span><span class="rtxt"><b>Dev servers</b><small id="setServerSub">preview servers started by the agent</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
       <button class="row" data-go="ov-hooks"><span class="tile"><i data-lucide="webhook"></i></span><span class="rtxt"><b>Hooks</b><small id="setHookSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
       <div class="sec">Privacy</div>
+      <div class="row"><span class="rtxt"><b>Usage</b><small id="usageSub">requests and tokens per model</small></span><button class="btnGhost" style="padding:8px 13px;font-size:12.5px;border-radius:11px" data-go="ov-usage">Open</button></div>
       <div class="row"><span class="rtxt"><b>Clear all session data</b><small>Chats, memory and buffers</small></span><button class="btnGhost" style="padding:8px 13px;font-size:12.5px;border-radius:11px" id="clearData">Clear</button></div>
     </section>
 
@@ -322,6 +336,13 @@
       <div id="serverList"></div>
     </section>
 
+    <!-- ================= USAGE ================= -->
+    <section class="screen ov with-tabs" id="ov-usage">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Usage</h2></div>
+      <div class="lockban"><i data-lucide="bar-chart-3"></i><span>Requests, tokens and errors per model — counted on this device only. Token counts come from the provider when it reports usage, otherwise estimated.</span></div>
+      <div id="usageList"></div>
+    </section>
+
     <!-- ================= APPEARANCE ================= -->
     <section class="screen ov with-tabs" id="ov-appearance">
       <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Appearance</h2></div>
@@ -340,17 +361,21 @@
     </section>
   </div>
 
-  <!-- tab bar -->
-  <nav class="p-tabbar" id="tabbar" aria-label="Main navigation">
-    <button class="tb on" data-tab="home"><span class="tbi"><i data-lucide="home"></i></span><span>Home</span></button>
-    <button class="tb" data-tab="files"><span class="tbi"><i data-lucide="folder"></i></span><span>Files</span></button>
-    <button class="tb" data-tab="ai"><span class="tbi"><i data-lucide="sparkles"></i></span><span>AI</span></button>
-    <button class="tb" data-tab="settings"><span class="tbi"><i data-lucide="settings"></i></span><span>Settings</span></button>
-  </nav>
-
   <div class="dim" id="dim"></div>
 
   <!-- ============ SHEETS ============ -->
+  <div class="sheet" id="sheet-compose" aria-label="Chat actions">
+    <div class="grab"></div><h3><i data-lucide="plus" style="width:17px;height:17px"></i>Actions</h3>
+    <button class="crow" id="attachBtn"><i data-lucide="paperclip"></i><span>Attach file</span></button>
+    <button class="crow" id="slashBtn"><i data-lucide="terminal"></i><span>Slash commands</span></button>
+    <button class="crow" id="todoBtn"><i data-lucide="list-todo"></i><span>Session todos</span></button>
+    <div class="dsep"></div>
+    <button class="crow" data-sheet="sheet-model" id="modelPillBtn"><i data-lucide="brain-circuit"></i><span>Model</span><i data-lucide="chevron-right" class="chev"></i></button>
+    <button class="crow" id="effortPill"><i data-lucide="gauge"></i><span><b id="effortPillTxt">Effort · High</b></span></button>
+    <button class="crow" id="modePill"><i data-lucide="shield-check"></i><span>Mode · <b id="modeTxt">Build</b></span></button>
+    <button class="crow" id="toolsPill"><i data-lucide="wrench"></i><span id="toolsTxt">Tools on</span></button>
+  </div>
+
   <div class="sheet" id="sheet-model" aria-label="Choose model">
     <div class="grab"></div><h3><i data-lucide="brain-circuit" style="width:17px;height:17px"></i>Switch model</h3>
     <div class="fld" style="margin:2px 0 8px"><input class="inp kbd" id="modelSearch" placeholder="Search models…" autocomplete="off"/></div>
@@ -398,7 +423,8 @@
     <div class="grab"></div><h3 id="pvTitle"><i data-lucide="plug-zap" style="width:17px;height:17px"></i>Provider</h3>
     <div class="fld"><label>Name</label><input class="inp" id="pvName" placeholder="My provider"/></div>
     <div class="fld"><label>Base URL — OpenAI-compatible</label><input class="inp kbd" id="pvBase" placeholder="https://host/v1"/></div>
-    <div class="fld"><label>API key — stored only on this device</label><input class="inp" id="pvKey" type="password" placeholder="sk-…"/></div>
+    <div class="fld"><label>API key(s) — stored only on this device. Multiple keys: separate with commas and long runs rotate them automatically.</label><input class="inp" id="pvKey" type="password" placeholder="sk-…, sk-…"/></div>
+    <div class="row"><span class="rtxt"><b>Unlimited runs</b><small>No daily quota (e.g. NVIDIA NIM) — the agent works until the task is done</small></span><label class="sw"><input type="checkbox" id="pvUnlimited"/><i></i></label></div>
     <p class="kbd" id="pvStatus" style="font-size:11.5px;color:var(--ink3);min-height:16px;margin:4px 2px 0"></p>
     <div class="acts">
       <button class="btnGhost" id="pvFetch"><i data-lucide="download" style="width:14px;height:14px"></i>Fetch models</button>
@@ -483,6 +509,35 @@
     <div class="acts"><button class="btnX" id="tdSave">Save todos</button></div>
   </div>
 
+  <div class="sheet" id="sheet-deploy" aria-label="Deploy">
+    <div class="grab"></div><h3><i data-lucide="cloud-upload" style="width:17px;height:17px"></i>Deploy workspace</h3>
+    <div class="fld"><label>Target</label><select class="inp" id="dpTarget"><option>Vercel</option><option>Netlify</option></select></div>
+    <div class="fld"><label>Token — stays on this device, never sent to the AI</label><input class="inp kbd" id="dpToken" type="password" placeholder="paste your Vercel / Netlify token"/></div>
+    <div class="fld"><label>Project name</label><input class="inp" id="dpName" placeholder="my-reva-site"/></div>
+    <div class="acts"><button class="btnX" id="dpGo">Deploy static workspace</button></div>
+    <pre id="dpOut" style="font-family:ui-monospace,Consolas,monospace;font-size:11.5px;line-height:1.55;max-height:34vh;overflow:auto;white-space:pre-wrap;color:var(--ink2);background:var(--fld);border-radius:12px;padding:12px">Deploys every text file in this chat's workspace (needs an index.html at the root).</pre>
+  </div>
+
+  <div class="sheet" id="sheet-templates" aria-label="Project templates">
+    <div class="grab"></div><h3><i data-lucide="layout-template" style="width:17px;height:17px"></i>New from template</h3>
+    <p style="font-size:12.5px;color:var(--ink3);margin:2px 4px 10px">Real starter files written into this chat's workspace — then tell the agent to extend, run or deploy it.</p>
+    <div id="tplList"></div>
+  </div>
+
+  <div class="sheet" id="sheet-git" aria-label="Git">
+    <div class="grab"></div><h3><i data-lucide="git-branch" style="width:17px;height:17px"></i>Git</h3>
+    <div class="fld"><label>Repository folder (device shell path)</label><input class="inp kbd" id="gitDir" placeholder="." value="."/></div>
+    <div class="acts" style="flex-wrap:wrap;gap:8px">
+      <button class="btnGhost" id="gitStatus" style="padding:9px 13px;font-size:12.5px">Status</button>
+      <button class="btnGhost" id="gitLog" style="padding:9px 13px;font-size:12.5px">Log</button>
+      <button class="btnGhost" id="gitPull" style="padding:9px 13px;font-size:12.5px">Pull</button>
+      <button class="btnGhost" id="gitPush" style="padding:9px 13px;font-size:12.5px">Push</button>
+    </div>
+    <div class="fld"><label>Commit message</label><input class="inp" id="gitMsg" placeholder="What changed?"/></div>
+    <div class="acts"><button class="btnX" id="gitCommit">Add all + commit</button></div>
+    <pre id="gitOut" style="font-family:ui-monospace,Consolas,monospace;font-size:11.5px;line-height:1.55;max-height:38vh;overflow:auto;white-space:pre-wrap;color:var(--ink2);background:var(--fld);border-radius:12px;padding:12px">Run Status or Log to see the repository state.</pre>
+  </div>
+
   <div class="sheet" id="sheet-srvlog" aria-label="Server log">
     <div class="grab"></div><h3><i data-lucide="scroll-text" style="width:17px;height:17px"></i>Server log</h3>
     <pre id="srvLogText" style="font-family:ui-monospace,Consolas,monospace;font-size:11.5px;line-height:1.55;max-height:46vh;overflow:auto;white-space:pre-wrap;color:var(--ink2)"></pre>
@@ -523,6 +578,7 @@
       <span class="ide-path kbd" id="idePath">—</span>
       <span style="flex:1"></span>
       <button class="ide-btn" id="ideNewFile"><i data-lucide="file-plus-2"></i>New</button>
+      <button class="ide-btn" id="ideGit"><i data-lucide="git-branch"></i>Git</button>
       <button class="ide-btn" id="ideSave"><i data-lucide="save"></i>Save</button>
       <button class="ide-btn" id="ideClose"><i data-lucide="x"></i>Close</button>
     </div>
@@ -540,39 +596,8 @@
     </div>
   </div>
 
-  <!-- ============ REAL TERMINAL (full window, outside the phone) ============ -->
-  <div id="terminal" style="display:none">
-    <div class="ide-head">
-      <span class="ide-logo"><i data-lucide="square-terminal"></i></span>
-      <b>Terminal</b>
-      <span class="ide-path kbd" id="termBackend">—</span>
-      <span style="flex:1"></span>
-      <button class="iconb" id="termFontMinus" aria-label="Smaller text" style="width:32px;height:32px;font-size:12px">A-</button>
-      <button class="iconb" id="termFontPlus" aria-label="Larger text" style="width:32px;height:32px;font-size:14px">A+</button>
-      <button class="iconb" id="termHome" aria-label="Back to chat"><i data-lucide="message-square"></i></button>
-      <button class="iconb" id="termRestart" aria-label="Restart session"><i data-lucide="rotate-ccw"></i></button>
-      <button class="iconb" id="termClose" aria-label="Close"><i data-lucide="x"></i></button>
-    </div>
-    <div id="termHost"></div>
-    <div class="term-keys" id="termKeys">
-      <button data-k="esc">Esc</button>
-      <button data-k="tab">Tab</button>
-      <button data-k="ctrl" id="termCtrl">Ctrl</button>
-      <button data-k="paste" title="Paste"><i data-lucide="clipboard" style="width:13px;height:13px"></i></button>
-      <button data-k="up">▲</button>
-      <button data-k="down">▼</button>
-      <button data-k="left">◀</button>
-      <button data-k="right">▶</button>
-      <button data-k="ch">|</button>
-      <button data-k="ch">/</button>
-      <button data-k="ch">-</button>
-      <button data-k="ch">~</button>
-    </div>
-  </div>
-
   <script>window.addEventListener('error', function (e) { try { localStorage.setItem('__err', e.message + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno); } catch (_) {} });</script>
   <script src="js/vendor/lucide.min.js"></script>
-<script src="js/vendor/xterm.js"></script>
 <script src="js/util.js"></script>
 <script src="js/store.js"></script>
 <script src="js/tools.js"></script>
@@ -580,7 +605,7 @@
 <script src="js/mcp.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/ide.js"></script>
-<script src="js/term.js"></script>
+<script src="js/deploy.js"></script>
 <script src="js/agentexec.js"></script>
 <script src="js/web.js"></script>
 <script src="js/app.js"></script>

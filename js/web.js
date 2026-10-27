@@ -153,7 +153,8 @@
     try {
       var md = cleanJina(await get('https://r.jina.ai/' + url, 20000));
       if (!md) return 'Error: empty page';
-      return md.slice(0, 8000);
+      if (md.length > 8000) return md.slice(0, 8000) + '\n[page truncated at 8000 chars — total ' + md.length + '; ask for a specific section or a more focused URL]';
+      return md;
     } catch (e) {
       return 'Error: could not read ' + url + ' (' + String(e.message || e).slice(0, 80) + ')';
     }

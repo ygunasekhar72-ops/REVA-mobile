@@ -3,15 +3,46 @@
    model's thinking stream (NVIDIA reasoning_content / gpt-oss reasoning) and
    toolCalls the accumulated OpenAI-style function calls. */
 (function () {
+  /* MULTI-KEY ENDURANCE: a provider accepts several API keys separated by
+     commas/newlines. keyFor() returns the active one (runtime cursor), so a
+     long run survives per-key quota walls by rotating to the next key. */
+  function keyList(p) {
+    return String(p.key || '').split(/[,\n;]+/).map(function (k) { return k.trim(); }).filter(Boolean);
+  }
+  function keyFor(p) {
+    var list = keyList(p);
+    if (!list.length) return '';
+    return list[Math.min(p._keyIdx || 0, list.length - 1)];
+  }
+  function rotateKey(p) {
+    var list = keyList(p);
+    var next = (p._keyIdx || 0) + 1;
+    if (next >= list.length) { p._keyIdx = 0; return false; }
+    p._keyIdx = next;
+    return true;
+  }
+  function isQuotaError(e) {
+    return /http 429|http 402|quota|insufficient|billing|limit reached|monthly limit|credit/i.test(String((e && e.message) || e || ''));
+  }
+  /* transient = worth an automatic retry on the SAME provider: server blips
+     and network drops should never end a long run on their own */
+  function isTransientError(e) {
+    var m = String((e && e.message) || e || '');
+    if (isQuotaError(m)) return false;
+    return /http 5\d\d|failed to fetch|networkerror|network error|timeout|timed out|socket|load failed|econn/i.test(m);
+  }
   function headers(p) {
     var h = { 'Content-Type': 'application/json' };
-    if (p.key) h['Authorization'] = 'Bearer ' + p.key;
+    var k = keyFor(p);
+    if (k) h['Authorization'] = 'Bearer ' + k;
     return h;
   }
   function baseUrl(p) {
     var u = (p.base || '').replace(/\/+$/, '');
     // users often paste the full endpoint — normalize to the API root
     u = u.replace(/\/chat\/completions$/, '').replace(/\/models$/, '');
+    // scheme/charset/credential sanity (local providers like Ollama are allowed)
+    u = H.assertEndpointUrl(u);
     return u;
   }
 
@@ -181,6 +212,12 @@
        We default to 64K and auto-double up to 256K on length-finish. */
     var maxTok = Math.max(32, opts.maxTokens || 64) * 1024;
     var result = null;
+    /* linked controller: the user's stop signal AND the stream watchdog both
+       land here; user stop rethrows, watchdog stall yields an empty result */
+    var ctrl0 = ('AbortController' in window) ? new AbortController() : null;
+    var linkAbort = function () { try { ctrl0.abort(); } catch (eL) { } };
+    if (signal) { if (signal.aborted) linkAbort(); else signal.addEventListener('abort', linkAbort); }
+    var fetchSignal = ctrl0 ? ctrl0.signal : signal;
     for (var budgetTry = 0; budgetTry < 3 && !result; budgetTry++) {
       var body0 = buildBody(opts);
       body0.max_tokens = maxTok;
@@ -188,7 +225,7 @@
         onReasoning('\n\n[token budget raised to ' + Math.round(maxTok / 1024) + 'K — the previous round ended mid-reasoning]\n\n');
       }
       var res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
-        method: 'POST', headers: headers(p), body: JSON.stringify(body0), signal: signal
+        method: 'POST', headers: headers(p), body: JSON.stringify(body0), signal: fetchSignal
       });
       // if this endpoint rejects the reasoning_effort parameter, remember and retry without it
       if (!res.ok && res.status === 400 && opts.effort && !opts.provider.noEffort) {
@@ -199,7 +236,7 @@
           body2.max_tokens = maxTok;
           delete body2.reasoning_effort;
           res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
-            method: 'POST', headers: headers(p), body: JSON.stringify(body2), signal: signal
+            method: 'POST', headers: headers(p), body: JSON.stringify(body2), signal: fetchSignal
           });
         }
       }
@@ -229,15 +266,38 @@
           for (var q = 0; q < tc0.length; q++) opts.onToolCall(tc0[q].function.name, (tc0[q].function.arguments || '').length);
         }
         if (fin0 === 'length' && !content0 && !tc0 && budgetTry < 2) { maxTok *= 2; continue; }
-        result = { content: content0, reasoning: reas0, toolCalls: tc0, finishReason: fin0 };
+        var u0 = j.usage || null;
+        result = { content: content0, reasoning: reas0, toolCalls: tc0, finishReason: fin0, usage: u0 ? { in: u0.prompt_tokens || 0, out: u0.completion_tokens || 0 } : null };
       } else {
         var reader = res.body.getReader();
         var dec = new TextDecoder();
         var buf = '', full = '', reasoning = '', tcAcc = [];
         var finS = '';
-        while (true) {
-          var r = await reader.read();
+        var streamUsage = null;
+        /* stream inactivity watchdog: some servers keep the SSE open after
+           finish (or wedge mid-body). If no bytes arrive for 75s, abort the
+           read and return an empty result — the caller's empty-reply ladder
+           retries. A user stop aborts the same controller and rethrows. */
+        var lastByte = Date.now();
+        var wdog = null;
+        var armWdog = function () {
+          if (wdog) clearInterval(wdog);
+          wdog = setInterval(function () {
+            if (Date.now() - lastByte > 75000) { try { ctrl0.abort(); } catch (eW) { } }
+          }, 15000);
+        };
+        var readLoop = true;
+        while (readLoop) {
+          var r;
+          try { r = await reader.read(); } catch (eRead) {
+            clearInterval(wdog);
+            if (signal && signal.aborted) throw eRead; // user stop — propagate
+            break; // watchdog stall → empty result → caller retries
+          }
+          clearInterval(wdog);
           if (r.done) break;
+          lastByte = Date.now();
+          armWdog();
           buf += dec.decode(r.value, { stream: true });
           var idx;
           while ((idx = buf.indexOf('\n')) >= 0) {
@@ -251,6 +311,7 @@
               var ch0 = jr.choices && jr.choices[0];
               var delta = ch0 && ch0.delta;
               if (ch0 && ch0.finish_reason) finS = ch0.finish_reason;
+              if (jr.usage) streamUsage = jr.usage;
               if (!delta) continue;
               var piece = delta.content;
               if (piece) { full += piece; onDelta(piece); }
@@ -269,6 +330,7 @@
             } catch (e) { /* keepalive or partial json — ignore */ }
           }
         }
+        if (wdog) clearInterval(wdog);
         var acc2 = {};
         var lifted = liftTextToolCalls(full, acc2);
         if (lifted) {
@@ -277,7 +339,7 @@
           if (opts.onDeltaClean && full) opts.onDeltaClean(full);
         }
         if (finS === 'length' && !full && !tcAcc.length && budgetTry < 2) { maxTok *= 2; continue; }
-        result = { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) || lifted, finishReason: finS };
+        result = { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) || lifted, finishReason: finS, usage: streamUsage ? { in: streamUsage.prompt_tokens || 0, out: streamUsage.completion_tokens || 0 } : null };
       }
     }
     return result || { content: '', reasoning: '', toolCalls: null };
@@ -315,5 +377,5 @@
     return m;
   }
 
-  window.AI = { chat: chat, listModels: listModels, probeModel: probeModel, friendlyError: friendlyError };
+  window.AI = { chat: chat, listModels: listModels, probeModel: probeModel, friendlyError: friendlyError, keyList: keyList, rotateKey: rotateKey, isQuotaError: isQuotaError, isTransientError: isTransientError };
 })();

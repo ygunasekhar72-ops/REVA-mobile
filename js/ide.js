@@ -107,7 +107,7 @@
   function refreshHl() {
     var pre = $('#ideHl'), ta = $('#ideEditor');
     if (!pre || !ta) return;
-    pre.innerHTML = H.hi(ta.value, H.extLang(curPath)) + '\n';
+    pre.innerHTML = H.hl(ta.value, H.extLang(curPath)) + '\n';
     pre.scrollTop = ta.scrollTop;
     pre.scrollLeft = ta.scrollLeft;
   }
@@ -203,6 +203,10 @@
       Tools.run('write_file', { path: name.trim(), content: '' });
       refreshTree();
       IDE.loadFile(name.trim().replace(/^\/+/, '').indexOf('workspace/') === 0 ? name.trim().replace(/^\/+/, '') : 'workspace/' + name.trim().replace(/^\/+/, ''));
+    });
+    $('#ideGit').addEventListener('click', function () {
+      H.openSheet('sheet-git');
+      if (window.App && App.gitRun) App.gitRun('status', true);
     });
   }
 

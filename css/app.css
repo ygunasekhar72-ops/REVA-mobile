@@ -1,7 +1,7 @@
 /* Mono Harness — app styles (design carried over 1:1 from the approved mockup) */
 #mono-harness{
   --ez:cubic-bezier(.22,1,.36,1);
-  font-family:-apple-system,"SF Pro Text","Segoe UI Variable","Segoe UI",Inter,Roboto,system-ui,sans-serif;
+  font-family:'Inter','Segoe UI Variable Text','Segoe UI',-apple-system,'SF Pro Text',Roboto,system-ui,sans-serif;
   padding:22px 10px 26px;
   -webkit-font-smoothing:antialiased;
 }
@@ -406,17 +406,6 @@
 #mono-harness #ov-browser .wb-bar,#mono-harness #ov-browser .wb-frame-wrap,#mono-harness #ov-browser .wb-links{flex:none}
 #mono-harness #ov-browser .wb-frame-wrap{flex:1}
 
-/* ---------- REAL TERMINAL (full window) ---------- */
-#terminal{position:fixed;inset:0;z-index:310;display:none;flex-direction:column;background:#0a0a0e}
-#terminal #termHost{flex:1;min-height:0;padding:10px 12px 6px}
-#terminal .ide-head{flex:none}
-#terminal .iconb{font-family:inherit}
-/* extra-keys row (Termux-style) */
-.term-keys{flex:none;display:flex;gap:6px;padding:6px 10px calc(8px + env(safe-area-inset-bottom,0px));background:#101018;border-top:1px solid rgba(255,255,255,.06);overflow-x:auto;scrollbar-width:none}
-.term-keys::-webkit-scrollbar{display:none}
-.term-keys button{flex:1 0 auto;min-width:38px;height:38px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#c9c9d6;font-size:12.5px;font-weight:600;font-family:ui-monospace,Consolas,monospace;padding:0 9px;touch-action:manipulation}
-.term-keys button:active{background:rgba(255,255,255,.14)}
-.term-keys button.armed{background:#2e4568;border-color:#4b6ea9;color:#fff}
 #mono-harness .msg.user .uimg{max-width:100%;border-radius:12px;margin-bottom:8px;display:block}
 #mono-harness .act-row .apath{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40%}
 #mono-harness .diff.plus{color:#57c78f;font-size:11px;flex:none;font-family:ui-monospace,Consolas,monospace}
@@ -428,3 +417,207 @@
 #mono-harness .act-row .fname{color:var(--ink);font-weight:500}
 #mono-harness .act-row .dchip{color:var(--ink3);font-size:11px;font-family:ui-monospace,Consolas,monospace}
 #mono-harness .act-row.live .meta{flex:none}
+
+/* ============================================================
+   FLAT UI OVERHAUL (2026-10) — clean chat-first redesign.
+   No bezel, no island, no 3D, no shadows. Drawer navigation.
+   ============================================================ */
+#mono-harness{min-height:100dvh;display:flex;justify-content:center;align-items:stretch;background:#e9e9ec;overflow:hidden}
+#mono-harness .stage,#mono-harness .scaler{display:contents!important}
+#mono-harness #phone{
+  width:100%;max-width:560px;height:100dvh;margin:0;border-radius:0;
+  box-shadow:none!important;--sd:transparent!important;
+  border-left:1px solid rgba(0,0,0,.07);border-right:1px solid rgba(0,0,0,.07);
+  overflow:hidden;display:flex;flex-direction:column;background:var(--sur);
+}
+#mono-harness #phone[data-theme="porcelain"]{--sur:#f3f3f5;--sur2:#ffffff;--fld:#e7e7ea;--ink:#17171e;--ink2:#2e2e36;--ink3:#62626b;--line:rgba(0,0,0,.08)}
+#mono-harness #phone[data-theme="obsidian"]{--sur:#101014;--sur2:#17171c;--fld:#1d1d23;--ink:#ececf1;--ink2:#c9c9d2;--ink3:#84848e;--line:rgba(255,255,255,.08)}
+#mono-harness .p-body{flex:1;display:flex;flex-direction:column;min-height:0;position:relative;padding:0}
+#mono-harness #phone *{text-shadow:none!important}
+#mono-harness #phone .card,#mono-harness #phone .row,#mono-harness #phone .tile,#mono-harness #phone .btnX,#mono-harness #phone .btnGhost,#mono-harness #phone .pill,#mono-harness #phone .inp,#mono-harness #phone .iconb,#mono-harness #phone .seg,#mono-harness #phone .chip,#mono-harness #phone .ctxchip{box-shadow:none!important}
+#mono-harness #phone .hcard,#mono-harness #phone .sheen,#mono-harness #phone .p-island,#mono-harness #phone .p-status{display:none!important}
+
+/* ---------- home: top bar + empty middle + one input bar ---------- */
+#scr-home{display:none;flex-direction:column}
+#scr-home.on{display:flex}
+#mono-harness .topbar{display:flex;align-items:center;gap:10px;padding:12px 14px 6px;flex:none}
+#mono-harness .roundb{width:40px;height:40px;border-radius:50%;background:var(--sur2);border:1px solid var(--line);display:grid;place-items:center;color:var(--ink);flex:none;cursor:pointer;touch-action:manipulation}
+#mono-harness .roundb:active{transform:scale(.96)}
+#mono-harness .roundb svg{width:19px;height:19px}
+#mono-harness .brand{flex:1;text-align:center;font-size:16.5px;font-weight:700;letter-spacing:.3px;color:var(--ink)}
+#mono-harness .homemid{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:10px}
+#mono-harness .homebar{flex:none;display:flex;align-items:center;gap:8px;padding:10px 12px calc(12px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,var(--sur) 70%,transparent)}
+#homeInput{flex:1;min-width:0;height:48px;border-radius:24px;border:1px solid var(--line);background:var(--sur2);padding:0 16px;font-size:15px;color:var(--ink);outline:none}
+#homeInput:focus{border-color:#7c5cff}
+#homeInput::placeholder{color:var(--ink3)}
+#mono-harness .sendbig{width:44px;height:44px;border-radius:50%;background:#7c5cff;color:#fff;border:none;display:grid;place-items:center;flex:none;cursor:pointer}
+#mono-harness .sendbig svg{width:19px;height:19px}
+#mono-harness .sendbig:active{transform:scale(.94)}
+
+/* ---------- drawer ---------- */
+#scrim{position:fixed;inset:0;background:rgba(8,8,12,.38);opacity:0;pointer-events:none;transition:opacity .25s var(--ez);z-index:390}
+#scrim.on{opacity:1;pointer-events:auto}
+#drawer{
+  position:fixed;top:0;bottom:0;left:0;width:min(84vw,330px);z-index:400;
+  background:var(--sur);border-right:1px solid var(--line);
+  transform:translateX(-103%);transition:transform .28s var(--ez);
+  display:flex;flex-direction:column;overflow-y:auto;
+  padding:16px 10px calc(14px + env(safe-area-inset-bottom,0px));
+}
+#drawer.open{transform:none}
+#mono-harness .dhead{padding:4px 10px 14px}
+#mono-harness .dhead b{display:block;font-size:17px;color:var(--ink)}
+#mono-harness .dhead small{color:var(--ink3);font-size:11.5px}
+#mono-harness .dnew{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border:none;border-radius:22px;background:#7c5cff;color:#fff;font-size:14.5px;font-weight:600;cursor:pointer;margin-bottom:6px}
+#mono-harness .dnew svg{width:17px;height:17px}
+#mono-harness .dnew:active{transform:scale(.98)}
+#mono-harness .dsec{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink3);padding:14px 10px 6px}
+#mono-harness .ditem{display:flex;align-items:center;gap:12px;width:100%;padding:11px 10px;border-radius:12px;border:none;background:none;color:var(--ink);font-size:14.5px;text-align:left;cursor:pointer}
+#mono-harness .ditem svg{width:18px;height:18px;color:var(--ink2);flex:none}
+#mono-harness .ditem:active{background:var(--fld)}
+#drawer #sessList{flex:none}
+#drawer #sessList .row{background:none;border:none;border-radius:12px;padding:10px;margin:0}
+#drawer #sessList .row .tile{display:none}
+#drawer #sessList .row .rtxt b{font-weight:500;font-size:14px}
+#drawer #sessList .row .cbar{display:none}
+#drawer #sessList .row:active{background:var(--fld)}
+#mono-harness .dfoot{margin-top:auto;padding-top:10px;border-top:1px solid var(--line)}
+#mono-harness .dava{width:30px;height:30px;border-radius:50%;background:#d9a13c;color:#fff;display:grid;place-items:center;flex:none}
+#mono-harness .dava svg{width:15px;height:15px}
+
+/* ---------- back buttons on Files / AI / Settings ---------- */
+#mono-harness .shead .iconb[data-tab="home"]{color:var(--ink)}
+
+/* ---------- chat: flat header + one-bar composer ---------- */
+#mono-harness #ov-chat .chead{background:var(--sur);box-shadow:none;border-bottom:1px solid var(--line)}
+#mono-harness #ov-chat .cbox{background:var(--sur2);border:1px solid var(--line);border-radius:24px;padding:5px 6px;gap:6px;align-items:center}
+#mono-harness #ov-chat .cbox #chatInput{background:none;border:none;height:40px;flex:1;min-width:0;padding:0 6px;font-size:15px;color:var(--ink);outline:none}
+#mono-harness #ov-chat .cbox .send{width:38px;height:38px;border-radius:50%;background:#7c5cff;color:#fff;border:none;display:grid;place-items:center;flex:none}
+#mono-harness #ov-chat .composer{background:linear-gradient(to top,var(--sur) 70%,transparent);padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px))}
+#mono-harness #ov-chat .msgs{background:var(--sur)}
+#mono-harness #ov-chat .empty-wrap .orb{box-shadow:none;background:var(--sur2);border:1px solid var(--line)}
+
+/* ---------- compose sheet rows ---------- */
+#mono-harness .crow{display:flex;align-items:center;gap:12px;width:100%;padding:13px 12px;border:none;background:none;border-radius:12px;color:var(--ink);font-size:14.5px;text-align:left;cursor:pointer}
+#mono-harness .crow svg{width:18px;height:18px;color:var(--ink2);flex:none}
+#mono-harness .crow .chev{margin-left:auto;color:var(--ink3);width:16px;height:16px}
+#mono-harness .crow:active{background:var(--fld)}
+#mono-harness .dsep{height:1px;background:var(--line);margin:8px 4px}
+
+/* ---------- desktop framing ---------- */
+@media (min-width:561px){
+  #mono-harness{padding:0}
+  #mono-harness #phone{border-left:1px solid rgba(0,0,0,.08);border-right:1px solid rgba(0,0,0,.08)}
+}
+
+#mono-harness .p-homebar{display:none!important}
+
+/* ============================================================
+   COMPOSER v2 — image-accurate: textarea over controls row
+   (+ · context ring · model ˅ · send/stop), model popover,
+   natural AI messages, subtle depth ("little 3d").
+   ============================================================ */
+#mono-harness #ov-chat .composer{background:linear-gradient(to top,var(--sur) 65%,transparent);padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));position:relative}
+#mono-harness .cwrap{background:var(--sur2);border:1px solid var(--line);border-radius:26px;padding:10px 12px 8px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.07)}
+#mono-harness #chatInput{display:block;width:100%;border:none;background:transparent;resize:none;outline:none;font:inherit;font-size:15px;line-height:1.45;color:var(--ink);min-height:22px;max-height:132px;overflow-y:auto;padding:2px 4px 8px}
+#mono-harness #chatInput::placeholder{color:var(--ink3)}
+#mono-harness .crow2{display:flex;align-items:center;gap:6px}
+#mono-harness .roundb.sm{width:34px;height:34px}
+#mono-harness .roundb.sm svg{width:17px;height:17px}
+#mono-harness .ctxring{background:none;border:none;padding:0;width:30px;height:30px;display:grid;place-items:center;cursor:pointer;flex:none;color:var(--ink)}
+#mono-harness .modsel{display:flex;align-items:center;gap:6px;margin-left:auto;min-width:0;padding:8px 11px;border-radius:16px;border:none;background:var(--fld);color:var(--ink);font-size:12.5px;cursor:pointer;flex:none;max-width:52%}
+#mono-harness .modsel b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px}
+#mono-harness .modsel span{color:var(--ink3);font-weight:600;white-space:nowrap}
+#mono-harness .modsel svg{width:14px;height:14px;color:var(--ink3);flex:none}
+#mono-harness #ov-chat .send{width:38px;height:38px;border-radius:50%;background:#7c5cff;color:#fff;border:none;display:grid;place-items:center;flex:none;cursor:pointer;box-shadow:0 1px 2px rgba(124,92,255,.4),0 3px 9px rgba(124,92,255,.3)}
+#mono-harness #ov-chat .send:active{transform:scale(.93)}
+#mono-harness #ov-chat .send.stop{background:var(--ink);color:var(--sur2)}
+
+/* ---------- model + effort popover ---------- */
+#mono-harness #popModel{
+  display:none;position:fixed;right:12px;bottom:118px;z-index:600;
+  width:min(340px,calc(100% - 28px));background:var(--sur2);border:1px solid var(--line);
+  border-radius:18px;padding:10px;box-shadow:0 6px 18px rgba(0,0,0,.12),0 16px 44px rgba(0,0,0,.16);
+}
+#mono-harness #popModel.on{display:block;animation:msgin .22s var(--ez)}
+#mono-harness .pmSec{font-size:11px;letter-spacing:1.1px;text-transform:uppercase;color:var(--ink3);padding:6px 8px 4px}
+#mono-harness #popModelList{max-height:250px;overflow-y:auto}
+#mono-harness .pmEff{display:flex;align-items:center;gap:8px;padding:8px 8px 2px;font-size:13px;color:var(--ink2)}
+#mono-harness .pmEff b{color:var(--ink);font-size:13.5px}
+#mono-harness #pmEffort{-webkit-appearance:none;appearance:none;width:100%;height:8px;border-radius:99px;background:linear-gradient(90deg,#34c98e,#7c5cff);outline:none;margin:10px 2px 4px}
+#mono-harness #pmEffort::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:1px solid rgba(0,0,0,.12);box-shadow:0 1px 4px rgba(0,0,0,.25);cursor:pointer}
+#mono-harness .pmMarks{display:flex;justify-content:space-between;font-size:11px;color:var(--ink3);padding:0 6px 4px}
+
+/* ---------- home bar grows too ---------- */
+#mono-harness #homeInput{display:block;min-height:48px;height:48px;border-radius:24px;border:1px solid var(--line);background:var(--sur2);padding:12px 16px;font:inherit;font-size:15px;line-height:1.45;color:var(--ink);outline:none;resize:none;max-height:132px;overflow-y:auto;box-shadow:0 1px 2px rgba(0,0,0,.05),0 3px 10px rgba(0,0,0,.05)}
+#mono-harness #homeInput:focus{border-color:#7c5cff}
+
+/* ---------- natural AI answers (no box) ---------- */
+#mono-harness .msg{max-width:86%}
+#mono-harness .msg.ai{max-width:100%;background:transparent;border:none;border-radius:0;padding:4px 2px 4px 8px;box-shadow:none}
+#mono-harness .msg.ai .think{background:var(--fld);box-shadow:none;border:1px solid var(--line)}
+#mono-harness .msg.ai pre.msgcode{box-shadow:none;border:1px solid var(--line)}
+#mono-harness .msg.ai code{box-shadow:none}
+
+/* ---------- little 3d: gentle elevation on the flat surfaces ---------- */
+#mono-harness .roundb{box-shadow:0 1px 2px rgba(0,0,0,.08),0 3px 8px rgba(0,0,0,.07)!important}
+#mono-harness .roundb:active{transform:translateY(1px) scale(.96)}
+#mono-harness .sendbig{box-shadow:0 2px 4px rgba(124,92,255,.35),0 5px 14px rgba(124,92,255,.28)!important}
+#mono-harness .dnew{box-shadow:0 2px 4px rgba(124,92,255,.32),0 6px 16px rgba(124,92,255,.25)!important}
+#mono-harness .dnew:active{transform:translateY(1px)}
+#mono-harness #drawer{box-shadow:8px 0 28px rgba(0,0,0,.12)!important}
+#mono-harness .sheet{box-shadow:0 -10px 34px rgba(0,0,0,.16)!important;border-top:1px solid var(--line)}
+#mono-harness #popModelList .mcard,#mono-harness .card{box-shadow:0 1px 3px rgba(0,0,0,.05)!important}
+#mono-harness .btnX,#mono-harness .btnGhost{box-shadow:0 1px 2px rgba(0,0,0,.06)!important}
+#mono-harness .topbar{background:linear-gradient(to bottom,var(--sur) 60%,transparent)}
+
+html,body{margin:0;padding:0;overflow:hidden!important;width:100%}
+
+/* chat is home: composer pinned to the very bottom */
+#mono-harness #ov-chat{display:flex;flex-direction:column}
+#mono-harness #ov-chat .msgs{flex:1;min-height:0}
+#mono-harness #ov-chat .composer{flex:none;margin-top:auto}
+#mono-harness .dmore{display:block;width:100%;margin:6px 0 2px;padding:11px 10px;border:none;border-radius:12px;background:var(--fld);color:var(--ink2);font-size:13px;font-weight:600;text-align:center;cursor:pointer}
+#mono-harness .dmore:active{filter:brightness(.97)}
+
+/* ---------- popover chat search + jump-to-latest ---------- */
+#mono-harness #popModelSearch{margin-bottom:8px}
+#mono-harness #drawerSearch{margin:2px 2px 10px}
+#mono-harness #jumpBottom{
+  position:absolute;right:16px;bottom:8px;width:38px;height:38px;border-radius:50%;
+  background:var(--sur2);border:1px solid var(--line);color:var(--ink);cursor:pointer;
+  display:none;place-items:center;box-shadow:0 2px 6px rgba(0,0,0,.12),0 6px 16px rgba(0,0,0,.10);z-index:5;
+}
+#mono-harness #jumpBottom.on{display:grid}
+#mono-harness #jumpBottom svg{width:17px;height:17px}
+#mono-harness #jumpBottom:active{transform:translateY(1px)}
+
+/* ---------- resume chip (continue a stopped/interrupted task) ---------- */
+#mono-harness .resume-chip{
+  display:flex;align-items:center;gap:8px;margin:4px 0 14px auto;padding:10px 16px;
+  border-radius:20px;border:1px solid var(--line);background:var(--sur2);color:var(--ink);
+  font-size:13.5px;font-weight:600;cursor:pointer;width:fit-content;
+  box-shadow:0 1px 2px rgba(0,0,0,.07),0 3px 10px rgba(0,0,0,.07);
+}
+#mono-harness .resume-chip svg{width:15px;height:15px;color:#7c5cff}
+#mono-harness .resume-chip:active{transform:translateY(1px)}
+
+/* chat screen: only the messages scroll — header + composer stay pinned */
+#mono-harness #ov-chat{overflow:hidden}
+#mono-harness #ov-chat .msgs{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+#mono-harness #ov-chat .chead,#mono-harness #ov-chat .composer{flex:none}
+
+/* ---------- Project Library (Files screen) ---------- */
+#mono-harness .lib-block{margin:2px 0 14px;padding:10px 10px 6px;border:1px solid var(--line);border-radius:14px;background:var(--sur2);box-shadow:0 1px 2px rgba(0,0,0,.05),0 3px 10px rgba(0,0,0,.05)}
+#mono-harness .lib-head{display:flex;align-items:center;gap:6px;padding:0 2px 8px}
+#mono-harness .libtitle{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink3);font-weight:600}
+#mono-harness .librow{display:flex;align-items:center;gap:8px;padding:9px 8px;border-radius:10px;margin-bottom:4px;background:var(--fld)}
+#mono-harness .librow.mounted{border-left:3px solid #7c5cff}
+#mono-harness .libinfo{flex:1;min-width:0}
+#mono-harness .libinfo b{display:block;font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mono-harness .libinfo small{color:var(--ink3);font-size:11px}
+#mono-harness .libinfo .lmount{color:#7c5cff;font-weight:600}
+#mono-harness .libacts{display:flex;gap:4px;flex:none}
+#mono-harness .libacts .chip{padding:6px 9px;font-size:11.5px}
+#mono-harness .libacts .chip.danger{color:#c0392b}
+#mono-harness .lib-empty{color:var(--ink3);font-size:12.5px;line-height:1.6;padding:4px 6px 8px;margin:0}

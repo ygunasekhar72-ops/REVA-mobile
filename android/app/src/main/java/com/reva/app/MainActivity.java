@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
 import android.webkit.JavascriptInterface;
 import android.webkit.JsResult;
 import android.webkit.ValueCallback;
@@ -22,6 +23,7 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private ValueCallback<Uri[]> filePathCallback;
+    private LibraryBridge libraryBridge;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -95,6 +97,9 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new ShellStream("window.__revaAgentOut", false), "REVAAgent");
         // connected-app automations: real app detection + launch
         web.addJavascriptInterface(new AppsBridge(), "REVAApps");
+        // Project Library: SAF folder import + filesDir-backed project storage
+        libraryBridge = new LibraryBridge(this);
+        web.addJavascriptInterface(libraryBridge, "REVALibrary");
 
         // Prepare the shell environment at launch: busybox copy + ~/.mkshrc +
         // REVA Linux rootfs. Background thread — first-run extraction of the
@@ -615,6 +620,12 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == LibraryBridge.TREE_REQUEST) {
+            if (libraryBridge != null && resultCode == RESULT_OK && data != null && data.getData() != null) {
+                libraryBridge.handleTreeResult(data.getData());
+            }
+            return;
+        }
         if (requestCode != FILE_CHOOSER_REQUEST) return;
         if (filePathCallback == null) return;
         Uri[] results = null;
@@ -629,6 +640,16 @@ public class MainActivity extends Activity {
         }
         filePathCallback.onReceiveValue(results);
         filePathCallback = null;
+    }
+
+    /** Evaluate one JS snippet in the page (used by bridges from any thread). */
+    public void evaluate(final String js) {
+        if (web == null) return;
+        web.post(new Runnable() {
+            @Override public void run() {
+                try { web.evaluateJavascript(js, null); } catch (Exception ignored) { }
+            }
+        });
     }
 
     @Override

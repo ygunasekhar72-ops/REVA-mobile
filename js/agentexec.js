@@ -1,6 +1,6 @@
 /* REVA — agent shell execution channel (Android APK).
    A private, hidden /system/bin/sh session (REVAAgent) owned by the AI agent,
-   fully separate from the user's interactive terminal session. Commands run
+   fully separate from any UI session. Commands run
    through a marker protocol that yields output + real exit codes; cwd and env
    persist within the session. The parser is a pure function (unit-tested). */
 (function () {
@@ -41,10 +41,9 @@
   }
 
   /* run a shell task: (task, {cwd, timeoutMs}) → {out, exit, timedOut}
-     Transport is pure passthrough, exactly like the user's terminal: the
-     command goes verbatim to the private shell's stdin, then a constant
-     marker line reports the real exit code. Nothing is templated around the
-     command text. */
+     Transport is pure passthrough: the command goes verbatim to the private
+     shell's stdin, then a constant marker line reports the real exit code.
+     Nothing is templated around the command text. */
   function run(task, opts) {
     if (!window.REVAAgent) {
       return Promise.resolve({ out: 'Error: shell_exec is only available in the REVA Android app', exit: -1 });
@@ -75,7 +74,15 @@
           if (settled) return;
           var r = parse(state, chunk, id);
           if (state.buf.length > MAX_CAPTURE * 2) state.buf = state.buf.slice(-MAX_CAPTURE);
-          if (r.done) finish({ out: (r.out || '').slice(0, MAX_CAPTURE), exit: r.exit });
+          if (r.done) {
+            /* head+tail capture: the command echo lives at the start, the
+               error/exit detail at the end — a single-side slice loses one */
+            var o = String(r.out || '');
+            if (o.length > MAX_CAPTURE) {
+              o = o.slice(0, 8000) + '\n[… ' + (o.length - 64000) + ' chars truncated …]\n' + o.slice(-56000);
+            }
+            finish({ out: o, exit: r.exit });
+          }
         }
       };
       if (opts.cwd) {

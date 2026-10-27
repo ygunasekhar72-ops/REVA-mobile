@@ -4,7 +4,10 @@
 (function () {
   var PROTOCOL = '2025-03-26';
 
-  function baseUrl(u) { return (u || '').replace(/\/+$/, ''); }
+  function baseUrl(u) {
+    // scheme/charset/credential sanity (on-device MCP servers are allowed)
+    return H.assertEndpointUrl(u);
+  }
 
   function post(base, body, sessionId) {
     var h = {

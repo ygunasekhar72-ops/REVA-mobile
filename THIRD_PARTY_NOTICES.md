@@ -3,11 +3,6 @@
 REVA is MIT-licensed. It bundles and interoperates with the following
 third-party components:
 
-## xterm.js — MIT
-- Files: `js/vendor/xterm.js`, `css/vendor/xterm.css`
-- Source: https://github.com/xtermjs/xterm.js
-- Terminal emulator front-end (rendering, input handling, buffer).
-
 ## Lucide icons — ISC
 - Files: `js/vendor/lucide.min.js`
 - Source: https://lucide.dev

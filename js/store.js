@@ -7,10 +7,10 @@
       providerId: 'echo', model: 'echo-1',
       effort: 'High', maxTokens: 64, stream: true, fallbackId: '',
       ctxK: 128, tools: true,
-      theme: 'obsidian', depth: 100, radius: 18, font: 15, motion: true, icons: 'line',
+      theme: 'porcelain', depth: 0, radius: 14, font: 15, motion: true, icons: 'line',
       mode: 'Build', compactAt: 80, notify: false, lang: 'en',
       autosave: true, checkpoints: true,
-      dismissedSetup: false
+      dismissedSetup: false, uiFlat: false
     },
     providers: [
       { id: 'openai',    name: 'OpenAI',          base: 'https://api.openai.com/v1',      key: '', models: [] },
@@ -85,6 +85,20 @@
         db[k] = saved[k];
       });
       migrateWorkspaces(db, saved);
+      /* one-time migration to the flat redesign (2026-10): old installs carry
+         the neumorphic dark default — flip them to the flat light theme once */
+      if (!db.settings.uiFlat) {
+        db.settings.uiFlat = true;
+        db.settings.theme = 'porcelain';
+        db.settings.depth = 0;
+      }
+      /* every session must carry the vfsContent object — tools write into it.
+         _vfsHydrated is a RUNTIME flag: after a reload every session starts
+         un-hydrated so file contents are re-read from IndexedDB. */
+      db.sessions.forEach(function (s) {
+        if (!s.vfsContent) s.vfsContent = {};
+        s._vfsHydrated = false;
+      });
       return db;
     } catch (e) {
       return JSON.parse(JSON.stringify(DEFAULTS));
@@ -93,6 +107,125 @@
 
   var db = load();
   var listeners = [];
+
+  /* ============================================================
+     PHASE 1.5 — heavy storage moved to IndexedDB.
+     In-memory db always holds full vfsContent (the sync tool API never
+     changes). localStorage keeps metadata + messages only, so the ~5 MB
+     ceiling and the whole-db stringify cost stop biting. File contents
+     write-through to IndexedDB on every save (dirty-checked by a cheap
+     count+size signature).
+     ============================================================ */
+  var VFS_STORE = 'vfs';
+  var idb = null;
+  var vfsSigCache = {};
+  function vfsSig(s) {
+    var n = 0, total = 0, k;
+    for (k in s.vfsContent) { n++; total += (s.vfsContent[k] || '').length; }
+    return n + ':' + total;
+  }
+  function openVfsDb() {
+    return new Promise(function (res) {
+      if (!window.indexedDB) return res(null);
+      try {
+        /* v2 adds the Project Library store; one connection serves both layers */
+        var rq = indexedDB.open('reva-vfs', 2);
+        rq.onupgradeneeded = function () {
+          var d = rq.result;
+          if (!d.objectStoreNames.contains(VFS_STORE)) d.createObjectStore(VFS_STORE);
+          if (!d.objectStoreNames.contains('library')) d.createObjectStore('library');
+        };
+        rq.onsuccess = function () { res(rq.result); };
+        rq.onerror = function () { res(null); };
+        rq.onblocked = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+  }
+  function vfsPut(sessionId, content) {
+    if (!idb) return;
+    try {
+      idb.transaction(VFS_STORE, 'readwrite').objectStore(VFS_STORE).put(JSON.stringify(content), sessionId);
+    } catch (e) { }
+  }
+  function vfsGet(sessionId) {
+    return new Promise(function (res) {
+      if (!idb) return res(undefined);
+      try {
+        var rq = idb.transaction(VFS_STORE, 'readonly').objectStore(VFS_STORE).get(sessionId);
+        rq.onsuccess = function () { try { res(rq.result ? JSON.parse(rq.result) : undefined); } catch (e) { res(undefined); } };
+        rq.onerror = function () { res(undefined); };
+      } catch (e) { res(undefined); }
+    });
+  }
+  function syncVfs() {
+    /* write-through — but ONLY for hydrated/fresh sessions: IDB is the
+       authority for file contents, and a just-booted session's empty
+       in-memory copy must NEVER overwrite the stored record */
+    if (!idb) return;
+    db.sessions.forEach(function (s) {
+      if (!s._vfsHydrated) return;
+      var sig = vfsSig(s);
+      if (vfsSigCache[s.id] !== sig) { vfsSigCache[s.id] = sig; vfsPut(s.id, s.vfsContent || {}); }
+    });
+  }
+  var vfsReady = openVfsDb().then(function (database) {
+    idb = database;
+    syncVfs();
+    /* hydrate the active + 3 most recent sessions so files are usable at once */
+    var recent = db.sessions.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; }).slice(0, 4);
+    return Promise.all(recent.map(function (s) { return hydrateVfs(s); }));
+  });
+  function hydrateVfs(s) {
+    if (!s.vfsContent) s.vfsContent = {}; // the tool API assumes this key always exists
+    if (s._vfsHydrated) return Promise.resolve();
+    if (Object.keys(s.vfsContent || {}).length) {
+      /* legacy in-memory copy is the truthful one — push it to IDB once */
+      s._vfsHydrated = true;
+      vfsSigCache[s.id] = vfsSig(s);
+      vfsPut(s.id, s.vfsContent || {});
+      return Promise.resolve();
+    }
+    if (!idb) { s._vfsHydrated = true; return Promise.resolve(); }
+    return vfsGet(s.id).then(function (content) {
+      if (content) s.vfsContent = content;
+      s._vfsHydrated = true;
+      vfsSigCache[s.id] = vfsSig(s);
+    });
+  }
+  window.addEventListener('beforeunload', function () { syncVfs(); });
+
+  /* ============================================================
+     PROJECT LIBRARY (Phase 2) — imported projects live in IndexedDB,
+     mounted into chats as lib/<slug>/ paths. Same IDB as vfs, extra store.
+     ============================================================ */
+  var libDb = null;
+  var libCache = {};   // projectId -> {id, name, createdAt, files:{path:content}}
+  function openLibDb() {
+    /* the Library shares the vfs connection — openVfsDb creates both stores */
+    return openVfsDb();
+  }
+  function libPersist(p) {
+    if (!libDb) return;
+    try { libDb.transaction('library', 'readwrite').objectStore('library').put(JSON.stringify(p), p.id); } catch (e) { }
+  }
+  function libRemove(id) {
+    if (!libDb) return;
+    try { libDb.transaction('library', 'readwrite').objectStore('library').delete(id); } catch (e) { }
+  }
+  var libReady = openLibDb().then(function (database) {
+    libDb = database;
+    if (!libDb) return;
+    return new Promise(function (res) {
+      var rq = libDb.transaction('library', 'readonly').objectStore('library').getAll();
+      rq.onsuccess = function () {
+        (rq.result || []).forEach(function (raw) {
+          try { var p = JSON.parse(raw); libCache[p.id] = p; } catch (e) { }
+        });
+        res();
+      };
+      rq.onerror = function () { res(); };
+    });
+  });
 
   function leanCopy(db) {
     var lean = JSON.parse(JSON.stringify(db));
@@ -122,7 +255,17 @@
       if (!db.settings.autosave) {
         out = Object.assign({}, db, { sessions: [], activeId: null });
       }
-      localStorage.setItem(KEY, JSON.stringify(out));
+      /* file contents live in IndexedDB (write-through below) — the
+         localStorage payload stays small, so the quota ceiling and the
+         whole-db stringify cost are gone */
+      var sessions = out.sessions.map(function (s) {
+        var c = Object.assign({}, s);
+        delete c.vfsContent;
+        delete c._vfsHydrated; // runtime flag — must never survive a reload
+        return c;
+      });
+      syncVfs();
+      localStorage.setItem(KEY, JSON.stringify(Object.assign({}, out, { sessions: sessions })));
     } catch (e) {
       // quota exceeded — progressively trim old chats, never the active one's files
       var attempts = [leanCopy(db), (function () {
@@ -131,7 +274,12 @@
         return l;
       })()];
       for (var i = 0; i < attempts.length; i++) {
-        try { localStorage.setItem(KEY, JSON.stringify(attempts[i])); if (window.H && H.toast) H.toast('Storage full — older chats were trimmed'); return; } catch (e2) {}
+        try {
+          var slim = attempts[i];
+          slim.sessions = slim.sessions.map(function (s) { var c = Object.assign({}, s); delete c.vfsContent; return c; });
+          localStorage.setItem(KEY, JSON.stringify(Object.assign({}, slim, { sessions: slim.sessions })));
+          if (window.H && H.toast) H.toast('Storage full — older chats were trimmed'); return;
+        } catch (e2) {}
       }
       /* storage full even lean; app keeps working in memory */
     }
@@ -142,6 +290,12 @@
     KEY: KEY,
     db: db,
     save: persist,
+    ready: vfsReady,
+    _vfsDebug: { vfsPut: vfsPut, syncVfs: syncVfs, vfsSig: vfsSig, vfsGet: vfsGet, cache: vfsSigCache },
+    hydrateSession: function (s) {
+      if (!s) return Promise.resolve();
+      return hydrateVfs(s).then(function () { try { persist(); } catch (e) { } });
+    },
     onChange: function (fn) { listeners.push(fn); },
     provider: function (id) {
       return db.providers.find(function (p) { return p.id === id; }) || db.providers[0];
@@ -160,7 +314,8 @@
         createdAt: Date.now(), updatedAt: Date.now(),
         summary: null, compactions: [],
         vfs: { workspace: [] },          // every chat gets its own empty workspace
-        vfsContent: {}
+        vfsContent: {},
+        _vfsHydrated: true               // created fresh in memory — nothing to hydrate
       };
       db.sessions.unshift(s);
       if (db.sessions.length > 40) db.sessions.length = 40;
@@ -181,6 +336,25 @@
         else db[p] = JSON.parse(JSON.stringify(DEFAULTS[p]));
       });
       persist();
+    }
+  };
+  window.Store.lib = {
+    ready: libReady,
+    list: function () {
+      return Object.keys(libCache).map(function (id) {
+        var p = libCache[id];
+        var files = Object.keys(p.files || {});
+        var size = 0; files.forEach(function (f) { size += (p.files[f] || '').length; });
+        return { id: p.id, name: p.name, createdAt: p.createdAt, fileCount: files.length, size: size };
+      }).sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
+    },
+    get: function (id) { return libCache[id] || null; },
+    put: function (p) { libCache[p.id] = p; libPersist(p); return p; },
+    remove: function (id) { delete libCache[id]; libRemove(id); },
+    slugTaken: function (slug) {
+      return Object.keys(libCache).some(function (id) {
+        return libCache[id].name.toLowerCase().replace(/[^\w.-]+/g, '-').toLowerCase() === slug.toLowerCase();
+      });
     }
   };
 })();

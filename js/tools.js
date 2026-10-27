@@ -1,7 +1,7 @@
 /* Mono Harness — built-in agent tools + harness console.
    Tools operate on the ACTIVE CHAT's workspace only (each chat gets its own);
-   there is no OS shell. The same command set powers the user-facing terminal
-   (IDE console) and the model's run_command tool. */
+   there is no OS shell. The same command set powers the IDE console and the
+   model's run_command tool. */
 (function () {
   function WS() {
     var s = Store.ws();
@@ -47,17 +47,187 @@
     vfs[path] = vfs[path] || [];
   }
   function fmtSize(n) { return n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
+  function skillSlug(nm) { return String(nm || '').replace(/[^\w.-]+/g, '-'); }
+  /* "did you mean" candidates when a path doesn't exist — lets the model
+     self-correct from a typo instead of failing a whole round */
+  function similarPaths(path) {
+    try {
+      var full = normPath(path), base = baseOf(full).toLowerCase();
+      var stems = base.split(/[._\-]+/).filter(function (w) { return w.length > 2; });
+      return Object.keys(WS().vfsContent).filter(function (k) {
+        if (k === full) return false;
+        var kb = baseOf(k).toLowerCase();
+        if (kb.indexOf(base) >= 0 && base.length > 2) return true;
+        if (base.indexOf(kb) >= 0 && kb.length > 2) return true;
+        return stems.some(function (w) { return kb.indexOf(w) >= 0; });
+      }).slice(0, 4);
+    } catch (e) { return []; }
+  }
+  function notFound(path) {
+    var sug = similarPaths(path);
+    return 'Error: no such file: ' + normPath(path) + (sug.length ? ' — did you mean: ' + sug.join(', ') + '?' : '') +
+      ' (check with list_files)';
+  }
+  /* closest line for an oldString that didn't match — token-overlap score */
+  function nearestLine(text, needle) {
+    var toks = (needle.toLowerCase().match(/[a-z0-9_$]{3,}/g) || []).filter(function (w, i, a) { return a.indexOf(w) === i; });
+    if (!toks.length) return null;
+    var best = null;
+    String(text).split('\n').forEach(function (line, i) {
+      var low = line.toLowerCase(), sc = 0;
+      toks.forEach(function (w) { if (low.indexOf(w) >= 0) sc++; });
+      if (sc && (!best || sc > best.sc)) best = { n: i + 1, sc: sc, line: line.trim().slice(0, 120) };
+    });
+    var need = Math.max(2, Math.ceil(toks.length / 3));
+    return best && best.sc >= need ? best : null;
+  }
+
+  /* ============================================================
+     PROJECT LIBRARY — imported projects mounted at lib/<slug>/
+     Shared read/edit cores so workspace and library behave identically.
+     ============================================================ */
+  function segmentedRead(text, a) {
+    var off = Math.max(0, parseInt(a.offset, 10) || 0);
+    var part = String(text).slice(off, off + 6000);
+    var foot = '';
+    if (String(text).length > off + 6000) foot = '\n[showing chars ' + off + '-' + (off + 6000) + ' of ' + String(text).length + ' — pass a higher offset, or startLine/endLine for a line window]';
+    return (off > 0 ? '[read from offset ' + off + ']\n' : '') + part + foot;
+  }
+  function numberedWindow(text, a, label) {
+    var lines = String(text).split('\n');
+    var st = Math.max(1, parseInt(a.startLine, 10) || 1);
+    var en = Math.min(lines.length, parseInt(a.endLine, 10) || st + 119);
+    if (en < st) return 'Error: endLine ' + en + ' is before startLine ' + st;
+    var win = lines.slice(st - 1, en).map(function (l, i) { return 'L' + (st + i) + ': ' + l; }).join('\n');
+    return label + ' — lines ' + st + '-' + en + ' of ' + lines.length +
+      ' (numbered for reference; strip the "L<n>:" prefixes when using this text in edit_file)\n' + win;
+  }
+  function flatWs(s) { return String(s == null ? '' : s).split(/\s+/).join(' '); }
+  function matchCore(text, oldStr, newStr, a) {
+    var count = text.split(oldStr).length - 1;
+    if (count === 0) {
+      var flat = flatWs(text), want = flatWs(oldStr);
+      if (want.length > 3 && flat.indexOf(want) >= 0) {
+        var near0 = nearestLine(text, oldStr);
+        return { err: 'Error: oldString not found VERBATIM, but a whitespace-differing match exists' +
+          (near0 ? ' near line ' + near0.n + ': ' + near0.line : '') +
+          '. Re-read that region (read_file with startLine/endLine) and copy the text EXACTLY, including indentation.' };
+      }
+      var near = nearestLine(text, oldStr);
+      return { err: 'Error: oldString not found. read_file the region first, then copy the exact text.' +
+        (near ? ' Closest line ' + near.n + ': ' + near.line : '') };
+    }
+    if (count > 1 && !a.replaceAll) {
+      var at = [], i0 = -1;
+      while ((i0 = text.indexOf(oldStr, i0 + 1)) > 0 && at.length < 5) at.push(text.slice(0, i0).split('\n').length);
+      return { err: 'Error: oldString matches ' + count + ' places (lines ' + at.join(', ') + (count > 5 ? ', …' : '') + ') — include more surrounding context to make it unique, or set replaceAll:true' };
+    }
+    /* split/join — literal replacement, no special-pattern semantics */
+    return { updated: text.split(oldStr).join(newStr), count: count };
+  }
+  function libCtx(path) {
+    var p = (path == null ? '' : String(path)).split('\\').join('/');
+    var m = p.match(/^lib\/([^/]+)(?:\/(.*))?$/);
+    if (!m) return null;
+    var sess = Store.active();
+    var mount = ((sess && sess.mounts) || []).filter(function (x) { return x.slug === m[1]; })[0];
+    if (!mount) return { missing: 'no mounted library "lib/' + m[1] + '/" — the user can mount it from Files → Project Library' };
+    var project = Store.lib.get(mount.libId);
+    if (!project) return { missing: 'the mounted library "' + mount.name + '" no longer exists' };
+    return { mount: mount, project: project, rel: m[2] || '', full: p };
+  }
+  function libSuggest(project, rel) {
+    var keys = Object.keys(project.files || {}).filter(function (k) { return k.indexOf(rel) >= 0 || rel.indexOf(k) >= 0; }).slice(0, 4);
+    return keys.length ? ' — did you mean: ' + keys.join(', ') + '?' : '';
+  }
+  function libListDir(project, rel) {
+    var pre = rel ? rel + '/' : '';
+    var dirs = {}, files = [];
+    Object.keys(project.files || {}).forEach(function (k) {
+      if (pre && k.indexOf(pre) !== 0) return;
+      var rest = pre ? k.slice(pre.length) : k;
+      var si = rest.indexOf('/');
+      if (si >= 0) dirs[rest.slice(0, si)] = true;
+      else files.push({ n: rest, len: (project.files[k] || '').length });
+    });
+    var out = Object.keys(dirs).sort().map(function (d) { return '[dir]  ' + d; })
+      .concat(files.sort(function (a, b) { return a.n < b.n ? -1 : 1; }).map(function (f) { return '       ' + f.n + '  ' + fmtSize(f.len); }));
+    return out.length ? out.join('\n') : '(empty)';
+  }
+  function symbolReport(content, path) {
+    var ext = path.split('.').pop().toLowerCase();
+    var out = [], imports = [];
+    var lines = String(content).split('\n');
+    var pats;
+    if (ext === 'py') {
+      pats = [
+        [/^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)/, 'function'], [/^\s*class\s+([A-Za-z_]\w*)/, 'class']
+      ];
+      var impPats = [[/^\s*import\s+(\S+)/], [/^\s*from\s+(\S+)/]];
+    } else if (/^(css|scss)$/.test(ext)) {
+      pats = [[/^\s*([.#][\w-][^{]*)\{/, 'rule']];
+    } else { // js/ts/tsx/jsx and similar brace languages
+      pats = [
+        [/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/, 'function'],
+        [/^\s*(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/, 'class'],
+        [/^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/, 'function'],
+        [/^\s*(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/, 'interface'],
+        [/^\s*(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=/, 'type'],
+        [/^\s*export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?!.*=>\s*$)(?!.*function\b)/, 'export'],
+        [/^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?!.*=>\s*$)(?!.*function\b)/, 'const']
+      ];
+      var impPats = [[/^\s*import\s.+from\s+['"]([^'"]+)['"]/], [/^\s*import\s+['"]([^'"]+)['"]/], [/^\s*(?:const|let|var)\s+.+=\s*require\(['"]([^'"]+)['"]\)/]];
+    }
+    lines.forEach(function (line, i) {
+      var matched = false;
+      if (impPats) {
+        for (var q = 0; q < impPats.length; q++) {
+          var im = line.match(impPats[q][0]);
+          if (im) { imports.push('L' + (i + 1) + ' ' + im[1].trim().slice(0, 60)); matched = true; break; }
+        }
+      }
+      if (matched) return;
+      /* one label per line: first matching pattern wins */
+      for (var pi = 0; pi < pats.length; pi++) {
+        var m = line.match(pats[pi][0]);
+        if (m) { out.push('L' + (i + 1) + ' ' + pats[pi][1] + ': ' + m[1].trim().slice(0, 80)); break; }
+      }
+    });
+    /* collapse import runs into one budget-friendly outline entry */
+    if (imports.length > 4) out.unshift(imports[0] + '-' + imports[imports.length - 1].replace(/^L\d+ /, '') + ' — import block (' + imports.length + ')');
+    else if (imports.length) imports.reverse().forEach(function (im) { out.unshift(im); });
+    if (!out.length) return 'No symbols found in ' + path + ' (' + lines.length + ' lines, .' + ext + ')';
+    return path + ' — ' + out.length + ' symbols\n' + out.slice(0, 150).join('\n');
+  }
 
   var IMPL = {
     write_file: function (a) {
+      var Lw = libCtx(a.path);
+      if (Lw) {
+        if (Lw.missing) return 'Error: ' + Lw.missing;
+        if (Lw.rel === '') return 'Error: lib/' + Lw.mount.slug + '/ is a mount root — write to a file inside it, e.g. lib/' + Lw.mount.slug + '/index.html';
+        var prevL = Lw.project.files[Lw.rel];
+        var libContent = String(a.content || '');
+        if (a.mode === 'append' && prevL !== undefined) libContent = String(prevL) + libContent;
+        Lw.project.files[Lw.rel] = libContent;
+        Store.lib.put(Lw.project);
+        var libLines = libContent.split('\n').length;
+        var lmsg = 'Wrote ' + Lw.full + ' (' + fmtSize(libContent.length) + (a.mode === 'append' ? ', appended' : '') + ') — file now ' + libLines + ' lines total';
+        if (a.mode !== 'append' && prevL !== undefined) lmsg += ' — replaced the previous ' + String(prevL).split('\n').length + '-line version';
+        if (libLines > 400 && a.mode !== 'append') lmsg += '\nNOTE: that was a big single write. For files >150 lines prefer sections of ≤120 lines (write the opening, then mode:"append") — long single generations can be dropped by the provider.';
+        return lmsg;
+      }
       var s = WS();
       var path = normPath(a.path);
       var content = String(a.content || '');
+      var prevLines;
       /* append mode: large files get written in sections — long single
          generations get silently dropped by free-tier providers */
       if (a.mode === 'append') {
         var prevContent = s.vfsContent[path];
         if (prevContent !== undefined) content = String(prevContent) + content;
+      } else if (s.vfsContent[path] !== undefined) {
+        prevLines = String(s.vfsContent[path]).split('\n').length;
       }
       ensureDirs(parentOf(path) || 'workspace');
       var dir = parentOf(path) || 'workspace';
@@ -71,21 +241,36 @@
       s.vfsContent[path] = content;
       Store.save();
       var totalLines = content.split('\n').length;
-      return 'Wrote ' + path + ' (' + size + (a.mode === 'append' ? ', appended' : '') + ') — file now ' + totalLines + ' lines total';
+      var msg = 'Wrote ' + path + ' (' + size + (a.mode === 'append' ? ', appended' : '') + ') — file now ' + totalLines + ' lines total';
+      if (a.mode !== 'append' && prevLines !== undefined) msg += ' — replaced the previous ' + prevLines + '-line version';
+      if (totalLines > 400 && a.mode !== 'append') msg += '\nNOTE: that was a big single write. For files >150 lines prefer sections of ≤120 lines (write the opening, then mode:"append") — long single generations can be dropped by the provider.';
+      return msg;
     },
     read_file: function (a) {
+      var L = libCtx(a.path);
+      if (L) {
+        if (L.missing) return 'Error: ' + L.missing;
+        if (L.rel === '') return 'lib/' + L.mount.slug + '/ is a mounted project (' + Object.keys(L.project.files).length + ' files) — list_files it to explore';
+        if (L.project.files[L.rel] === undefined) return 'Error: no such file: ' + L.full + libSuggest(L.project, L.rel) + ' (list_files "lib/' + L.mount.slug + '/" to explore)';
+        if (a.startLine !== undefined || a.endLine !== undefined) return numberedWindow(L.project.files[L.rel], a, L.full);
+        return segmentedRead(L.project.files[L.rel], a);
+      }
       var s = WS();
       var path = normPath(a.path);
       var c = s.vfsContent[path];
-      if (c === undefined) return 'Error: no such file: ' + path;
-      /* optional offset: large files are read in segments (6000-char window)
-         so the agent can verify big writes end-to-end */
-      var off = Math.max(0, parseInt(a.offset, 10) || 0);
-      var part = String(c).slice(off, off + 6000);
-      if (off > 0) return '[read from offset ' + off + ']\n' + part;
-      return part;
+      if (c === undefined) return notFound(path);
+      /* line window: numbered lines for precise edit_file anchoring.
+         NOTE for the model: strip the "L<n>: " prefixes when copying text
+         into edit_file oldString. */
+      if (a.startLine !== undefined || a.endLine !== undefined) return numberedWindow(c, a, path);
+      return segmentedRead(c, a);
     },
     create_directory: function (a) {
+      var Lc = libCtx(a.path);
+      if (Lc) {
+        if (Lc.missing) return 'Error: ' + Lc.missing;
+        return 'lib/' + Lc.mount.slug + '/ is a mounted project — directories are implicit there; just write files with their full paths (e.g. lib/' + Lc.mount.slug + '/src/main.js)';
+      }
       var s = WS();
       var dir = normPath(a.path);
       if (!dir || dir === 'workspace') return 'Error: directory path required';
@@ -94,27 +279,51 @@
       return 'Created directory ' + dir;
     },
     edit_file: function (a) {
+      var Le = libCtx(a.path);
+      if (Le) {
+        if (Le.missing) return 'Error: ' + Le.missing;
+        if (Le.rel === '') return 'Error: lib/' + Le.mount.slug + '/ is a mount root — edit a file inside it';
+        var curL = Le.project.files[Le.rel];
+        if (curL === undefined) return 'Error: no such file: ' + Le.full + libSuggest(Le.project, Le.rel);
+        var oldL = String(a.oldString == null ? '' : a.oldString);
+        var newL = String(a.newString == null ? '' : a.newString);
+        if (!oldL) return 'Error: oldString required';
+        var coreL = matchCore(String(curL), oldL, newL, a);
+        if (coreL.err) return coreL.err;
+        Le.project.files[Le.rel] = coreL.updated;
+        Store.lib.put(Le.project);
+        return 'Edited ' + Le.full + ' (' + coreL.count + (a.replaceAll ? ' replacement(s)' : ' replacement') + ') — file now ' + coreL.updated.split('\n').length + ' lines';
+      }
       var s = WS();
       var path = normPath(a.path);
       var c = s.vfsContent[path];
-      if (c === undefined) return 'Error: no such file: ' + path;
+      if (c === undefined) return notFound(path);
       var oldStr = String(a.oldString == null ? '' : a.oldString);
       var newStr = String(a.newString == null ? '' : a.newString);
       if (!oldStr) return 'Error: oldString required';
-      var text = String(c);
-      var count = text.split(oldStr).length - 1;
-      if (count === 0) return 'Error: oldString not found in ' + path;
-      if (count > 1 && !a.replaceAll) return 'Error: oldString matches ' + count + ' places in ' + path + ' — provide more surrounding context or set replaceAll:true';
-      var updated = a.replaceAll ? text.split(oldStr).join(newStr) : text.replace(oldStr, newStr);
+      var core = matchCore(String(c), oldStr, newStr, a);
+      if (core.err) return core.err;
+      var updated = core.updated;
       s.vfsContent[path] = updated;
       var dir = parentOf(path) || 'workspace';
       var list = s.vfs[dir] || (s.vfs[dir] = []);
       var ex = list.find(function (e) { return e.n === baseOf(path); });
       if (ex) ex.s = fmtSize(updated.length);
       Store.save();
-      return 'Edited ' + path + ' (' + count + (a.replaceAll ? ' replacement(s)' : ' replacement') + ')';
+      return 'Edited ' + path + ' (' + core.count + (a.replaceAll ? ' replacement(s)' : ' replacement') + ') — file now ' + updated.split('\n').length + ' lines';
     },
     list_files: function (a) {
+      var Ll = libCtx(a && a.path ? a.path : '');
+      if (Ll) {
+        if (Ll.missing) return 'Error: ' + Ll.missing;
+        if (Ll.rel === '') {
+          var head = 'lib/' + Ll.mount.slug + '/ — mounted project "' + Ll.project.name + '" (' + Object.keys(Ll.project.files).length + ' files)';
+          return head + '\n' + libListDir(Ll.project, '');
+        }
+        var any = Object.keys(Ll.project.files || {}).some(function (k) { return k.indexOf(Ll.rel + '/') === 0 || k === Ll.rel; });
+        if (!any) return 'Error: no such folder: ' + Ll.full + libSuggest(Ll.project, Ll.rel);
+        return libListDir(Ll.project, Ll.rel);
+      }
       var s = WS();
       var path = normPath(a.path || 'workspace');
       var list = s.vfs[path];
@@ -123,6 +332,15 @@
       return list.map(function (e) { return (e.t === 'dir' ? '[dir]  ' : '       ') + e.n + (e.s ? '  ' + e.s : ''); }).join('\n');
     },
     delete_file: function (a) {
+      var Ld = libCtx(a.path);
+      if (Ld) {
+        if (Ld.missing) return 'Error: ' + Ld.missing;
+        if (Ld.rel === '') return 'Error: cannot delete a mount root — unmount it from Files → Project Library instead';
+        var hadL = Ld.project.files[Ld.rel] !== undefined;
+        delete Ld.project.files[Ld.rel];
+        Store.lib.put(Ld.project);
+        return hadL ? 'Deleted ' + Ld.full : 'Error: no such file: ' + Ld.full;
+      }
       var s = WS();
       var path = normPath(a.path);
       var dir = parentOf(path) || 'workspace';
@@ -130,9 +348,10 @@
       var list = s.vfs[dir] || [];
       var before = list.length;
       s.vfs[dir] = list.filter(function (e) { return e.n !== name; });
+      var existed = s.vfsContent[path] !== undefined;
       delete s.vfsContent[path];
       Store.save();
-      return s.vfs[dir].length < before ? 'Deleted ' + path : 'Error: no such file: ' + path;
+      return (s.vfs[dir].length < before || existed) ? 'Deleted ' + path : notFound(path);
     },
     save_memory: function (a) {
       var title = String(a.title || '').trim().slice(0, 60);
@@ -157,7 +376,11 @@
       }).filter(function (x) { return x.score > 0; })
         .sort(function (a, b) { return b.score - a.score; })
         .slice(0, 5);
-      if (!scored.length) return 'No memories match "' + String(a.query || '') + '".';
+      if (!scored.length) {
+        var recent = ms.slice(-4).reverse();
+        return 'No memories match "' + String(a.query || '') + '" — most recent memories:\n' +
+          recent.map(function (m) { return '- [' + m.tag + '] ' + m.title + ': ' + m.body.slice(0, 150); }).join('\n');
+      }
       return scored.map(function (x) { return '- [' + x.m.tag + '] ' + x.m.title + ': ' + x.m.body.slice(0, 200); }).join('\n');
     },
     delete_memory: function (a) {
@@ -182,7 +405,9 @@
       }).filter(function (it) { return it.t; });
       Store.save();
       try { UI.renderTodoCard(s); } catch (e) { }
-      return 'Todo list updated (' + s.todos.filter(function (t) { return t.done; }).length + '/' + s.todos.length + ' done) — shown to the user. Keep it current as you work.';
+      return 'Todo list updated (' + s.todos.filter(function (t) { return t.done; }).length + '/' + s.todos.length + ' done)' +
+        (items.length > 20 ? ' — only the first 20 steps were kept; keep plans ≤20 steps' : '') +
+        ' — shown to the user. Keep it current as you work.';
     },
     workspace_search: function (a) {
       // ripgrep-style recursive search over the workspace: regex or plain
@@ -197,80 +422,106 @@
       var SKIP = /(^|\/)(node_modules|dist|build|\.git|\.gradle|__pycache__|\.proot)(\/|$)/;
       var BIN = /\.(png|jpe?g|gif|webp|ico|woff2?|ttf|mp4|mp3|zip|gz|tar|so|dll|exe|pdf)$/i;
       var max = Math.min(+a.maxResults || 60, 200);
-      var out = [], scanned = 0;
+      var out = [], scanned = 0, total = 0;
       Object.keys(s.vfsContent).forEach(function (path) {
-        if (out.length >= max) return;
         if (path.indexOf(base) !== 0) return;
         if (SKIP.test(path) || BIN.test(path)) return;
         if (glob && path.toLowerCase().indexOf(glob.replace(/^\*/, '')) < 0) return;
         var content = String(s.vfsContent[path] || '');
         if (content.indexOf('data:') === 0) return; // stored binaries
         scanned++;
+        var fileHits = 0;
         content.split('\n').forEach(function (line, i) {
-          if (out.length >= max) return;
           re.lastIndex = 0;
-          if (re.test(line)) out.push(path + ':' + (i + 1) + ': ' + line.trim().slice(0, 160));
+          if (!re.test(line)) return;
+          total++;
+          if (out.length >= max || fileHits >= 15) return;
+          fileHits++;
+          out.push(path + ':' + (i + 1) + ': ' + line.trim().slice(0, 160));
         });
       });
-      if (!out.length) return 'No matches for /' + pat + '/ (' + scanned + ' files scanned)';
-      return out.join('\n') + (out.length >= max ? '\n… (bounded at ' + max + ' results)' : '');
+      /* mounted libraries are searched too — their files are project files */
+      var mounts = (Store.active() && Store.active().mounts) || [];
+      for (var mi = 0; mi < mounts.length; mi++) {
+        var pr = Store.lib.get(mounts[mi].libId);
+        if (!pr) continue;
+        var libFiles = Object.keys(pr.files || {}).sort();
+        for (var fi = 0; fi < libFiles.length; fi++) {
+          var lcontent = String(pr.files[libFiles[fi]] || '');
+          if (!lcontent || lcontent.indexOf('data:') === 0) continue;
+          scanned++;
+          var llines = lcontent.split('\n');
+          for (var li = 0; li < llines.length; li++) {
+            re.lastIndex = 0;
+            if (!re.test(llines[li])) continue;
+            total++;
+            if (out.length >= max) continue;
+            out.push('lib/' + mounts[mi].slug + '/' + libFiles[fi] + ':' + (li + 1) + ': ' + llines[li].trim().slice(0, 160));
+          }
+        }
+      }
+      if (!out.length) return 'No matches for /' + pat + '/ (' + scanned + ' files scanned, mounted libraries included). Try: a shorter pattern, isRegex:true, or a different glob.';
+      var note2 = '';
+      if (total > out.length) note2 = '\n… ' + (total - out.length) + ' more match(es) not shown (bounded at ' + max + ').';
+      return (out.length ? out.join('\n') : '') + '\n' + total + ' match(es) across ' + scanned + ' files.' + note2;
     },
     code_symbols: function (a) {
       // tree-sitter-style structural outline: functions, classes, imports,
       // exports with line numbers — enough to navigate before editing
+      var Ls = libCtx(a.path);
+      if (Ls) {
+        if (Ls.missing) return 'Error: ' + Ls.missing;
+        if (Ls.rel === '') return 'Error: lib/' + Ls.mount.slug + '/ is a mount root — pick a file inside it (list_files first)';
+        var lbody = Ls.project.files[Ls.rel];
+        if (lbody === undefined) return 'Error: no such file: ' + Ls.full + libSuggest(Ls.project, Ls.rel);
+        if (String(lbody).indexOf('data:') === 0) return 'Error: binary file';
+        return symbolReport(String(lbody), Ls.full);
+      }
       var s = WS();
       var path = normPath(a.path || '');
       var content = s.vfsContent[path];
-      if (content === undefined) return 'Error: no such file: ' + path;
+      if (content === undefined) return notFound(path);
       content = String(content);
       if (content.indexOf('data:') === 0) return 'Error: binary file';
-      var ext = path.split('.').pop().toLowerCase();
-      var out = [];
-      var lines = content.split('\n');
-      var pats;
-      if (ext === 'py') {
-        pats = [
-          [/^\s*def\s+([A-Za-z_]\w*)/, 'function'], [/^\s*class\s+([A-Za-z_]\w*)/, 'class'],
-          [/^\s*import\s+(\S+)/, 'import'], [/^\s*from\s+(\S+)/, 'import']
-        ];
-      } else if (/^(css|scss)$/.test(ext)) {
-        pats = [[/^\s*([.#][\w-][^{]*)\{/, 'rule']];
-      } else { // js/ts/tsx/jsx/java/c-like
-        pats = [
-          [/^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/, 'function'],
-          [/^\s*(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/, 'class'],
-          [/^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>/, 'function'],
-          [/^\s*import\s.+from\s+['"]([^'"]+)['"]/, 'import'],
-          [/^\s*export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)/, 'export']
-        ];
-      }
-      lines.forEach(function (line, i) {
-        pats.forEach(function (p) {
-          var m = p[0].exec(line);
-          if (m) out.push('L' + (i + 1) + ' ' + p[1] + ': ' + m[1].trim().slice(0, 80));
-        });
-      });
-      if (!out.length) return 'No symbols found in ' + path + ' (' + lines.length + ' lines, .' + ext + ')';
-      return path + ' — ' + out.length + ' symbols\n' + out.slice(0, 100).join('\n');
+      return symbolReport(content, path);
     },
     load_skill: function (a) {
       var nm = String(a.name || '').trim();
-      var slug = nm.replace(/[^\w.-]+/g, '-');
+      var slug = skillSlug(nm);
+      var enabled = [];
+      try { enabled = (Store.db.skills || []).filter(function (k) { return k.on; }); } catch (e) { }
+      /* case/slug-insensitive resolve so near-miss names still work */
+      var hit = enabled.filter(function (k) {
+        return k.name.toLowerCase() === nm.toLowerCase() || skillSlug(k.name).toLowerCase() === slug.toLowerCase();
+      })[0];
+      var name = hit ? hit.name : nm;
       var body = null;
-      try { body = WS().vfsContent['workspace/skills/' + slug + '.md']; } catch (e) { }
+      try { body = WS().vfsContent['workspace/skills/' + skillSlug(name) + '.md']; } catch (e) { }
+      try {
+        if ((body === undefined || body === null) && hit) {
+          /* registered but bodyless (imported starter pack): seed a stub so the
+             skill activates NOW and the agent fleshes out the procedure later */
+          IMPL.write_file({ path: 'skills/' + skillSlug(name) + '.md', content: '---\nname: ' + name + '\ndescription: ' + (hit.desc || name) + '\n---\n\n# Skill: ' + name + '\n\n' + (hit.desc || '') + '\n\n<!-- Stub body: extend these instructions with the concrete step-by-step procedure this skill should follow when invoked. -->\n' });
+          body = WS().vfsContent['workspace/skills/' + skillSlug(name) + '.md'];
+        }
+      } catch (e) { }
       if (body === undefined || body === null) {
-        var avail = [];
-        try { avail = (Store.db.skills || []).filter(function (k) { return k.on; }).map(function (k) { return k.name; }); } catch (e) { }
-        return 'Error: no skill "' + nm + '" (workspace skills/' + slug + '.md missing). Available: ' + (avail.join(', ') || 'none') + '.';
+        var avail = enabled.map(function (k) { return k.name; });
+        var toks = slug.toLowerCase().split(/[^a-z0-9]+/).filter(function (w) { return w.length > 2; });
+        var near = avail.filter(function (n2) {
+          var l = n2.toLowerCase();
+          return toks.some(function (w) { return l.indexOf(w) >= 0; });
+        })[0];
+        return 'Error: no skill "' + nm + '"' + (near ? ' — did you mean "' + near + '"?' : '') + '. Available: ' + (avail.join(', ') || 'none') + '.';
       }
       try {
         var s = Store.active();
         if (s) {
           s.activeSkills = s.activeSkills || [];
-          if (s.activeSkills.indexOf(nm) < 0) { s.activeSkills.push(nm); Store.save(); }
+          if (s.activeSkills.indexOf(name) < 0) { s.activeSkills.push(name); Store.save(); }
         }
       } catch (e) { }
-      return 'Skill "' + nm + '" ACTIVATED for this session — its full instructions:\n\n' + String(body).slice(0, 6000);
+      return 'Skill "' + name + '" ACTIVATED for this session — its full instructions:\n\n' + String(body).slice(0, 6000);
     },
     /* ---------- servers manager (PolyDev-style dev-server registry) ----------
        The MODEL starts dev servers itself with shell_exec (verbatim command,

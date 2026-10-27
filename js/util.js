@@ -15,8 +15,24 @@
     esc: function (s) {
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     },
+    /* user-configured endpoint validation (provider base URLs, MCP servers,
+       model listings). Local/loopback hosts are a deliberate FEATURE (Ollama,
+       LM Studio, on-device MCP) — the checks are about scheme sanity, control
+       characters and credential leakage, not about blocking private nets. */
+    assertEndpointUrl: function (u) {
+      var s = String(u || '').trim();
+      if (!/^https?:\/\//i.test(s)) throw new Error('Endpoint must be an http(s) URL');
+      if (/[\s\u0000-\u001f\u007f]/.test(s)) throw new Error('Endpoint URL contains control characters');
+      var parsed;
+      try { parsed = new URL(s); } catch (e) { throw new Error('Endpoint URL is malformed'); }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('Only http/https endpoints are allowed');
+      if (parsed.username || parsed.password) throw new Error('Endpoint URL must not embed credentials — put the key in the key field');
+      var host = parsed.hostname;
+      if (!/^(\[[0-9a-f:]+\]|(\d{1,3}\.){3}\d{1,3}|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*)$/i.test(host)) throw new Error('Endpoint hostname is malformed');
+      return s.replace(/\/+$/, '');
+    },
     /* tiny syntax highlighter — returns HTML with tok-* spans over escaped text */
-    hi: function (src, lang) {
+    hl: function (src, lang) {
       lang = (lang || '').toLowerCase();
       var KW = 'const|let|var|function|return|if|else|elif|for|while|class|new|import|export|from|await|async|try|catch|except|finally|throw|raise|typeof|instanceof|this|self|super|null|nil|none|undefined|true|false|def|lambda|not|and|or|in|is|pass|with|as|yield|switch|case|break|continue|do|enum|interface|type|implements|extends|public|private|protected|static|void|int|float|str|string|bool|boolean|struct|match|fun|val|echo|local';
       var comments = '<!--[\\s\\S]*?-->|/\\*[\\s\\S]*?\\*/|//[^\\n]*';
@@ -64,7 +80,7 @@
         if (parts[i + 1] === undefined) break;
         var lang = parts[i + 1], code = parts[i + 2].replace(/\n$/, '');
         var lines = code.split('\n').length;
-        var html = '<pre class="msgcode">' + H.hi(code, lang) + '</pre>';
+        var html = '<pre class="msgcode">' + H.hl(code, lang) + '</pre>';
         if (lines > 12) {
           out += '<details class="codecard"><summary><i data-lucide="file-code"></i>' + H.esc(lang || 'code') +
             ' · ' + lines + ' lines</summary>' + html + '</details>';
