@@ -11,6 +11,7 @@
     curPath: 'workspace',
     streaming: false,
     ctrl: null,
+    queue: [],              // follow-up messages typed while a run streams
     pvId: null,             // provider being edited
     mmId: null,             // memory being edited
     auIdx: -1,              // automation being edited
@@ -338,13 +339,45 @@
 
   function setSendStop(on) {
     var b = $('#sendBtn');
-    b.classList.toggle('stop', on);
-    b.innerHTML = '<i data-lucide="' + (on ? 'square' : 'arrow-up') + '"></i>';
+    var hasText = $('#chatInput') && $('#chatInput').value.trim().length > 0;
+    var stopMode = on && !hasText; // typed text during a run means "queue", not "stop"
+    b.classList.toggle('stop', stopMode);
+    b.innerHTML = '<i data-lucide="' + (stopMode ? 'square' : 'arrow-up') + '"></i>';
     H.icons();
   }
 
+  /* follow-up queue: messages typed while a run streams are queued, shown
+     in the transcript, and sent automatically when the run finishes —
+     typing never stops the agent (the stop button is the only stop) */
+  function queueFollowUp(text) {
+    state.queue.push(text);
+    renderQueue();
+    H.toast('Queued — sends when the current run finishes');
+  }
+  function renderQueue() {
+    var el = $('#queueRow');
+    if (!el) return;
+    if (!state.queue.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'block';
+    el.innerHTML = state.queue.map(function (q, i) {
+      return '<div class="queued"><i data-lucide="clock"></i><span class="qtxt">Queued: ' + H.esc(q.slice(0, 90)) + '</span>' +
+        '<button class="qx" data-qx="' + i + '" aria-label="Remove"><i data-lucide="x" style="width:13px;height:13px"></i></button></div>';
+    }).join('');
+    H.icons();
+  }
+  function drainQueue() {
+    if (!state.queue.length || state.streaming) return;
+    var next = state.queue.shift();
+    renderQueue();
+    setTimeout(function () { if (!state.streaming) send(next); }, 350);
+  }
+
   async function send(text) {
-    if (state.streaming) { H.toast('The agent is still working — stop it or wait'); return; }
+    if (state.streaming) {
+      var t = (text !== undefined ? text : $('#chatInput').value).trim();
+      if (t) { $('#chatInput').value = ''; autoGrow($('#chatInput')); queueFollowUp(t); }
+      return;
+    }
     text = (text !== undefined ? text : $('#chatInput').value).trim();
     if (!text) { H.toast('Type a message first'); return; }
     $('#chatInput').value = '';
@@ -981,6 +1014,7 @@
     s.updatedAt = Date.now();
     Store.save();
     state.streaming = false; setSendStop(false); state.ctrl = null;
+    drainQueue(); // a queued follow-up sends now — typing never stopped the run
     if (Store.active() === s) { UI.renderChat(s); UI.renderChatHead(s); } // don't repaint if the user switched sessions mid-run
     refreshCtx(); UI.renderHome(); UI.renderSettingsSubs();
     fireHook('Assistant done', { model: s.model });
@@ -1840,7 +1874,12 @@
 
   // chat composer
   $('#sendBtn').addEventListener('click', function () {
-    if (state.streaming) { if (state.ctrl) state.ctrl.abort(); return; }
+    if (state.streaming) {
+      var t = $('#chatInput').value.trim();
+      if (t) { $('#chatInput').value = ''; autoGrow($('#chatInput')); setSendStop(true); queueFollowUp(t); return; }
+      if (state.ctrl) state.ctrl.abort(); // empty input + streaming = stop
+      return;
+    }
     send();
   });
   function autoGrow(el) {
@@ -1848,10 +1887,11 @@
     el.style.height = Math.min(el.scrollHeight, 132) + 'px';
   }
   $('#chatInput').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!state.streaming) send(); autoGrow(e.target); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); autoGrow(e.target); }
   });
   $('#chatInput').addEventListener('input', function (e) {
     autoGrow(e.target);
+    setSendStop(state.streaming); // typed text during a run flips the glyph to queue
     if (e.target.value.trim() === '/') { UI.renderModelSheet(db.settings.providerId); H.openSheet('sheet-slash'); e.target.value = ''; autoGrow(e.target); }
   });
 
@@ -2081,6 +2121,12 @@
     $('#jumpBottom').classList.toggle('on', far);
   });
   $('#jumpBottom').addEventListener('click', function () { msgsEl.scrollTop = msgsEl.scrollHeight; });
+  $('#queueRow').addEventListener('click', function (e) {
+    var qx = e.target.closest('[data-qx]');
+    if (!qx) return;
+    state.queue.splice(parseInt(qx.getAttribute('data-qx'), 10), 1);
+    renderQueue();
+  });
   $('#slashBtn').addEventListener('click', function () { H.openSheet('sheet-slash'); });
   $('#todoBtn').addEventListener('click', openTodoSheet);
   $('#attachBtn').addEventListener('click', function () { renderAttach(); H.openSheet('sheet-attach'); });
