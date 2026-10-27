@@ -91,5 +91,23 @@
     });
   }
 
-  window.AgentExec = { exec: run, parse: parse, ensure: ensure, _pending: null };
+  /* argv-style execution: callers pass an argument ARRAY, never a composed
+     command string. Each argument is shell-quoted here (single reviewed
+     place) so no caller can inject shell syntax — the JS equivalent of
+     subprocess.run(argv, shell=False). Bare safe tokens stay unquoted. */
+  function quoteShell(s) {
+    s = String(s);
+    if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s)) return s;
+    return "'" + s.replace(/'/g, "'\\''") + "'";
+  }
+  function runArgs(argv, opts) {
+    var args = [];
+    for (var i = 0; i < (argv || []).length; i++) {
+      if (argv[i] === undefined || argv[i] === null) return Promise.resolve({ out: 'Error: execArgs got a null argument', exit: -1 });
+      args.push(quoteShell(argv[i]));
+    }
+    return run(args.join(' '), opts);
+  }
+
+  window.AgentExec = { exec: run, execArgs: runArgs, parse: parse, ensure: ensure, _pending: null };
 })();

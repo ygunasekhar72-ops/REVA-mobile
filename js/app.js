@@ -118,6 +118,41 @@
     High: 'reason carefully through the problem before answering',
     Max: 'think deeply: weigh alternatives and edge cases, then answer thoroughly and completely'
   };
+  /* ================= skills: real progressive disclosure ================= */
+  function skillSlug(nm) { return String(nm || '').replace(/[^\w.-]+/g, '-'); }
+  function skillBody(nm) {
+    try {
+      var c = (Store.ws() || {}).vfsContent;
+      return c ? c['workspace/skills/' + skillSlug(nm) + '.md'] || '' : '';
+    } catch (e) { return ''; }
+  }
+  /* keyword-overlap match of enabled skills against the user's request */
+  function matchSkills(text) {
+    var words = String(text || '').toLowerCase().match(/[a-z0-9+#.-]{3,}/g) || [];
+    if (!words.length) return [];
+    var hits = [];
+    db.skills.filter(function (k) { return k.on; }).forEach(function (k) {
+      var hay = (k.name + ' ' + (k.desc || '')).toLowerCase().match(/[a-z0-9+#.-]{3,}/g) || [];
+      var score = 0;
+      hay.forEach(function (w) { if (words.indexOf(w) >= 0) score += (k.name.toLowerCase().indexOf(w) >= 0 ? 2 : 1); });
+      if (k.name && words.join(' ').indexOf(k.name.toLowerCase()) >= 0) score += 4;
+      if (score >= 4) hits.push({ name: k.name, score: score });
+    });
+    return hits.sort(function (a, b) { return b.score - a.score; }).slice(0, 2).map(function (h) { return h.name; });
+  }
+  /* activate matched skills for this session (idempotent, once per message) */
+  function autoLoadSkills(text) {
+    var s = Store.active();
+    if (!s || db.settings.skills === false) return [];
+    s.activeSkills = s.activeSkills || [];
+    var added = [];
+    matchSkills(text).forEach(function (nm) {
+      if (s.activeSkills.indexOf(nm) < 0 && skillBody(nm)) { s.activeSkills.push(nm); added.push(nm); }
+    });
+    if (added.length) { Store.save(); H.toast('Skill' + (added.length > 1 ? 's' : '') + ' loaded: ' + added.join(', ')); }
+    return added;
+  }
+
   function sysPrompt() {
     var s = db.settings;
     var p = ['You are the assistant inside REVA — a minimal, local-first mobile AI harness. Be concise and helpful.'];
@@ -126,14 +161,25 @@
     if (s.think) p.push('Think step by step for non-trivial requests before answering.');
     p.push('Formatting: open with the direct answer, then organize the rest into short sections with headings or bullet points. Write explanations as prose. Use code blocks only for actual code, never as a substitute for explanation.');
     var skills = db.skills.filter(function (k) { return k.on; });
+    /* ACTIVE skills: full instructions injected (auto-matched to the request
+       or pulled with load_skill) — real progressive disclosure, not an index */
+    var sess0 = Store.active();
+    var active = (sess0 && sess0.activeSkills) || [];
+    active.forEach(function (nm) {
+      var body = skillBody(nm);
+      if (body) p.push('ACTIVE SKILL — ' + nm + ' (its instructions below are in effect for this request):\n' + body.slice(0, 4000));
+    });
     if (skills.length) {
-      p.push('Enabled skills (index only — the full instructions live in workspace files; read_file the skill file when you need its details):');
-      skills.forEach(function (k) {
-        p.push('- ' + k.name + (k.desc ? ': ' + k.desc : '') + ' — full instructions: skills/' + k.name.replace(/[^\w.-]+/g, '-') + '.md');
-      });
+      var rest = skills.filter(function (k) { return active.indexOf(k.name) < 0; });
+      if (rest.length) {
+        p.push('Available skills (index only — call load_skill(name) to activate one; matching skills may also auto-activate):');
+        rest.forEach(function (k) {
+          p.push('- ' + k.name + (k.desc ? ': ' + k.desc : ''));
+        });
+      }
     }
     if (db.settings.tools !== false) {
-      p.push('You have tools: write_file, edit_file (exact string replacement), read_file (supports offset for large files), list_files, create_directory, delete_file, save_memory, memory_search, delete_memory, run_command, shell_exec (device builds), web_search, web_read, browser_open, browser_read (open pages in the built-in browser for the user). ' +
+      p.push('You have tools: write_file, edit_file (exact string replacement), read_file (supports offset for large files), list_files, create_directory, delete_file, load_skill (activate a listed skill — call it when the task matches), save_memory, memory_search, delete_memory, run_command, shell_exec (device builds), run_server/server_log/stop_server (register and manage dev servers you start via shell_exec with nohup so the user can open them in the browser), web_search, web_read, browser_open, browser_read (open pages in the built-in browser for the user). ' +
         'When asked to build or change anything, DO IT with write_file instead of pasting large code blocks in chat — ' +
         'the harness renders your tool calls as file cards and the user can run the result. ' +
         'Use edit_file for small changes to existing files; write_file for new files or full rewrites. ' +
@@ -241,6 +287,7 @@
     if (pendingImg) { um.image = pendingImg; pendingImg = null; }
     s.messages.push(um);
     s.updatedAt = Date.now(); s.model = db.settings.model;
+    autoLoadSkills(text);
     Store.save();
     UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); UI.renderHome();
     fireHook('User prompt', { text: text });
@@ -574,7 +621,7 @@
         if (n.indexOf('mcp_') === 0) return mode !== 'Guard';
         if (n === 'web_search' || n === 'web_read' || n === 'browser_open' || n === 'browser_read') return true; // read-only, allowed everywhere incl. Plan
         if (mode === 'Plan') return ['read_file', 'list_files', 'save_memory', 'memory_search', 'delete_memory', 'web_search', 'web_read', 'browser_open', 'browser_read', 'workspace_search', 'code_symbols'].indexOf(n) >= 0;
-        if (mode === 'Guard') return ['delete_file', 'run_command', 'shell_exec'].indexOf(n) < 0;
+        if (mode === 'Guard') return ['delete_file', 'run_command', 'shell_exec', 'stop_server'].indexOf(n) < 0;
         return true;
       });
     }
@@ -1384,6 +1431,7 @@
     UI.renderSkills(); UI.renderRules();
     UI.renderModels(); UI.renderModelSheet(db.settings.providerId);
     UI.renderMemory(); UI.renderMCP(); UI.renderHooks(); UI.renderAutos();
+    UI.renderServers();
     UI.renderSettingsSubs();
     var sess = Store.active();
     UI.renderChat(sess); UI.renderChatHead(sess);
@@ -1440,6 +1488,28 @@
     if ((t = e.target.closest('[data-model]'))) { pickModel(t.getAttribute('data-model'), null); return; }
     if ((t = e.target.closest('[data-mem]'))) { openMemorySheet(t.getAttribute('data-mem')); return; }
     if ((t = e.target.closest('[data-mcp-test]'))) { testMcp(+t.getAttribute('data-mcp-test')); return; }
+    if ((t = e.target.closest('[data-srv-open]'))) {
+      var sp = parseInt(t.getAttribute('data-srv-open'), 10);
+      H.push('ov-browser'); wbShow('http://127.0.0.1:' + sp + '/');
+      return;
+    }
+    if ((t = e.target.closest('[data-srv-log]'))) { UI.showServerLog(parseInt(t.getAttribute('data-srv-log'), 10)); return; }
+    if ((t = e.target.closest('[data-srv-forget]'))) {
+      var si = +t.getAttribute('data-srv-forget');
+      var sv = (db.servers || [])[si];
+      if (!sv) return;
+      var wasRunning = sv.status === 'running';
+      var finish = function () { sv.status = 'stopped'; Store.save(); UI.renderServers(); UI.renderSettingsSubs(); H.toast('Server :' + sv.port + ' stopped'); };
+      if (wasRunning && window.AgentExec && window.REVAAgent && parseInt(sv.pid, 10) > 0) {
+        AgentExec.execArgs(['kill', String(parseInt(sv.pid, 10))], { timeoutMs: 15000 }).then(finish);
+      } else if (wasRunning) {
+        H.toast('Stop needs the device shell — marked stopped');
+        finish();
+      } else {
+        db.servers.splice(si, 1); Store.save(); UI.renderServers(); H.toast('Removed from registry');
+      }
+      return;
+    }
     if ((t = e.target.closest('.thc[data-theme]'))) {
       db.settings.theme = t.getAttribute('data-theme');
       Store.save(); applyAppearance(); UI.renderSettingsSubs();
@@ -2028,36 +2098,94 @@
     if (/^[\w-]+(\.[\w-]+)+([\/?#].*)?$/.test(q)) return 'https://' + q;
     return 'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(q);
   }
-  function wbShow(url, push) {    var frame = $('#wbFrame'), blocked = $('#wbBlocked');
+  function wbRecord(url) {
+    if (!/^https?:\/\//i.test(url)) return;
+    try {
+      db.browser.history = db.browser.history || [];
+      db.browser.history = [url].concat(db.browser.history.filter(function (u) { return u !== url; })).slice(0, 40);
+      Store.save();
+    } catch (e) { }
+  }
+  function wbStartPage() {
+    var frame = $('#wbFrame'), blocked = $('#wbBlocked');
+    blocked.style.display = 'none';
+    $('#wbUrl').value = '';
+    var s = Store.ws();
+    var files = [];
+    if (s) Object.keys(s.vfs).forEach(function (d) { (s.vfs[d] || []).forEach(function (f) { if (f.t !== 'dir' && /\.html?$/i.test(f.n)) files.push(d + '/' + f.n); }); });
+    var wsList = files.length ? files.map(function (p) {
+      return '<a class="it" href="#" data-wbws="' + H.esc(p) + '"><span class="ic">📄</span><span class="tx"><b>' + H.esc(p) + '</b><small>workspace page — tap to preview</small></span></a>';
+    }).join('') : '<p class="mut">No HTML files in this chat\'s workspace yet — ask the agent to build a page.</p>';
+    var servers = (db.servers || []).filter(function (v) { return v.status === 'running'; });
+    var srvList = servers.length ? servers.map(function (v) {
+      return '<a class="it" href="#" data-wbserver="' + v.port + '" data-wbname="' + H.esc(v.name) + '"><span class="ic">🖥️</span><span class="tx"><b>' + H.esc(v.name) + ' · :' + v.port + '</b><small>local server — tap to open</small></span></a>';
+    }).join('') : '<p class="mut">No servers running — the agent can start one (run_server).</p>';
+    var hist = (db.browser.history || []).slice(0, 8);
+    var histList = hist.length ? '<div class="chips">' + hist.map(function (u) {
+      var host = ''; try { host = new URL(u).hostname.replace(/^www\./, ''); } catch (e) { host = u.slice(0, 30); }
+      return '<a href="#" class="chip" data-wburl="' + H.esc(u) + '">' + H.esc(host) + '</a>';
+    }).join('') + '</div>' : '<p class="mut">Pages you visit show up here.</p>';
+    var quick = [['Wikipedia', 'https://en.m.wikipedia.org'], ['DuckDuckGo', 'https://lite.duckduckgo.com/lite/'], ['MDN', 'https://developer.mozilla.org'], ['Hacker News', 'https://news.ycombinator.com']];
+    var quickList = '<div class="chips">' + quick.map(function (q) {
+      return '<a href="#" class="chip q" data-wburl="' + q[1] + '">' + q[0] + '</a>';
+    }).join('') + '</div>';
+    frame.srcdoc = '<body style="font-family:system-ui;background:#101013;color:#e8e8ee;margin:0;padding:18px 18px 26px">' +
+      '<style>.it{display:flex;gap:11px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.07);text-decoration:none;color:inherit}.it .ic{font-size:17px}.it b{display:block;font-size:13.5px;font-weight:550}.it small{color:rgba(232,232,238,.5);font-size:11.5px}.mut{color:rgba(232,232,238,.45);font-size:12.5px;margin:4px 0}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{display:inline-block;padding:7px 13px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);color:#9ecbff;text-decoration:none;font-size:12.5px}.chip:active{background:rgba(255,255,255,.14)}h4{margin:18px 0 6px;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:rgba(232,232,238,.45)}</style>' +
+      '<h3 style="margin:0 0 2px;font-size:18px">Start</h3><small style="color:rgba(232,232,238,.5)">workspace previews · servers · web</small>' +
+      '<h4>Workspace pages</h4>' + wsList +
+      '<h4>Running servers</h4>' + srvList +
+      '<h4>Recent</h4>' + histList +
+      '<h4>Quick links</h4>' + quickList +
+      '<scr' + 'ipt>document.addEventListener("click",function(e){var a=e.target.closest("[data-wbws],[data-wburl],[data-wbserver]");if(!a)return;e.preventDefault();if(a.hasAttribute("data-wbws"))parent.postMessage({revaWbOpen:a.getAttribute("data-wbws")},"*");else if(a.hasAttribute("data-wbserver"))parent.postMessage({revaWbServer:a.getAttribute("data-wbserver"),name:a.getAttribute("data-wbname")},"*");else parent.postMessage({revaWbUrl:a.getAttribute("data-wburl")},"*");});<\/scr' + 'ipt></body>';
+    frame.style.display = '';
+  }
+  function wbProgress(pct) {
+    var b = $('#wbProgress');
+    if (!b) return;
+    if (pct === null) { b.style.width = '0%'; b.style.opacity = '0'; return; }
+    b.style.opacity = '1';
+    b.style.width = pct + '%';
+  }
+  function wbShow(url, push) {
+    var frame = $('#wbFrame'), blocked = $('#wbBlocked');
     blocked.style.display = 'none';
     $('#wbUrl').value = url === 'about:workspace' ? '' : url;
-    if (url === 'about:workspace') {
-      var s = Store.ws();
-      var files = [];
-      if (s) Object.keys(s.vfs).forEach(function (d) { (s.vfs[d] || []).forEach(function (f) { if (f.t !== 'dir' && /\.html?$/i.test(f.n)) files.push(d + '/' + f.n); }); });
-      var list = files.length ? files.map(function (p) {
-        return '<div style="padding:9px 0;border-bottom:1px dashed rgba(255,255,255,.08)"><a href="#" data-wbws="' + H.esc(p) + '" style="color:#9ecbff;text-decoration:none;font-family:monospace;font-size:13px">▸ ' + H.esc(p) + '</a></div>';
-      }).join('') : '<p style="opacity:.6">No HTML files in this chat\'s workspace yet — ask the agent to build a page.</p>';
-      frame.srcdoc = '<body style="font-family:system-ui;background:#101013;color:#e8e8ee;margin:0;padding:18px"><h3 style="margin:0 0 4px">Workspace pages</h3><small style="opacity:.55">built by your agent — tap to open</small><div style="margin-top:12px">' + list + '</div>' +
-        '<script>document.addEventListener("click",function(e){var a=e.target.closest("[data-wbws]");if(a){e.preventDefault();parent.postMessage({revaWbOpen:a.getAttribute("data-wbws")},"*")}});<\/script></body>';
-      frame.style.display = '';
-      return;
+    if (url === 'about:workspace') { wbStartPage(); return; }
+    /* mockup: a fake-shell "server" serves the workspace via srcdoc — the
+       real device iframe loads the loopback URL natively */
+    var mu = null;
+    try { mu = new URL(url); } catch (eU) { }
+    if (mu && window.FAKESHELL && mu.protocol === 'http:' && mu.hostname === '127.0.0.1') {
+      var mport = parseInt(mu.port, 10) || 80;
+      var entry = (db.servers || []).filter(function (v) { return v.port === mport; })[0];
+      var rootKey = 'workspace';
+      if (entry && entry.dir) {
+        var d2 = String(entry.dir).replace(/^\/host\/workspace\/?/, '').replace(/^\/?workspace\/?/, '').replace(/\/$/, '');
+        if (d2) rootKey = 'workspace/' + d2;
+      }
+      var s2 = Store.ws();
+      var idx = s2 ? s2.vfsContent[rootKey + '/index.html'] : null;
+      if (idx == null && s2) idx = s2.vfsContent['workspace/index.html'];
+      if (idx != null) { $('#wbFrame').srcdoc = String(idx); $('#wbUrl').value = url; $('#wbFrame').style.display = ''; $('#wbBlocked').style.display = 'none'; return; }
     }
     frame.srcdoc = '';
     frame.style.display = '';
+    wbRecord(url);
+    wbProgress(20);
     clearTimeout(wbTimer);
     // frames that never load within 7s and are known-strict hosts → show the blocked card
     var isKnown = KNOWN_BLOCKED.some(function (h) { return url.indexOf(h) > -1; });
-    frame.onload = function () { clearTimeout(wbTimer); };
+    frame.onload = function () { clearTimeout(wbTimer); wbProgress(100); setTimeout(function () { wbProgress(null); }, 350); };
     frame.src = url;
-    if (isKnown) {
-      wbTimer = setTimeout(function () {
-        try {
-          var d = frame.contentDocument; // same-origin only succeeds for real loads of permissive pages
-          if (!d || !d.body || d.body.childElementCount === 0) blocked.style.display = '';
-        } catch (e) { blocked.style.display = ''; }
-      }, 7000);
-    }
+    wbProgress(55);
+    setTimeout(function () { wbProgress(80); }, 400);
+    wbTimer = setTimeout(function () {
+      wbProgress(null);
+      try {
+        var d = frame.contentDocument; // same-origin only succeeds for real loads of permissive pages
+        if (!d || !d.body || d.body.childElementCount === 0) blocked.style.display = '';
+      } catch (e) { /* cross-origin loaded fine — leave as is */ }
+    }, isKnown ? 7000 : 12000);
     if (push !== false) { wbHist = wbHist.slice(0, wbPos + 1); wbHist.push(url); wbPos = wbHist.length - 1; }
   }
   $('#wbGo').addEventListener('click', function () { var u = wbNormalize($('#wbUrl').value); if (u) wbShow(u); });
@@ -2067,7 +2195,19 @@
   $('#wbReload').addEventListener('click', function () { if (wbPos >= 0) wbShow(wbHist[wbPos], false); });
   /* #wbHome chip was removed in the browser cleanup — guard optional elements
      so a missing node can never kill the whole boot again */
-  if ($('#wbHome')) $('#wbHome').addEventListener('click', function () { wbShow('about:workspace'); });
+  if ($('#wbHomeBtn')) $('#wbHomeBtn').addEventListener('click', function () { wbShow('about:workspace'); });
+  if ($('#wbHistBtn')) $('#wbHistBtn').addEventListener('click', function () {
+    var h = (db.browser.history || []);
+    var list = h.length ? h.map(function (u) {
+      var host = ''; try { host = new URL(u).hostname.replace(/^www\./, ''); } catch (e) { host = u; }
+      return '<button class="row" data-wbgo="' + H.esc(u) + '" style="width:100%;text-align:left"><span class="rtxt"><b>' + H.esc(host) + '</b><small>' + H.esc(u.slice(0, 70)) + '</small></span></button>';
+    }).join('') : '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:14px 0">No history yet</p>';
+    $('#wbHistList').innerHTML = list;
+    H.$$('#wbHistList [data-wbgo]').forEach(function (b) {
+      b.addEventListener('click', function () { H.closeSheets(); wbShow(b.getAttribute('data-wbgo')); });
+    });
+    H.openSheet('sheet-browser-hist');
+  });
   $('#wbExternal').addEventListener('click', function () { var u = wbHist[wbPos]; if (u && u !== 'about:workspace' && window.open) window.open(u, '_blank'); });
   document.addEventListener('click', function (e) {
     var t = e.target.closest('[data-wblink]');
@@ -2075,13 +2215,19 @@
   });
   // workspace page previews postMessage from the sandboxed frame
   window.addEventListener('message', function (ev) {
-    if (ev.data && ev.data.revaWbOpen) {
+    var d = ev.data || {};
+    if (d.revaWbOpen) {
       var s = Store.ws();
-      var code = s ? s.vfsContent[ev.data.revaWbOpen] : null;
+      var code = s ? s.vfsContent[d.revaWbOpen] : null;
       if (code != null) {
         $('#wbFrame').srcdoc = code;
-        $('#wbUrl').value = ev.data.revaWbOpen;
+        $('#wbUrl').value = d.revaWbOpen;
       }
+    } else if (d.revaWbUrl) {
+      wbShow(d.revaWbUrl);
+    } else if (d.revaWbServer) {
+      var port = parseInt(d.revaWbServer, 10);
+      if (port) wbShow('http://127.0.0.1:' + port + '/');
     }
   });
   $('#browserBtn').addEventListener('click', function () { H.push('ov-browser'); wbShow('about:workspace'); });

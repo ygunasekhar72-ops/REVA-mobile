@@ -211,6 +211,7 @@
       <div class="sec">Advanced</div>
       <button class="row" data-go="ov-perms"><span class="tile"><i data-lucide="shield-check"></i></span><span class="rtxt"><b>Permissions</b><small id="setPermSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
       <button class="row" data-go="ov-mcp"><span class="tile"><i data-lucide="server"></i></span><span class="rtxt"><b>MCP servers</b><small id="setMcpSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
+      <button class="row" data-go="ov-servers"><span class="tile"><i data-lucide="monitor-dot"></i></span><span class="rtxt"><b>Dev servers</b><small id="setServerSub">preview servers started by the agent</small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
       <button class="row" data-go="ov-hooks"><span class="tile"><i data-lucide="webhook"></i></span><span class="rtxt"><b>Hooks</b><small id="setHookSub"></small></span><i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i></button>
       <div class="sec">Privacy</div>
       <div class="row"><span class="rtxt"><b>Clear all session data</b><small>Chats, memory and buffers</small></span><button class="btnGhost" style="padding:8px 13px;font-size:12.5px;border-radius:11px" id="clearData">Clear</button></div>
@@ -292,12 +293,15 @@
         <button class="iconb" id="wbBack" aria-label="Previous page" style="width:32px;height:32px"><i data-lucide="chevron-left" style="width:15px;height:15px"></i></button>
         <button class="iconb" id="wbFwd" aria-label="Next page" style="width:32px;height:32px"><i data-lucide="chevron-right" style="width:15px;height:15px"></i></button>
         <button class="iconb" id="wbReload" aria-label="Reload" style="width:32px;height:32px"><i data-lucide="rotate-cw" style="width:14px;height:14px"></i></button>
+        <button class="iconb" id="wbHomeBtn" aria-label="Start page" style="width:32px;height:32px"><i data-lucide="home" style="width:14px;height:14px"></i></button>
+        <button class="iconb" id="wbHistBtn" aria-label="History" style="width:32px;height:32px"><i data-lucide="history" style="width:14px;height:14px"></i></button>
       </div>
       <div class="wb-bar">
         <i data-lucide="lock" style="width:13px;height:13px;color:var(--ink3)"></i>
         <input id="wbUrl" placeholder="Search or enter address" autocomplete="off" spellcheck="false"/>
         <button class="iconb" id="wbGo" aria-label="Go" style="width:32px;height:32px"><i data-lucide="arrow-right" style="width:15px;height:15px"></i></button>
       </div>
+      <div class="wb-progress" id="wbProgress" style="width:0%"></div>
       <div class="wb-frame-wrap">
         <iframe id="wbFrame" title="Built-in browser" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
         <div id="wbBlocked" style="display:none">
@@ -309,6 +313,13 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- ================= SERVERS ================= -->
+    <section class="screen ov with-tabs" id="ov-servers">
+      <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Servers</h2></div>
+      <div class="lockban"><i data-lucide="server"></i><span>Dev servers the agent started in this workspace — open them in the built-in browser, tail their logs, stop them. The browser start page lists running ones too.</span></div>
+      <div id="serverList"></div>
     </section>
 
     <!-- ================= APPEARANCE ================= -->
@@ -472,6 +483,16 @@
     <div class="acts"><button class="btnX" id="tdSave">Save todos</button></div>
   </div>
 
+  <div class="sheet" id="sheet-srvlog" aria-label="Server log">
+    <div class="grab"></div><h3><i data-lucide="scroll-text" style="width:17px;height:17px"></i>Server log</h3>
+    <pre id="srvLogText" style="font-family:ui-monospace,Consolas,monospace;font-size:11.5px;line-height:1.55;max-height:46vh;overflow:auto;white-space:pre-wrap;color:var(--ink2)"></pre>
+  </div>
+
+  <div class="sheet" id="sheet-browser-hist" aria-label="Browser history">
+    <div class="grab"></div><h3><i data-lucide="history" style="width:17px;height:17px"></i>History</h3>
+    <div id="wbHistList"></div>
+  </div>
+
   <div class="sheet" id="sheet-attach" aria-label="Attach file">
     <div class="grab"></div><h3><i data-lucide="paperclip" style="width:17px;height:17px"></i>Attach from workspace</h3>
     <div id="attList"></div>
@@ -523,14 +544,30 @@
   <div id="terminal" style="display:none">
     <div class="ide-head">
       <span class="ide-logo"><i data-lucide="square-terminal"></i></span>
-      <b>REVA Terminal</b>
+      <b>Terminal</b>
       <span class="ide-path kbd" id="termBackend">—</span>
       <span style="flex:1"></span>
+      <button class="iconb" id="termFontMinus" aria-label="Smaller text" style="width:32px;height:32px;font-size:12px">A-</button>
+      <button class="iconb" id="termFontPlus" aria-label="Larger text" style="width:32px;height:32px;font-size:14px">A+</button>
       <button class="iconb" id="termHome" aria-label="Back to chat"><i data-lucide="message-square"></i></button>
-      <button class="ide-btn" id="termClear"><i data-lucide="eraser"></i>Clear</button>
-      <button class="ide-btn" id="termClose"><i data-lucide="x"></i>Close</button>
+      <button class="iconb" id="termRestart" aria-label="Restart session"><i data-lucide="rotate-ccw"></i></button>
+      <button class="iconb" id="termClose" aria-label="Close"><i data-lucide="x"></i></button>
     </div>
     <div id="termHost"></div>
+    <div class="term-keys" id="termKeys">
+      <button data-k="esc">Esc</button>
+      <button data-k="tab">Tab</button>
+      <button data-k="ctrl" id="termCtrl">Ctrl</button>
+      <button data-k="paste" title="Paste"><i data-lucide="clipboard" style="width:13px;height:13px"></i></button>
+      <button data-k="up">▲</button>
+      <button data-k="down">▼</button>
+      <button data-k="left">◀</button>
+      <button data-k="right">▶</button>
+      <button data-k="ch">|</button>
+      <button data-k="ch">/</button>
+      <button data-k="ch">-</button>
+      <button data-k="ch">~</button>
+    </div>
   </div>
 
   <script>window.addEventListener('error', function (e) { try { localStorage.setItem('__err', e.message + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno); } catch (_) {} });</script>

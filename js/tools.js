@@ -253,6 +253,82 @@
       if (!out.length) return 'No symbols found in ' + path + ' (' + lines.length + ' lines, .' + ext + ')';
       return path + ' — ' + out.length + ' symbols\n' + out.slice(0, 100).join('\n');
     },
+    load_skill: function (a) {
+      var nm = String(a.name || '').trim();
+      var slug = nm.replace(/[^\w.-]+/g, '-');
+      var body = null;
+      try { body = WS().vfsContent['workspace/skills/' + slug + '.md']; } catch (e) { }
+      if (body === undefined || body === null) {
+        var avail = [];
+        try { avail = (Store.db.skills || []).filter(function (k) { return k.on; }).map(function (k) { return k.name; }); } catch (e) { }
+        return 'Error: no skill "' + nm + '" (workspace skills/' + slug + '.md missing). Available: ' + (avail.join(', ') || 'none') + '.';
+      }
+      try {
+        var s = Store.active();
+        if (s) {
+          s.activeSkills = s.activeSkills || [];
+          if (s.activeSkills.indexOf(nm) < 0) { s.activeSkills.push(nm); Store.save(); }
+        }
+      } catch (e) { }
+      return 'Skill "' + nm + '" ACTIVATED for this session — its full instructions:\n\n' + String(body).slice(0, 6000);
+    },
+    /* ---------- servers manager (PolyDev-style dev-server registry) ----------
+       The MODEL starts dev servers itself with shell_exec (verbatim command,
+       the reviewed passthrough path — typically: nohup <cmd> >> log 2>&1 & echo PID=$!),
+       then registers it here. run_server is pure registry state. Every
+       shell-facing action (stop/log) goes through AgentExec.execArgs — an
+       argv-array API that shell-quotes each argument in one reviewed place,
+       so no command string is ever composed in tool code. */
+    run_server: function (a) {
+      var port = parseInt(a.port, 10);
+      if (!port || port < 1024 || port > 65535) return 'Error: port must be 1024-65535';
+      var pid = a.pid === undefined ? 0 : parseInt(a.pid, 10);
+      if (isNaN(pid) || pid < 0) pid = 0;
+      var name = String(a.name || 'server-' + port).replace(/[^\w .:-]/g, '').slice(0, 40) || ('server-' + port);
+      var cmd = String(a.command || '').replace(/[\r\n]+/g, ' ').slice(0, 160);
+      var dir = String(a.dir || '').replace(/[^\w ./_-]/g, '').slice(0, 120);
+      var logFile = String(a.logFile || '.reva-servers/' + port + '.log').replace(/[^\w ./_-]/g, '');
+      if (logFile.indexOf('..') >= 0) logFile = '.reva-servers/' + port + '.log';
+      var db = Store.db;
+      db.servers = (db.servers || []).filter(function (v) { return v.port !== port; });
+      db.servers.unshift({
+        id: 'sv' + Date.now().toString(36), name: name, port: port,
+        dir: dir, cmd: cmd, pid: pid,
+        status: 'running', startedAt: Date.now(), logFile: logFile
+      });
+      if (db.servers.length > 12) db.servers.length = 12;
+      Store.save();
+      return 'Server "' + name + '" registered on port ' + port + (pid ? ' (pid ' + pid + ')' : '') + '.\nURL: http://127.0.0.1:' + port + '/ — the built-in browser start page lists it, the user can open it there.\nManage with server_log / stop_server; stop the server when work is done.';
+    },
+    stop_server: async function (a) {
+      var db = Store.db;
+      var hit = (db.servers || []).filter(function (v) { return v.status === 'running'; }).filter(function (v) {
+        return (a.port && v.port === parseInt(a.port, 10)) || (a.name && v.name === String(a.name));
+      })[0];
+      if (!hit) return 'Error: no running server matches that port/name';
+      var pid = parseInt(hit.pid, 10);
+      var ok = true, detail = '';
+      if (window.AgentExec && window.REVAAgent && pid > 0) {
+        var ex = await AgentExec.execArgs(['kill', String(pid)], { timeoutMs: 15000 });
+        ok = ex.exit === 0;
+        if (!ok) detail = ' (kill exit ' + ex.exit + ' — process may have already exited)';
+      }
+      hit.status = 'stopped';
+      Store.save();
+      return 'Server "' + hit.name + '" (port ' + hit.port + ') stopped' + (ok ? '.' : detail + ' — marked stopped in the registry anyway.');
+    },
+    server_log: async function (a) {
+      var db = Store.db;
+      var hit = (db.servers || []).filter(function (v) { return v.port === parseInt(a.port, 10); })[0];
+      if (!hit) return 'Error: no server registered on port ' + a.port;
+      var lines = Math.min(200, Math.max(5, parseInt(a.lines, 10) || 40));
+      if (window.AgentExec && window.REVAAgent) {
+        var ex = await AgentExec.execArgs(['tail', '-n', String(lines), hit.logFile], { timeoutMs: 15000 });
+        if (ex.exit !== 0) return '(no log yet for "' + hit.name + '" — port ' + hit.port + ')';
+        return String(ex.out || '(empty)').slice(0, 8000);
+      }
+      return '(log reading needs the device shell) server "' + hit.name + '" on port ' + hit.port + ' — cmd: ' + hit.cmd;
+    },
     run_command: function (a) {
       return Console.exec(String(a.command || '')).out;
     }
@@ -270,6 +346,10 @@
     if (name === 'todo_write') return { label: 'Planning', meta: (Store.active() && Store.active().todos ? Store.active().todos.length : 0) + ' steps', ok: ok };
     if (name === 'workspace_search') return { label: 'Searching workspace', meta: 'ripgrep-style', ok: ok };
     if (name === 'code_symbols') return { label: 'Symbols · ' + String(args.path || '').slice(0, 34), meta: '', ok: ok };
+    if (name === 'load_skill') return { label: 'Skill · ' + String(args.name || ''), meta: 'activated', ok: ok };
+    if (name === 'run_server') return { label: 'Server · ' + String(args.name || ('port ' + (args.port || '?'))), meta: ':' + (args.port || ''), ok: ok };
+    if (name === 'server_log') return { label: 'Server log · :' + (args.port || ''), meta: '', ok: ok };
+    if (name === 'stop_server') return { label: 'Stopping server · :' + (args.port || args.name || ''), meta: '', ok: ok };
     if (name === 'run_command') return { label: '❯ ' + (args.command || ''), meta: '', ok: ok, cmd: args.command, out: s };
     if (name === 'web_search') return { label: 'Search · ' + String(args.query || '').slice(0, 40), meta: '', ok: ok };
     if (name === 'web_read') return { label: 'Read · ' + String((args.url || '').replace(/^https?:\/\//, '')).slice(0, 40), meta: '', ok: ok };
@@ -290,6 +370,10 @@
     { type: 'function', function: { name: 'todo_write', description: 'Plan and track your work: write the ordered steps for the current task BEFORE starting (analyze → implement → verify), and mark steps done as you complete them. The user sees this list live. Rewrite the whole list each call.', parameters: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { t: { type: 'string' }, done: { type: 'boolean' } }, required: ['t'] } } }, required: ['items'] } } },
     { type: 'function', function: { name: 'workspace_search', description: 'Fast recursive search over the workspace (ripgrep-style): exact text or regex, optional glob filter, skips node_modules/dist/binaries, returns file:line matches (bounded). Use this instead of reading whole files when locating code.', parameters: { type: 'object', properties: { pattern: { type: 'string' }, isRegex: { type: 'boolean' }, glob: { type: 'string', description: 'path substring filter, e.g. ".js"' }, dir: { type: 'string' }, maxResults: { type: 'number' } }, required: ['pattern'] } } },
     { type: 'function', function: { name: 'code_symbols', description: 'Structural outline of a code file: functions, classes, imports, exports with line numbers (tree-sitter-style symbol extraction for js/ts/py/css and similar). Use to navigate a file and find the right spot before editing.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+    { type: 'function', function: { name: 'load_skill', description: 'Activate a skill by name: loads its full instructions into context for this session. Call it whenever the task matches an available skill (e.g. the user asks to build/publish a webpage — load the relevant skill first).', parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } } },
+    { type: 'function', function: { name: 'run_server', description: 'Register a dev server you started with shell_exec so the user can open/monitor/stop it. Start it detached FIRST, e.g. shell_exec: "nohup python3 -m http.server 8080 >> .reva-servers/8080.log 2>&1 & echo PID=$!" (note: cd into the project dir first), then call run_server with the port and pid from the output. Args: name, port, pid (from $!), command, dir, logFile.', parameters: { type: 'object', properties: { name: { type: 'string' }, port: { type: 'number' }, pid: { type: 'number' }, command: { type: 'string', description: 'the full command you launched' }, dir: { type: 'string' }, logFile: { type: 'string' } }, required: ['port'] } } },
+    { type: 'function', function: { name: 'server_log', description: 'Read the recent log output of a registered server (tail). Args: port, lines (default 40).', parameters: { type: 'object', properties: { port: { type: 'number' }, lines: { type: 'number' } }, required: ['port'] } } },
+    { type: 'function', function: { name: 'stop_server', description: 'Stop a registered server by port or name and mark it stopped. Use when the work is done or the user asks to stop the preview.', parameters: { type: 'object', properties: { port: { type: 'number' }, name: { type: 'string' } } } } },
     { type: 'function', function: { name: 'memory_search', description: 'Search saved memories by relevance before relying on context. Returns the top matching memories.', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
     { type: 'function', function: { name: 'delete_memory', description: 'Delete a saved memory by title (or unique title fragment) — use when the user asks to forget something or a memory is outdated.', parameters: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] } } },
     { type: 'function', function: { name: 'save_memory', description: 'Persist something the user wants remembered across sessions. tag: user | feedback | project | reference. Saving with an existing title UPDATES that memory instead of duplicating.', parameters: { type: 'object', properties: { title: { type: 'string', description: 'file-style name, e.g. deploy-notes.md' }, body: { type: 'string' }, tag: { type: 'string' } }, required: ['title', 'body'] } } },
@@ -351,6 +435,7 @@
         else if (cmd === 'date') out = new Date().toLocaleString();
         else if (cmd === 'model') out = Store.db.settings.model + ' · ' + Store.activeProvider().name;
         else if (cmd === 'memories') out = Store.db.memories.length ? Store.db.memories.map(function (m) { return m.tag + ' · ' + m.title; }).join('\n') : '(none)';
+        else if (cmd === 'servers') out = (Store.db.servers || []).length ? Store.db.servers.map(function (v) { return (v.status === 'running' ? 'RUN ' : 'stop') + ' :' + v.port + ' · ' + v.name + (v.cmd ? ' · ' + v.cmd : ''); }).join('\n') : '(no servers registered)';
         else if (cmd === 'status') out = 'provider ' + Store.activeProvider().name + ' · model ' + Store.db.settings.model + ' · tools ' + (Store.db.settings.tools !== false ? 'on' : 'off') + ' · mode ' + Store.db.settings.mode + ' · effort ' + Store.db.settings.effort;
         else if (cmd === 'clear') return { out: '', clear: true };
         else out = 'Unknown command: ' + cmd + '\n' + Console.HELP;

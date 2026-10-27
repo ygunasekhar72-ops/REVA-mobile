@@ -29,7 +29,11 @@
     activeId: null,
     autos: [],
     hooks: [],
-    mcp: []             // [{name, url, on, ok, tools}]
+    mcp: [],            // [{name, url, on, ok, tools}]
+    browser: { history: [] },   // recent sites visited in the built-in browser
+    servers: [],        // [{id, name, port, dir, cmd, status, startedAt, log}]
+    usage: {},          // { 'YYYY-MM-DD': { model: { reqs, inTok, outTok, errs } } }
+    deploy: { target: '', token: '', site: '' }  // BYOK deploy target config
   };
 
   function migrateV2(saved) {

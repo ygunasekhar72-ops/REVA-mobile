@@ -380,6 +380,34 @@
       H.icons();
     },
 
+    renderServers: function () {
+      var l = $('#serverList');
+      var sv = Store.db.servers || [];
+      l.innerHTML = sv.map(function (v, i) {
+        var run = v.status === 'running';
+        return '<div class="row"><span class="mcpdot ' + (run ? 'ok' : 'err') + '"></span>' +
+          '<span class="rtxt"><b>' + H.esc(v.name) + ' · :' + v.port + '</b><small>' + (run ? 'running · pid ' + (v.pid || '?') : 'stopped') + ' · ' + H.esc(v.cmd || '') + '</small></span>' +
+          (run ? '<button class="btnGhost" data-srv-open="' + v.port + '" style="padding:8px 12px;font-size:12px;border-radius:11px">Open</button>' : '') +
+          (run ? '<button class="btnGhost" data-srv-log="' + v.port + '" style="padding:8px 12px;font-size:12px;border-radius:11px">Log</button>' : '') +
+          '<button class="btnGhost" data-srv-forget="' + i + '" style="padding:8px 12px;font-size:12px;border-radius:11px">' + (run ? 'Stop' : 'Forget') + '</button></div>';
+      }).join('') || '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:12px 0">No servers yet — ask the agent to build something with a live preview</p>';
+      var rn = sv.filter(function (v) { return v.status === 'running'; }).length;
+      var sub = $('#setServerSub');
+      if (sub) sub.textContent = rn ? rn + ' running · open or stop them' : 'preview servers started by the agent';
+      H.icons();
+    },
+    /* server log sheet — tail fetched through the agent shell channel */
+    showServerLog: function (port) {
+      var done = function (text) {
+        $('#srvLogText').textContent = text || '(empty)';
+        H.openSheet('sheet-srvlog');
+      };
+      if (window.AgentExec && window.REVAAgent) {
+        AgentExec.execArgs(['tail', '-n', '60', '.reva-servers/' + parseInt(port, 10) + '.log'], { timeoutMs: 15000 })
+          .then(function (ex) { done(ex.exit === 0 ? ex.out : '(no log yet for port ' + port + ')'); });
+      } else done('(device shell needed for live logs)');
+    },
+
     /* ---------- SETTINGS subs ---------- */
     renderSettingsSubs: function () {
       var db = Store.db;
