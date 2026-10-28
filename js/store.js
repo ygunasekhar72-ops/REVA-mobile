@@ -16,11 +16,9 @@
       { id: 'openai',    name: 'OpenAI',          base: 'https://api.openai.com/v1',      key: '', models: [] },
       { id: 'openrouter',name: 'OpenRouter',      base: 'https://openrouter.ai/api/v1',   key: '', models: [] },
       { id: 'groq',      name: 'Groq',            base: 'https://api.groq.com/openai/v1', key: '', models: [] },
-      { id: 'ollama',    name: 'Ollama (local)',  base: 'http://localhost:11434/v1', key: '', models: [] },
-      { id: 'lmstudio',  name: 'LM Studio (local)', base: 'http://localhost:1234/v1',  key: '', models: [] },
-      { id: 'custom',    name: 'Custom provider', base: '',                               key: '', models: [] },
       { id: 'echo',      name: 'Echo (offline demo)', base: '', type: 'echo',             key: '', models: ['echo-1'] }
     ],
+    disabledModels: [],  // model ids hidden from the chat model picker (toggle in Model settings)
     skills: [],          // [{id, name, desc, on}] — announced to the model in the system prompt
     plugins: [],         // [{id, name, desc, prompt, source: 'user'|'ai', on}] — prompt packs
     memories: [],        // [{id, title, tag, body}]
@@ -92,6 +90,10 @@
         db.settings.theme = 'porcelain';
         db.settings.depth = 0;
       }
+      /* provider cleanup: placeholder/local entries go, user-configured stay */
+      db.providers = (db.providers || []).filter(function (p) {
+        return ['ollama', 'lmstudio', 'custom'].indexOf(p.id) < 0 || p.key || (p.models && p.models.length);
+      });
       /* every session must carry the vfsContent object — tools write into it.
          _vfsHydrated is a RUNTIME flag: after a reload every session starts
          un-hydrated so file contents are re-read from IndexedDB. */
@@ -128,12 +130,13 @@
     return new Promise(function (res) {
       if (!window.indexedDB) return res(null);
       try {
-        /* v2 adds the Project Library store; one connection serves both layers */
-        var rq = indexedDB.open('reva-vfs', 2);
+        /* v2 adds the Project Library store; v3 adds checkpoints; one connection serves all layers */
+        var rq = indexedDB.open('reva-vfs', 3);
         rq.onupgradeneeded = function () {
           var d = rq.result;
           if (!d.objectStoreNames.contains(VFS_STORE)) d.createObjectStore(VFS_STORE);
           if (!d.objectStoreNames.contains('library')) d.createObjectStore('library');
+          if (!d.objectStoreNames.contains('checkpoints')) d.createObjectStore('checkpoints');
         };
         rq.onsuccess = function () { res(rq.result); };
         rq.onerror = function () { res(null); };
@@ -187,7 +190,11 @@
     }
     if (!idb) { s._vfsHydrated = true; return Promise.resolve(); }
     return vfsGet(s.id).then(function (content) {
-      if (content) s.vfsContent = content;
+      /* additive merge: IDB fills what's missing in memory; never clobbers
+         newer in-memory entries (seeded skill files, post-boot writes) */
+      if (content) Object.keys(content).forEach(function (k) {
+        if (s.vfsContent[k] === undefined) s.vfsContent[k] = content[k];
+      });
       s._vfsHydrated = true;
       vfsSigCache[s.id] = vfsSig(s);
     });
@@ -356,5 +363,53 @@
         return libCache[id].name.toLowerCase().replace(/[^\w.-]+/g, '-').toLowerCase() === slug.toLowerCase();
       });
     }
+  };
+
+  /* ============================================================
+     CHECKPOINTS (Tools v2) — workspace snapshots in IndexedDB so the
+     agent can experiment during long builds and roll back cleanly.
+     ============================================================ */
+  var cpDb = null;
+  var cpReady = openVfsDb().then(function (database) { cpDb = database; });
+  function cpPut(rec) {
+    if (!cpDb) return;
+    try { cpDb.transaction('checkpoints', 'readwrite').objectStore('checkpoints').put(JSON.stringify(rec), rec.id); } catch (e) { }
+  }
+  function cpAll(sessionId) {
+    return new Promise(function (res) {
+      if (!cpDb) return res([]);
+      try {
+        var rq = cpDb.transaction('checkpoints', 'readonly').objectStore('checkpoints').getAll();
+        rq.onsuccess = function () {
+          var rows = [];
+          (rq.result || []).forEach(function (raw) {
+            try { var r = JSON.parse(raw); if (r.sessionId === sessionId) rows.push(r); } catch (e) { }
+          });
+          rows.sort(function (a, b) { return b.ts - a.ts; });
+          res(rows);
+        };
+        rq.onerror = function () { res([]); };
+      } catch (e) { res([]); }
+    });
+  }
+  function cpGet(id) {
+    return new Promise(function (res) {
+      if (!cpDb) return res(null);
+      try {
+        var rq = cpDb.transaction('checkpoints', 'readonly').objectStore('checkpoints').get(id);
+        rq.onsuccess = function () { try { res(rq.result ? JSON.parse(rq.result) : null); } catch (e) { res(null); } };
+        rq.onerror = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+  }
+  window.Store.checkpoints = {
+    ready: cpReady,
+    save: function (sessionId, label, files) {
+      var rec = { id: 'cp' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), sessionId: sessionId, label: String(label || '').slice(0, 80), ts: Date.now(), fileCount: Object.keys(files || {}).length, files: files || {} };
+      cpPut(rec);
+      return rec;
+    },
+    list: cpAll,
+    get: cpGet
   };
 })();

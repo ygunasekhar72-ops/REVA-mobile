@@ -48,18 +48,14 @@
     <!-- ================= FILES ================= -->
     <section class="screen tab-scr" id="scr-files">
       <div class="shead"><button class="iconb" data-drawer aria-label="Menu"><i data-lucide="menu"></i></button><h2>Files</h2>
-        <button class="iconb" id="browserBtn" aria-label="Browser"><i data-lucide="globe"></i></button>
         <button class="iconb" id="ideBtn" aria-label="Open workspace IDE"><i data-lucide="monitor"></i></button>
         <button class="iconb" id="newFileBtn" aria-label="New file"><i data-lucide="file-plus-2"></i></button>
-        <button class="iconb" id="tplBtn" aria-label="New from template"><i data-lucide="layout-template"></i></button>
         <button class="iconb" id="deployBtn" aria-label="Deploy workspace"><i data-lucide="cloud-upload"></i></button>
-        <button class="iconb" id="folderBtn" aria-label="Upload folder"><i data-lucide="folder-up"></i></button>
-        <button class="iconb" id="mountBtn" aria-label="Mount device folder"><i data-lucide="folder-open"></i></button>
       </div>
       <div class="lib-block">
         <div class="lib-head"><span class="libtitle">Project Library</span>
           <span style="flex:1"></span>
-          <button class="chip" id="libImportBtn"><i data-lucide="folder-up" style="width:13px;height:13px"></i>Import folder</button>
+          <button class="chip" id="libImportBtn" style="display:none"><i data-lucide="folder-up" style="width:13px;height:13px"></i>Import folder</button>
           <button class="chip" id="libNativeBtn" style="display:none"><i data-lucide="smartphone" style="width:13px;height:13px"></i>From device</button>
           <button class="chip" id="libNewBtn"><i data-lucide="plus" style="width:13px;height:13px"></i>New</button>
         </div>
@@ -236,7 +232,6 @@
     <section class="screen ov with-tabs" id="ov-model">
       <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Model</h2></div>
       <div class="sec">Built-in models · free via NVIDIA</div>
-      <div id="builtinModels"></div>
       <div class="sec">Provider · custom supported</div>
       <div id="provCards"></div>
       <div class="sec">Default model · <span id="provNameLbl"></span></div>
@@ -250,7 +245,6 @@
       <div class="row"><span class="rtxt"><b>Extended thinking</b><small>Ask for step-by-step reasoning</small></span><label class="sw"><input type="checkbox" id="swThink"/><i></i></label></div>
       <div class="sec">Runtime</div>
       <div class="row"><span class="rtxt"><b>Stream responses</b><small>Tokens appear as they arrive</small></span><label class="sw"><input type="checkbox" id="swStream" checked/><i></i></label></div>
-      <div class="row"><span class="rtxt"><b>Context window · this model</b><small>Per-model, like smart configuration</small></span><select class="inp" id="selCtxK"><option>32</option><option>64</option><option selected>128</option><option>200</option><option>256</option><option>512</option><option value="1000">1M</option><option value="2000">2M</option></select></div>
       <div class="row"><span class="rtxt"><b>Fallback provider</b><small>On connection failure</small></span><select class="inp" id="selFallback"></select></div>
     </section>
 
@@ -267,7 +261,7 @@
       <div class="shead"><button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button><h2>Permissions</h2><button class="iconb" id="addRule" aria-label="Add allow-rule"><i data-lucide="plus"></i></button></div>
       <div class="sec">Default mode</div>
       <div class="seg" id="pmodeSeg">
-        <button data-pm="Plan">Plan</button><button data-pm="Build">Build</button><button data-pm="Edit">Edit</button><button data-pm="Yolo">Yolo</button><button data-pm="Guard">Guard</button>
+        <button data-pm="Plan">Plan</button><button data-pm="Build">Build</button><button data-pm="Hybrid">Hybrid</button><button data-pm="Edit">Edit</button><button data-pm="Yolo">Yolo</button><button data-pm="Guard">Guard</button>
       </div>
       <p style="font-size:12.5px;color:var(--ink3);margin:10px 4px 16px;line-height:1.5" id="pmodeDesc"></p>
       <div class="sec">Mode shapes the system prompt</div>
@@ -383,18 +377,6 @@
     <div id="modelSheetList"></div>
   </div>
 
-  <div class="sheet" id="sheet-onboard" aria-label="Connect built-in models">
-    <div class="grab"></div><h3><i data-lucide="sparkles" style="width:17px;height:17px"></i>Connect built-in models</h3>
-    <div class="row" style="align-items:flex-start;flex-direction:column;gap:6px;margin-bottom:4px">
-      <small style="font-size:12.5px;color:var(--ink2);line-height:1.6">Built-in models run on NVIDIA's free API. Create your free key (no credit card, ~30 seconds), paste it here, and it stays on this device.</small>
-    </div>
-    <div class="acts" style="justify-content:flex-start;margin-bottom:4px">
-      <button class="btnGhost" id="obGetKey"><i data-lucide="external-link" style="width:14px;height:14px"></i>Get your free key</button>
-    </div>
-    <div class="fld"><label>NVIDIA API key (starts with nvapi-)</label><input class="inp kbd" id="obKey" placeholder="nvapi-…"/></div>
-    <div class="acts"><button class="btnX" id="obSave">Connect & use built-in models</button></div>
-  </div>
-
   <div class="sheet" id="sheet-slash" aria-label="Slash commands">
     <div class="grab"></div><h3><i data-lucide="terminal" style="width:17px;height:17px"></i>Commands</h3>
     <button class="cmdrow" data-cmd="/compact"><span class="kb">/compact</span><span class="rtxt"><b style="font-size:13.5px;font-weight:500">Summarize &amp; free context</b><small style="font-size:11.5px;color:var(--ink3)">via provider or local</small></span></button>
@@ -428,7 +410,6 @@
     <div class="row"><span class="rtxt"><b>Unlimited runs</b><small>No daily quota (e.g. NVIDIA NIM) — the agent works until the task is done</small></span><label class="sw"><input type="checkbox" id="pvUnlimited"/><i></i></label></div>
     <p class="kbd" id="pvStatus" style="font-size:11.5px;color:var(--ink3);min-height:16px;margin:4px 2px 0"></p>
     <div class="acts">
-      <button class="btnGhost" id="pvFetch"><i data-lucide="download" style="width:14px;height:14px"></i>Fetch models</button>
       <button class="btnGhost" id="pvTest"><i data-lucide="plug" style="width:14px;height:14px"></i>Test</button>
     </div>
     <div class="acts">

@@ -21,6 +21,7 @@
   var MODE_DESC = {
     Plan: 'present a plan first and wait for approval — file-modifying tools are disabled, only reading is allowed',
     Build: 'be pragmatic and produce working solutions',
+    Hybrid: 'you control the rhythm — plan when the task needs thought, build when it is clear; switching between planning and building mid-task is expected',
     Edit: 'prefer minimal, precise diffs over rewrites',
     Yolo: 'be fast and direct; skip caveats',
     Guard: 'call out risks explicitly — destructive tools (delete, console) are disabled'
@@ -81,7 +82,6 @@
     $$('#icoSeg button').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-ico') === s.icons); });
     $$('#effSeg button').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-eff') === s.effort); });
     $('#swStream').checked = s.stream; $('#swThink').checked = !!s.think;
-    $('#selCtxK').value = String(ctxFor(db.settings.model));
     $('#ringTotal').textContent = 'of ' + ctxFor(db.settings.model) + 'k';
     $('#compactAt').textContent = s.compactAt + '%';
     $('#swAutosave').checked = s.autosave; $('#swCheckpoints').checked = s.checkpoints;
@@ -203,6 +203,36 @@
     if (added.length) { Store.save(); H.toast('Skill' + (added.length > 1 ? 's' : '') + ' loaded: ' + added.join(', ')); }
     return added;
   }
+  /* BUILD_SKILL_BODIES (Skills v2) — dense expert procedures auto-seeded into
+     every chat's workspace so build quality is systematic, not lucky */
+  var BUILD_SKILL_BODIES = {
+    'three-js-3d': 'Setup (three.js r160+, ES modules — always use an import map, never global builds):\n\n```html\n<script type="importmap">\n{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js",\n  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }\n</script>\n<script type="module">\nimport * as THREE from "three";\nimport { OrbitControls } from "three/addons/controls/OrbitControls.js";\n```\n\nRenderer — get these right or the scene looks wrong:\n- new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" })\n- renderer.setPixelRatio(Math.min(devicePixelRatio, 2)) — higher melts mobile GPUs\n- renderer.setSize(innerWidth, innerHeight); update camera.aspect + projection on every resize event\n- tone mapping: renderer.toneMapping = THREE.ACESFilmicToneMapping for realistic color\n- append renderer.domElement; CSS canvas{display:block} (stray margins break sizing)\n\nLights (a black scene almost always means bad lighting, not a bug):\n- one DirectionalLight (cast shadows only if asked) + AmbientLight or HemisphereLight for fill\n- shadows: renderer.shadowMap.enabled = true; light.shadow.mapSize.set(1024,1024) — keep maps small on mobile\n\nAnimation loop:\nconst clock = new THREE.Clock();\nfunction tick() { requestAnimationFrame(tick); var dt = Math.min(clock.getDelta(), 0.1); /* update(dt) */ renderer.render(scene, camera); }\ntick();\nClamp dt — a background tab returns with a huge delta that teleports objects.\n\nModels: new GLTFLoader().load(url, gltf => scene.add(gltf.scene)) — use fetch_asset to bring real .glb files in, then load the local path.\n\nHard-won notes: color textures need texture.colorSpace = THREE.SRGBColorSpace or they look washed; dispose geometry/material on teardown; mobile GPUs hate >100k triangles — keep it simple.',
+    'webgl-performance': 'Budgets on a mid-range phone: <100 draw calls, <100k triangles, textures <=1024px, pixelRatio <=2. If FPS drops below 30, fix in this order:\n\n1. pixelRatio: renderer.setPixelRatio(Math.min(devicePixelRatio, 2)) — the #1 mobile killer.\n2. Draw calls: merge static geometry (BufferGeometryUtils.mergeGeometries) or use THREE.InstancedMesh for repeated objects (trees, enemies, particles).\n3. Textures: one 1024 atlas beats ten 256s; keep mipmaps on, anisotropy modest.\n4. Lights: each shadow-casting light multiplies cost — one directional max on mobile.\n5. Per-frame garbage: never create Vector3/Material/geometry inside the loop — reuse temporaries. GC spikes show as stutter, not low FPS.\n6. renderer.setAnimationLoop(tick) handles tab switches better than raw rAF.\n\nMeasure, do not guess:\nvar frames = 0, last = performance.now();\nfunction measure() { frames++; var now = performance.now(); if (now - last >= 1000) { console.log("FPS", frames); frames = 0; last = now; } requestAnimationFrame(measure); }\n\nHandle context loss (mobile browsers do it under memory pressure):\ncanvas.addEventListener("webglcontextlost", e => e.preventDefault());\ncanvas.addEventListener("webglcontextrestored", () => location.reload());\n\nrun_check after every change: the console must stay clean and the screenshot non-blank.',
+    'game-architecture': 'Loop — fixed update timestep + clamped delta (a phone switching tabs must not teleport the player):\nvar last = performance.now(), acc = 0, STEP = 1 / 60;\nfunction frame(now) {\n  requestAnimationFrame(frame);\n  var dt = Math.min((now - last) / 1000, 0.1); last = now; acc += dt;\n  while (acc >= STEP) { update(STEP); acc -= STEP; }\n  render();\n}\n\nState machine — one variable, no scattered booleans:\nvar state = "menu"; // menu | playing | paused | gameover\nfunction setState(next) { state = next; /* show/hide overlays here */ }\nUpdate only in "playing"; pause when document.hidden (visibilitychange) — battery + sanity.\n\nEntities: plain object arrays with pools for bullets/particles ({ active:false } reuse — never allocate per shot).\n\nInput: abstract once — keys = {} with keydown/keyup AND pointer events on the canvas (pointerdown/move/up, e.preventDefault(), touch-action:none CSS) so the same controls work on desktop and phone.\n\nSaving: localStorage.setItem("save", JSON.stringify({score: score, level: level})) on game over + visibilitychange, guarded with try/catch.\n\nWire everything: every button and key must do something real — a dead control is a bug. run_check the entry file after every build round.',
+    'procedural-worlds': 'Seeded RNG (same seed = same world — this is the contract with the user):\nfunction mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }\nvar rng = mulberry32(seed);\n\nTerrain: value-noise heightmap — a grid of random values, bilinear interpolate, sum 3-4 octaves (each double frequency, half amplitude). Normalize to 0..1, then shape: h = Math.pow(h, 1.5) for valleys; threshold for water.\n\nChunks: split the world into NxN cells; generate only cells near the player; cache in a Map keyed by "cx,cz". Deterministic per cell: derive the cell RNG from mulberry32(seed ^ (cx * 73856093) ^ (cz * 19349663)) so chunks match no matter the visit order.\n\nPlacement (trees, rocks, buildings): rejection-sample with the cell RNG — never Math.random(); a reload must reproduce the same forest.\n\nColors by height: water < sand < grass < rock < snow bands with slight per-vertex jitter to kill banding.\n\nKeep meshes low-poly (PlaneGeometry segments 32-64 per chunk) and flatShading for style — cheap and it looks intentional.',
+    'mobile-optimization': 'Touch first: pointerdown/pointermove/pointerup on the canvas or buttons; touch-action:none on game surfaces; e.preventDefault() on touchmove to stop scroll-bounce; hit targets >=44px. Buttons must work with a thumb, one-handed.\n\nViewport: meta viewport width=device-width,initial-scale=1,viewport-fit=cover; size from visualViewport or innerWidth/innerHeight on resize AND orientationchange.\n\nFrame budget 16ms — spend it on render, not layout: never read layout (offsetWidth) inside a loop that also writes styles; batch DOM changes; canvas over DOM for games.\n\nNetwork: local assets only on the critical path; show progress for anything over 100ms; the app may go offline — everything the game needs must already be in the workspace.\n\nVisibility: document.addEventListener("visibilitychange", ...) — pause the loop, mute audio, save state. A game that drains battery in the background gets uninstalled.\n\nTest at phone width with run_check before shipping; the user tests on a real phone and reports what you could have caught.',
+    'asset-pipeline': 'Formats: models = GLB (binary glTF) — one file, textures embedded; textures = PNG (with alpha) or JPG (opaque); audio = MP3/OGG. Never reference external URLs from the built app — fetch_asset assets into the workspace first, then load local paths so the app works offline.\n\nLoading with three.js:\nvar manager = new THREE.LoadingManager();\nmanager.onProgress = function (url, loaded, total) { console.log("loading " + loaded + "/" + total); };\nvar loader = new THREE.GLTFLoader(manager);\nloader.load("assets/models/scene.glb", function (gltf) { scene.add(gltf.scene); }, undefined, function (err) { console.error("model failed", err); });\nAlways pass an error callback — a silent model failure is a black screen.\n\nTexture colorSpace: color maps SRGBColorSpace; normal/roughness maps stay linear. Wrong colorSpace = washed-out or too-dark surfaces.\n\nOrganization: assets/models/, assets/textures/, assets/audio/ — clean relative paths (assets/x.png from the project root) so previews and servers resolve them.\n\nSources that work with fetch_asset: raw.githubusercontent.com, cdn.jsdelivr.net, unpkg.com (CORS-enabled). Keep each asset <8 MB; prefer fewer, better assets over many broken ones.'
+  };
+  /* BUILD_SKILLS seeding: every chat gets the expert build procedures in its
+     workspace (once per session — the flag persists, which is intended) */
+  function seedBuildSkills(sess) {
+    if (!sess) return;
+    /* the persisted flag alone is not enough — files can be lost in storage
+       migrations, so verify per file (cheap: 6 has-key lookups) */
+    var allPresent = Object.keys(BUILD_SKILL_BODIES).every(function (nm) {
+      return sess.vfsContent && sess.vfsContent['workspace/skills/' + skillSlug(nm) + '.md'] !== undefined;
+    });
+    if (allPresent) { sess._buildSkillsSeeded = true; return; }
+    sess._buildSkillsSeeded = true;
+    Object.keys(BUILD_SKILL_BODIES).forEach(function (nm) {
+      var fname = 'workspace/skills/' + skillSlug(nm) + '.md';
+      if (sess.vfsContent && sess.vfsContent[fname] === undefined) {
+        sess.vfsContent[fname] = '---\nname: ' + nm + '\ndescription: ' + nm + '\n---\n\n' + BUILD_SKILL_BODIES[nm] + '\n';
+      }
+      if (!db.skills.some(function (x) { return x.name === nm; })) db.skills.push({ id: 'sk' + H.uid(), name: nm, desc: nm, on: true });
+    });
+    Store.save();
+  }
 
   function sysPrompt() {
     var s = db.settings;
@@ -238,6 +268,7 @@
         'CHANGE code → edit_file with text copied EXACTLY from a fresh read (small changes); write_file for new files; never rewrite a whole file to change one line. ' +
         'BUILD something → todo_write the plan first, create_directory for structure, write files in sections (write_file, then mode:"append" per section of ≤120 lines), keep the todo updated as you go. ' +
         'VERIFY → run_command or shell_exec to actually run the result; read the real output and quote it — nonzero exit or an error means fix it and run again. ' +
+        'VISUAL BUILDS → after building or changing anything visual/interactive, call run_check on the entry file: it runs the page, captures console errors and a screenshot analysis — fix every error and re-run until the console is clean; use screenshot to see the current state; fetch_asset to bring real 3D models/textures from CDNs; checkpoint before risky experiments and rollback to recover. ' +
         'TOOL ERROR → read the message and correct course (the error includes the nearest match or the right pattern) instead of repeating the same call. ' +
         'CURRENT or uncertain facts → web_search, then web_read or browser_read the best result before citing; use browser_read when the user should SEE the page. ' +
         'SERVERS → start detached with shell_exec (nohup … & echo PID=$!), register with run_server so the user gets a URL, server_log to check output, stop_server when done. ' +
@@ -314,8 +345,24 @@
     return visibleMessages().reduce(function (a, m) { return a + H.tok(m.content); }, 0);
   }
   /* context limit is per MODEL (ZCode-style smart configuration) */
+  /* AUTOMATED context: different models have different windows — derived from
+     the model id itself, never set by hand. Unknown families get a safe 128k. */
+  var CTX_RULES = [
+    [/gemini-1\.5-pro|gemini-2/, 1000],
+    [/claude-3-5|claude-sonnet-4|claude-opus-4|claude/, 200],
+    [/gpt-4o|gpt-4\.1|gpt-4-turbo|o1-|o3-|o4-/, 128],
+    [/deepseek|qwen|glm|mini|max|minimax|nemotron|llama-3|mistral|mixtral|phi-3|phi-4|gemma/, 128]
+  ];
+  /* automated model capabilities: context size + vision, derived from the id */
+  function modelVision(model) {
+    var m = String(model || '').toLowerCase();
+    return /vision|vl|-vl|omni|4o|gpt-4-turbo|gemini|claude-3|pixtral|llava|internvl|qvq|qwen2-vl|multimodal/.test(m);
+  }
   function ctxFor(model) {
-    return (db.modelCtx && db.modelCtx[model]) || db.settings.ctxK || 128;
+    var m = String(model || '').toLowerCase();
+    if (db.modelCtx && db.modelCtx[model]) return db.modelCtx[model]; // explicit override wins if present
+    for (var i = 0; i < CTX_RULES.length; i++) if (CTX_RULES[i][0].test(m)) return CTX_RULES[i][1];
+    return 128;
   }
   function refreshCtx() {
     UI.renderCtx(H.tok(sysPrompt()), histTokens(), ctxFor(db.settings.model));
@@ -327,6 +374,24 @@
   App = window.App || {};
   function ensureSession() { return Store.active() || Store.newSession(); }
   App.isStreaming = function () { return !!state.streaming; };
+  App.ctxFor = ctxFor;
+  App.modelVision = modelVision;
+  App.streamingSid = function () { return state.streamingSid || null; };
+  App.newProjectChat = function (libId) {
+    var p = Store.lib.get(libId);
+    if (!p) { H.toast('Project not found'); return; }
+    var count = db.sessions.filter(function (s) { return s.libId === libId; }).length;
+    if (count >= 5) { H.toast('Folder full — 5 chats max per folder'); return; }
+    var s = Store.newSession();
+    s.libId = libId;
+    s.title = p.name + ' — new chat';
+    seedBuildSkills(s);
+    db.activeId = s.id;
+    Store.save();
+    state.curPath = 'workspace';
+    UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); UI.renderHome(); openChat();
+    H.toast('Chat created in "' + p.name + '" — the agent works on its files');
+  };
   /* Resume chip action: continue a stopped/errored/interrupted task from its
      todo list — the model picks up where it stopped instead of restarting */
   App.resumeTask = function () {
@@ -334,13 +399,14 @@
     if (!s || state.streaming) return;
     s.resumeHint = false;
     Store.save(); UI.renderChat(s);
-    send('Continue your task — pick up EXACTLY where you stopped (check your todo list and the files you already wrote). Do not restart or repeat completed work.');
+    send('Continue your task — pick up EXACTLY where you stopped (check your todo list and the files you already wrote). Do not restart or repeat completed work.', true);
   };
 
   function setSendStop(on) {
     var b = $('#sendBtn');
     var hasText = $('#chatInput') && $('#chatInput').value.trim().length > 0;
-    var stopMode = on && !hasText; // typed text during a run means "queue", not "stop"
+    var viewingRun = state.streamingSid && Store.active() && Store.active().id === state.streamingSid;
+    var stopMode = on && !hasText && viewingRun; // stop applies only to the chat that is running
     b.classList.toggle('stop', stopMode);
     b.innerHTML = '<i data-lucide="' + (stopMode ? 'square' : 'arrow-up') + '"></i>';
     H.icons();
@@ -350,7 +416,7 @@
      in the transcript, and sent automatically when the run finishes —
      typing never stops the agent (the stop button is the only stop) */
   function queueFollowUp(text) {
-    state.queue.push(text);
+    state.queue.push({ t: text, hidden: !!hidden, sid: (Store.active() || {}).id });
     renderQueue();
     H.toast('Queued — sends when the current run finishes');
   }
@@ -360,7 +426,7 @@
     if (!state.queue.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
     el.style.display = 'block';
     el.innerHTML = state.queue.map(function (q, i) {
-      return '<div class="queued"><i data-lucide="clock"></i><span class="qtxt">Queued: ' + H.esc(q.slice(0, 90)) + '</span>' +
+      return '<div class="queued"><i data-lucide="clock"></i><span class="qtxt">Queued: ' + H.esc(q.t.slice(0, 90)) + '</span>' +
         '<button class="qx" data-qx="' + i + '" aria-label="Remove"><i data-lucide="x" style="width:13px;height:13px"></i></button></div>';
     }).join('');
     H.icons();
@@ -369,21 +435,31 @@
     if (!state.queue.length || state.streaming) return;
     var next = state.queue.shift();
     renderQueue();
-    setTimeout(function () { if (!state.streaming) send(next); }, 350);
+    setTimeout(function () {
+      if (state.streaming) return;
+      var prev = db.activeId;
+      if (next.sid) db.activeId = next.sid;
+      send(next.t, next.hidden).then(function () {
+        db.activeId = prev;
+        if (Store.active()) { try { UI.renderChat(Store.active()); } catch (e) { } }
+        drainQueue();
+      });
+    }, 350);
   }
 
-  async function send(text) {
+  async function send(text, hidden) {
     if (state.streaming) {
       var t = (text !== undefined ? text : $('#chatInput').value).trim();
-      if (t) { $('#chatInput').value = ''; autoGrow($('#chatInput')); queueFollowUp(t); }
+      if (t) { $('#chatInput').value = ''; autoGrow($('#chatInput')); queueFollowUp(t, hidden); }
       return;
     }
     text = (text !== undefined ? text : $('#chatInput').value).trim();
     if (!text) { H.toast('Type a message first'); return; }
     $('#chatInput').value = '';
     var s = ensureSession();
-    if (!s.messages.length) s.title = text.slice(0, 38).replace(/\n/g, ' ');
+    if (!s.messages.length && !hidden) s.title = text.slice(0, 38).replace(/\n/g, ' ');
     var um = { role: 'user', content: text, ts: Date.now() };
+    if (hidden) um.hidden = true;
     if (pendingImg) { um.image = pendingImg; pendingImg = null; }
     s.messages.push(um);
     s.updatedAt = Date.now(); s.model = db.settings.model;
@@ -397,7 +473,7 @@
       /* a throw inside the agent loop must NEVER leave the composer stuck
          in stop-mode — end the run with an honest error bubble */
       if (state.streaming) {
-        state.streaming = false; setSendStop(false); state.ctrl = null;
+        state.streaming = false; state.streamingSid = null; setSendStop(false); state.ctrl = null;
         s.messages.push({ role: 'assistant', err: true, content: 'Run interrupted by an internal error: ' + (eRun && eRun.message || eRun), ts: Date.now() });
         Store.save(); UI.renderChat(s); UI.renderChatHead(s);
         H.toast('Run failed — see the error in chat');
@@ -412,7 +488,7 @@
     flow.appendChild(typing);
     scroller.scrollTop = scroller.scrollHeight;
     var bubble = null, thinkEl = null, contentEl = null, acc = '', accRe = '';
-    state.streaming = true; setSendStop(true);
+    state.streaming = true; state.streamingSid = s.id; setSendStop(true);
     s.resumeHint = false; // a new run supersedes any stale resume offer
     state.ctrl = new AbortController();
     var toolsOn = db.settings.tools !== false;
@@ -546,6 +622,11 @@
       if (n === 'web_read' || n === 'browser_open' || n === 'browser_read') return { live: 'Fetching', done: 'Fetched' };
       if (n === 'run_command' || n === 'shell_exec') return { live: 'Terminal', done: 'Terminal' };
       if (n === 'save_memory') return { live: 'Saving memory', done: 'Saved memory' };
+      if (n === 'run_check') return { live: 'Verifying', done: 'Verified' };
+      if (n === 'screenshot') return { live: 'Capturing', done: 'Captured' };
+      if (n === 'fetch_asset') return { live: 'Fetching asset', done: 'Fetched asset' };
+      if (n === 'checkpoint') return { live: 'Checkpointing', done: 'Checkpoint' };
+      if (n === 'rollback') return { live: 'Rolling back', done: 'Rolled back' };
       return { live: n, done: n };
     }
     function verbIconFor(name) {
@@ -556,6 +637,10 @@
       if (n === 'web_search' || n === 'web_read' || n === 'browser_open' || n === 'browser_read') return 'globe';
       if (n === 'delete_file') return 'trash-2';
       if (n === 'save_memory') return 'brain';
+      if (n === 'run_check') return 'clipboard-check';
+      if (n === 'screenshot') return 'camera';
+      if (n === 'fetch_asset') return 'download';
+      if (n === 'checkpoint' || n === 'rollback') return 'history';
       return 'wrench';
     }
     /* quick line diff: added vs removed between old and new content */
@@ -1015,7 +1100,7 @@
     }
     s.updatedAt = Date.now();
     Store.save();
-    state.streaming = false; setSendStop(false); state.ctrl = null;
+    state.streaming = false; state.streamingSid = null; setSendStop(false); state.ctrl = null;
     drainQueue(); // a queued follow-up sends now — typing never stopped the run
     if (Store.active() === s) { UI.renderChat(s); UI.renderChatHead(s); } // don't repaint if the user switched sessions mid-run
     refreshCtx(); UI.renderHome(); UI.renderSettingsSubs();
@@ -1045,6 +1130,7 @@
   App.openSession = function (id) {
     db.activeId = id; Store.save();
     state.curPath = 'workspace';
+    seedBuildSkills(Store.active());
     UI.renderChat(Store.active()); UI.renderChatHead(Store.active()); refreshCtx();
     openChat();
     /* Phase 1.5: older sessions hydrate file contents from IndexedDB on open */
@@ -1380,44 +1466,6 @@
     state.pvId = p.id;   // later draft()/save()/fetch() calls reuse this provider
     return p;
   }
-  async function pvFetch() {
-    var p = pvDraft();
-    $('#pvStatus').textContent = 'Fetching models from ' + (p.base || '…') + ' …';
-    try {
-      var models = await AI.listModels(p);
-      p.models = Array.from(new Set(p.models.concat(models)));
-      Store.save(); UI.renderModels(); UI.renderSettingsSubs();
-      if (p.type === 'echo') {
-        $('#pvStatus').textContent = '✓ ' + p.models.length + ' models';
-        return;
-      }
-      // verify every model actually serves chat before offering it — dead catalog entries are removed.
-      // Two workers with a gap: 85+ concurrent probes trip provider rate limits.
-      p.modelStatus = p.modelStatus || {};
-      var queue = p.models.filter(function (m) { return !p.modelStatus[m]; });
-      var done = 0, dead = 0;
-      function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-      async function worker() {
-        while (queue.length) {
-          var m = queue.shift();
-          var st = await AI.probeModel(p, m);
-          p.modelStatus[m] = st;
-          if (st === 'dead') dead++;
-          done++;
-          $('#pvStatus').textContent = 'verifying ' + done + '/' + (done + queue.length) + ' models…';
-          await delay(150);
-        }
-      }
-      var workers = [];
-      for (var k = 0; k < Math.min(2, queue.length); k++) workers.push(worker());
-      await Promise.all(workers);
-      p.models = p.models.filter(function (m) { return p.modelStatus[m] !== 'dead'; });
-      Store.save(); UI.renderModels(); UI.renderSettingsSubs();
-      $('#pvStatus').textContent = '✓ ' + p.models.length + ' working models' + (dead ? ' · ' + dead + ' unavailable removed' : '');
-    } catch (e) {
-      $('#pvStatus').textContent = '✗ ' + AI.friendlyError(e).split('\n')[0];
-    }
-  }
   async function pvTest() {
     var p = pvDraft();
     $('#pvStatus').textContent = 'Testing connection…';
@@ -1495,67 +1543,6 @@
   }, 20000);
 
   /* ================= built-in models (free, via NVIDIA) ================= */
-  var BUILTIN_MODELS = [
-    { id: 'z-ai/glm-5.3-flash', name: 'GLM 5.3 Flash', desc: 'fast all-rounder · best default agent' },
-    { id: 'minimaxai/minimax-m3.1-flash', name: 'MiniMax M3.1 Flash', desc: 'agentic, long-context' },
-    { id: 'deepseek-ai/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', desc: 'strong reasoning (can hang on some accounts)' },
-    { id: 'nvidia/nemotron-3-ultra-550b-a55b', name: 'Nemotron 3 Ultra 550B', desc: 'flagship, heavyweight' },
-    { id: 'nvidia/nemotron-3.5-super-vl-120b-a12b', name: 'Nemotron 3.5 Super VL', desc: 'vision-language (images in)' },
-    { id: 'black-forest-labs/flux.2-klein', name: 'FLUX.2 Klein', desc: 'image generation — hosted API, image saved to workspace', image: true }
-  ];
-  window.REVA_BUILTIN_MODELS = BUILTIN_MODELS;
-  function renderBuiltinModels() {
-    var host = $('#builtinModels');
-    if (!host) return;
-    host.innerHTML = BUILTIN_MODELS.map(function (m, i) {
-      return '<button class="row" data-builtin="' + i + '"><span class="tile"><i data-lucide="' + (m.image ? 'image' : 'sparkles') + '"></i></span>' +
-        '<span class="rtxt"><b>' + H.esc(m.name) + '</b><small>' + H.esc(m.desc) + '</small></span>' +
-        (db.settings.model === m.id ? '<i data-lucide="check" style="width:15px;height:15px;color:var(--ink)"></i>' : '<i data-lucide="chevron-right" class="chev" style="width:16px;height:16px"></i>') +
-        '</button>';
-    }).join('');
-    H.icons();
-  }
-  root.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-builtin]');
-    if (!b) return;
-    var m = BUILTIN_MODELS[+b.getAttribute('data-builtin')];
-    var nv = (db.providers || []).find(function (p) { return /nvidia/i.test(p.name) && p.key; });
-    if (!nv) {
-      // BYOK onboarding: get a free NVIDIA key, paste, done
-      H.openSheet('sheet-onboard');
-      return;
-    }
-    if (!nv.models.some(function (x) { return x === m.id; })) nv.models.push(m.id);
-    db.settings.providerId = nv.id;
-    db.settings.model = m.id;
-    Store.save();
-    UI.renderModels(); UI.renderModelSheet(db.settings.providerId); UI.renderSettingsSubs(); renderBuiltinModels(); refreshCtx();
-    if (Store.active()) UI.renderChatHead(Store.active()); // the composer pill must reflect the pick NOW
-    H.closeSheets();
-    H.toast(m.name + ' selected');
-  });
-  /* onboarding sheet */
-  $('#obGetKey').addEventListener('click', function () {
-    H.closeSheets();
-    try { H.push('ov-browser'); if (window.REVABrowser) window.REVABrowser.open('https://build.nvidia.com'); } catch (e) { }
-    setTimeout(function () { H.openSheet('sheet-onboard'); }, 600);
-  });
-  $('#obSave').addEventListener('click', function () {
-    var key = $('#obKey').value.trim();
-    if (key.indexOf('nvapi-') !== 0) { H.toast('That does not look like an NVIDIA key (starts with nvapi-)'); return; }
-    var p = (db.providers || []).find(function (x) { return /nvidia/i.test(x.name); });
-    if (!p) { p = { id: 'nvd', name: 'NVIDIA NIM', base: '', key: '', models: [] }; db.providers.push(p); }
-    p.base = 'https://integrate.api.nvidia.com/v1';
-    p.key = key;
-    if (!p.models.length) p.models = BUILTIN_MODELS.filter(function (m) { return !m.image; }).map(function (m) { return m.id; });
-    db.settings.providerId = p.id;
-    db.settings.model = 'z-ai/glm-5.3-flash';
-    db.settings.fallbackId = '';
-    Store.save();
-    UI.renderModels(); UI.renderModelSheet(p.id); UI.renderSettingsSubs(); renderBuiltinModels(); refreshCtx();
-    H.closeSheets();
-    H.toast('Connected — built-in models are ready');
-  });
   /* image generation: FLUX models are HOSTED on NVIDIA's API (the weights are
      not downloadable for mobile) — call the image endpoint with the user's
      key and save the returned image into the workspace. Endpoint + payload
@@ -1718,6 +1705,15 @@
       pickModel(t.getAttribute('data-sheet-model'), t.getAttribute('data-from-prov'));
       return;
     }
+    if ((t = e.target.closest('[data-mtoggle]'))) {
+      var mT = t.getAttribute('data-mtoggle');
+      var dM = db.settings.disabledModels = db.settings.disabledModels || [];
+      var atI = dM.indexOf(mT);
+      if (atI >= 0) dM.splice(atI, 1); else dM.push(mT);
+      Store.save(); UI.renderModels(); UI.renderModelSheet(db.settings.providerId);
+      H.toast(dM.indexOf(mT) >= 0 ? 'Model disabled — hidden from the chat picker' : 'Model enabled');
+      return;
+    }
     if ((t = e.target.closest('[data-model]'))) { pickModel(t.getAttribute('data-model'), null); return; }
     if ((t = e.target.closest('[data-mem]'))) { openMemorySheet(t.getAttribute('data-mem')); return; }
     if ((t = e.target.closest('[data-mcp-test]'))) { testMcp(+t.getAttribute('data-mcp-test')); return; }
@@ -1756,7 +1752,7 @@
       return;
     }
     if ((t = e.target.closest('#modePill'))) {
-      var modes = ['Plan', 'Build', 'Edit', 'Yolo', 'Guard'];
+      var modes = ['Plan', 'Build', 'Hybrid', 'Edit', 'Yolo', 'Guard'];
       db.settings.mode = modes[(modes.indexOf(db.settings.mode) + 1) % modes.length];
       Store.save(); applyAppearance(); UI.renderChatHead(Store.active()); UI.renderSettingsSubs(); refreshCtx();
       H.toast('Mode → ' + db.settings.mode);
@@ -1832,6 +1828,7 @@
     if (!s) s = Store.newSession();
     else if (s.messages.length) s = Store.newSession();
     state.curPath = 'workspace';
+    seedBuildSkills(s);
     UI.renderChat(s); UI.renderChatHead(s); refreshCtx(); openChat();
   });
 
@@ -1914,9 +1911,9 @@
       var mounted = mounts.some(function (m) { return m.libId === p.id; });
       var canPreview = Object.keys((Store.lib.get(p.id).files) || {}).some(function (f) { return /\.html?$/i.test(f); });
       return '<div class="librow' + (mounted ? ' mounted' : '') + '">' +
-        '<span class="libinfo"><b>' + H.esc(p.name) + '</b><small>' + p.fileCount + ' files · ' + fmtBytes(p.size) + (mounted ? ' · <span class="lmount">mounted — lib/' + p.name.toLowerCase().replace(/[^\w.-]+/g, '-') + '/</span>' : '') + '</small></span>' +
+        '<span class="libinfo"><b>' + H.esc(p.name) + '</b><small>' + p.fileCount + ' files · ' + fmtBytes(p.size) + (mounted ? ' · <span class="lmount">open in chat — lib/' + p.name.toLowerCase().replace(/[^\w.-]+/g, '-') + '/</span>' : '') + '</small></span>' +
         '<span class="libacts">' +
-        '<button class="chip' + (mounted ? ' on' : '') + '" data-libmount="' + p.id + '">' + (mounted ? 'Unmount' : 'Mount') + '</button>' +
+        '<button class="chip" data-libnew="' + p.id + '"><i data-lucide="plus" style="width:12px;height:12px"></i>Chat</button>' +
         (canPreview ? '<button class="chip" data-libprev="' + p.id + '">Preview</button>' : '') +
         '<button class="chip danger" data-libdel="' + p.id + '" aria-label="Delete project"><i data-lucide="trash-2" style="width:13px;height:13px"></i></button>' +
         '</span></div>';
@@ -2004,26 +2001,8 @@
     importFilesToLibrary(fls);
   });
   $('#libList').addEventListener('click', function (e) {
-    var mk = e.target.closest('[data-libmount]');
-    if (mk) {
-      var idm = mk.getAttribute('data-libmount');
-      var s = Store.active();
-      if (!s) { H.toast('Open a chat first'); return; }
-      s.mounts = s.mounts || [];
-      if (s.mounts.some(function (m) { return m.libId === idm; })) {
-        s.mounts = s.mounts.filter(function (m) { return m.libId !== idm; });
-        H.toast('Unmounted');
-      } else {
-        var pj = Store.lib.get(idm);
-        var basename = pj.name.toLowerCase().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'project';
-        var slug = basename, n2 = 2;
-        while (s.mounts.some(function (m) { return m.slug === slug; })) { slug = basename + '-' + n2; n2++; }
-        s.mounts.push({ libId: idm, slug: slug, name: pj.name, count: pj.fileCount });
-        H.toast('Mounted as lib/' + slug + '/ — the agent now works on its real files');
-      }
-      Store.save(); renderLibrary(); refreshCtx();
-      return;
-    }
+    var nc = e.target.closest('[data-libnew]');
+    if (nc) { App.newProjectChat(nc.getAttribute('data-libnew')); return; }
     var pv = e.target.closest('[data-libprev]');
     if (pv) { previewLib(pv.getAttribute('data-libprev')); return; }
     var del = e.target.closest('[data-libdel]');
@@ -2153,8 +2132,6 @@
   });
 
   // files
-  $('#mountBtn').addEventListener('click', mount);
-  $('#dirRow').addEventListener('click', mount);
   $('#newFileBtn').addEventListener('click', function () {
     if (state.mounted) { H.toast('Mounted folder is read-only here'); return; }
     $('#nfName').value = '';
@@ -2216,7 +2193,7 @@
     H.toast(t.name + ' created — tell the agent to run or extend it');
     UI.renderFiles(s.vfs['workspace'] || [], 'workspace', false);
   }
-  $('#tplBtn').addEventListener('click', openTemplates);
+  var tplBtnEl = $('#tplBtn'); if (tplBtnEl) tplBtnEl.addEventListener('click', openTemplates);
 
   /* ================= deploy (BYOK — token never reaches the model) ================= */
   function dpLog(t) { var el = $('#dpOut'); if (el) el.textContent = String(t).slice(0, 4000); }
@@ -2258,7 +2235,7 @@
     function done() { Store.save(); goPath('workspace/imported'); H.toast(imported + ' file(s) imported'); }
     e.target.value = '';
   });
-  $('#folderBtn').addEventListener('click', function () { $('#folderImport').click(); });
+  var fb = $('#folderBtn'); if (fb) fb.addEventListener('click', function () { $('#folderImport').click(); });
   $('#folderImport').addEventListener('change', function (e) {
     var files = Array.prototype.slice.call(e.target.files || []);
     var pending = files.length, imported = 0;
@@ -2324,7 +2301,6 @@
     Store.save(); UI.renderModels(); UI.renderModelSheet(db.settings.providerId); UI.renderSettingsSubs(); renderFallbackSel(); UI.renderHome();
     H.closeSheets(); H.toast(p.name + ' saved');
   });
-  $('#pvFetch').addEventListener('click', pvFetch);
   $('#pvTest').addEventListener('click', pvTest);
   $('#pvDelete').addEventListener('click', function () {
     if (!state.pvId) return;
@@ -2357,15 +2333,6 @@
   // runtime selects & switches
   $('#swStream').addEventListener('change', function (e) { db.settings.stream = e.target.checked; Store.save(); });
   $('#swThink').addEventListener('change', function (e) { db.settings.think = e.target.checked; Store.save(); refreshCtx(); });
-  $('#selCtxK').addEventListener('change', function (e) {
-    var m = db.settings.model;
-    if (!db.modelCtx) db.modelCtx = {};
-    db.modelCtx[m] = +e.target.value; // per-model context window
-    Store.save();
-    $('#selCtxK').value = String(ctxFor(m));
-    $('#ringTotal').textContent = 'of ' + ctxFor(m) + 'k';
-    refreshCtx();
-  });
   $('#selFallback').addEventListener('change', function (e) { db.settings.fallbackId = e.target.value; Store.save(); });
 
   // general
@@ -2816,7 +2783,7 @@
       if (port) wbShow('http://127.0.0.1:' + port + '/');
     }
   });
-  $('#browserBtn').addEventListener('click', function () { H.push('ov-browser'); wbShow('about:workspace'); });
+  var bb = $('#browserBtn'); if (bb) bb.addEventListener('click', function () { H.push('ov-browser'); wbShow('about:workspace'); });
   $('#webPill').addEventListener('click', function () { H.push('ov-browser'); wbShow('about:workspace'); });
   /* agent control surface for the built-in browser */
   window.REVABrowser = {
@@ -2842,6 +2809,7 @@
        died mid-task — offer the Resume chip */
     var lastBoot = bootSess.messages[bootSess.messages.length - 1];
     if (lastBoot && lastBoot.role === 'user') bootSess.resumeHint = true;
+    seedBuildSkills(bootSess);
     UI.renderChat(bootSess); UI.renderChatHead(bootSess); refreshCtx(); openChat();
   } catch (eBoot) { console.error('boot chat failed:', eBoot && eBoot.message || eBoot); }
   IDE.wire();
@@ -2853,6 +2821,7 @@
   });
   if (Store.lib && Store.lib.ready) Store.lib.ready.then(function () {
     try { renderLibrary(); } catch (e) { }
+    try { UI.renderHome(); } catch (e2) { } // drawer Projects sections need the Library loaded
   });
   H.icons();
   /* model search in the switch-model sheet: filter cards across every

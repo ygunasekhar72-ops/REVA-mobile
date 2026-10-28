@@ -15,53 +15,71 @@
     /* ---------- HOME ---------- */
     renderHome: function () {
       var db = Store.db;
-      var all = db.sessions.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; });
-      /* chat search overrides pagination — it looks through every chat */
-      var q = String(UI.chatFilter || '').toLowerCase();
-      if (q) all = all.filter(function (s) { return (s.title || '').toLowerCase().indexOf(q) >= 0; });
-      /* drawer shows 6 chats, then a light-grey "See more" section */
-      var CHAT_PAGE = 6;
-      var sess = (UI.allChats || q) ? all : all.slice(0, CHAT_PAGE);
       var wrap = $('#sessList');
-      wrap.innerHTML = all.length ? '' :
-        '<p style="text-align:center;color:var(--ink3);font-size:13px;padding:14px 0 6px">No sessions yet — start a new chat</p>';
-      sess.forEach(function (s) {
+      var streamingSid = (window.App && App.streamingSid) ? App.streamingSid() : null;
+      var q = String(UI.chatFilter || '').toLowerCase();
+      var match = function (s) { return !q || (s.title || '').toLowerCase().indexOf(q) >= 0; };
+      function rowHtml(s) {
+        var running = streamingSid && s.id === streamingSid;
         var tok = s.messages.reduce(function (a, m) { return a + H.tok(m.content); }, 0);
         var pct = Math.min(100, Math.round(tok / (db.settings.ctxK * 1000) * 100));
-        var row = H.el('<button class="row sess">' +
-          '<span class="tile"><i data-lucide="message-square"></i></span>' +
-          '<span class="rtxt"><b>' + H.esc(s.title) + '</b><small>' + H.esc(s.model) + ' · ' + H.ago(s.updatedAt) + ' · ' + H.fmtK(tok) + ' tok</small></span>' +
-          '<span class="cbar"><b style="width:' + pct + '%"></b></span></button>');
-        row.addEventListener('click', function () { App.openSession(s.id); });
+        return '<button class="row sess" data-sess="' + s.id + '">' +
+          (running ? '<span class="runspin"></span>' : '<span class="tile"><i data-lucide="message-square"></i></span>') +
+          '<span class="rtxt"><b>' + H.esc(s.title) + '</b><small>' + (running ? '<span class="runnow">running now…</span>' : H.esc(s.model) + ' · ' + H.ago(s.updatedAt) + ' · ' + H.fmtK(tok) + ' tok') + '</small></span>' +
+          '<span class="cbar"><b style="width:' + pct + '%"></b></span></button>';
+      }
+      var html = '';
+      /* PROJECTS — folder-scoped chats (max 5 per folder), one section per Library project */
+      var projects = Store.lib ? Store.lib.list() : [];
+      if (projects.length) {
+        html += '<div class="sec">Projects</div>';
+        projects.forEach(function (p) {
+          var chats = db.sessions.filter(function (s) { return s.libId === p.id && match(s); }).sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+          var total = db.sessions.filter(function (s) { return s.libId === p.id; }).length;
+          html += '<div class="projhead"><i data-lucide="folder"></i><b>' + H.esc(p.name) + '</b><span class="pcount">' + total + '/5</span></div>';
+          chats.slice(0, 5).forEach(function (s) { html += rowHtml(s); });
+          if (!chats.length) html += '<p class="lib-empty" style="padding:2px 8px 8px">No chats yet — start one to build in this folder</p>';
+          if (total < 5) html += '<button class="projnew" data-projnew="' + p.id + '"><i data-lucide="plus"></i>New chat in ' + H.esc(p.name) + '</button>';
+          else html += '<p class="lib-empty" style="padding:0 8px 6px">Folder full — 5 chats max per folder</p>';
+        });
+      }
+      /* GENERAL CHATS — plain conversation, no folder */
+      html += '<div class="sec">General chats</div>';
+      var general = db.sessions.filter(function (s) { return !s.libId && match(s); }).sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+      if (!general.length) html += '<p class="lib-empty" style="padding:0 8px 8px">No chats yet — start a new chat</p>';
+      var gShow = (UI.allChats || q) ? general : general.slice(0, 8);
+      gShow.forEach(function (s) { html += rowHtml(s); });
+      if (general.length > 8 && !q) html += '<button class="dmore">See more chats (' + general.length + ')</button>';
+
+      wrap.innerHTML = html;
+      Array.prototype.forEach.call(wrap.querySelectorAll('.row.sess'), function (row) {
+        var sid = row.getAttribute('data-sess');
+        row.addEventListener('click', function () { App.openSession(sid); });
         H.longPress(row, function () {
-          if (confirm('Delete session "' + s.title + '"?')) {
-            db.sessions = db.sessions.filter(function (x) { return x.id !== s.id; });
-            if (db.activeId === s.id) db.activeId = null;
+          var s = Store.session(sid);
+          if (confirm('Delete chat "' + (s ? s.title : sid) + '"?')) {
+            db.sessions = db.sessions.filter(function (x) { return x.id !== sid; });
+            if (db.activeId === sid) db.activeId = null;
             Store.save(); UI.renderHome();
-            H.toast('Session deleted');
+            H.toast('Chat deleted');
           }
         });
-        wrap.appendChild(row);
+      });
+      var more = wrap.querySelector('.dmore');
+      if (more) more.addEventListener('click', function () { UI.allChats = !UI.allChats; UI.renderHome(); });
+      var pn = wrap.querySelector('[data-projnew]');
+      if (pn) pn.addEventListener('click', function () {
+        var libId = pn.getAttribute('data-projnew');
+        var count = db.sessions.filter(function (s) { return s.libId === libId; }).length;
+        if (count >= 5) { H.toast('Folder full — 5 chats max per folder'); UI.renderHome(); return; }
+        App.newProjectChat(libId);
       });
 
-      if (all.length > CHAT_PAGE && !q) {
-        var more = H.el('<button class="dmore">' + (UI.allChats ? 'Show less' : 'See more chats (' + all.length + ')') + '</button>');
-        more.addEventListener('click', function () { UI.allChats = !UI.allChats; UI.renderHome(); });
-        wrap.appendChild(more);
-      }
-
-      var wk = Date.now() - 7 * 86400e3;
-      var recent = db.sessions.filter(function (s) { return s.updatedAt >= wk; });
-      var toks = db.sessions.reduce(function (a, s) {
-        return a + s.messages.reduce(function (x, m) { return x + H.tok(m.content); }, 0);
-      }, 0);
-      var models = {};
-      db.sessions.forEach(function (s) { models[s.model] = 1; });
       var statsEl = $('#statsRow');
       if (statsEl) statsEl.innerHTML =
-        '<div style="flex:1"><b style="font-size:19px;font-variant-numeric:tabular-nums">' + recent.length + '</b><br><small style="font-size:11.5px;color:var(--ink3)">sessions</small></div>' +
-        '<div style="flex:1"><b style="font-size:19px;font-variant-numeric:tabular-nums">' + H.fmtK(toks) + '</b><br><small style="font-size:11.5px;color:var(--ink3)">tokens</small></div>' +
-        '<div style="flex:1"><b style="font-size:19px;font-variant-numeric:tabular-nums">' + Object.keys(models).length + '</b><br><small style="font-size:11.5px;color:var(--ink3)">models used</small></div>';
+        '<div style="flex:1"><b style="font-size:19px;font-variant-numeric:tabular-nums">' + general.length + '</b><br><small style="font-size:11.5px;color:var(--ink3)">general chats</small></div>' +
+        '<div style="flex:1"><b style="font-size:19px;font-variant-numeric:tabular-nums">' + (Store.lib ? Store.lib.list().length : 0) + '</b><br><small style="font-size:11.5px;color:var(--ink3)">projects</small></div>' +
+        '<div style="flex:1"><b style="font-size:19px;font-variant-numeric:tabular-nums">' + db.sessions.length + '</b><br><small style="font-size:11.5px;color:var(--ink3)">total chats</small></div>';
 
       var realKeyed = db.providers.some(function (p) { return p.key && p.type !== 'echo'; });
       $('#setupBanner').style.display = (realKeyed || db.settings.dismissedSetup) ? 'none' : 'flex';
@@ -151,9 +169,11 @@
       $('#modelCards').innerHTML = prov.models.length ? prov.models.map(function (m) {
         var st = (prov.modelStatus || {})[m];
         var badge = st === 'ok' ? '<span>✓ verified</span>' : (st === 'unknown' ? '<span>unverified</span>' : '');
-        return '<button class="mcard' + (m === db.settings.model ? ' sel' : '') + '" data-model="' + H.esc(m) + '">' +
-          '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b><small>' + H.esc(prov.name) + '</small></span></span>' +
-          '<span class="mmeta"><span>' + db.settings.ctxK + 'k ctx</span>' + badge + '</span></button>';
+        var off = (db.settings.disabledModels || []).indexOf(m) >= 0;
+        return '<button class="mcard' + (m === db.settings.model ? ' sel' : '') + (off ? ' moff' : '') + '" data-model="' + H.esc(m) + '">' +
+          '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b><small>' + H.esc(prov.name) + (off ? ' · disabled' : '') + '</small></span></span>' +
+          '<span class="mmeta"><span>' + (window.App && App.ctxFor ? App.ctxFor(m) : db.settings.ctxK) + 'k ctx</span>' + (window.App && App.modelVision && App.modelVision(m) ? '<span>Vision</span>' : '') + badge + '</span>' +
+          '<i data-lucide="' + (off ? 'eye-off' : 'eye') + '" class="chev" style="width:16px;height:16px;cursor:pointer" data-mtoggle="' + H.esc(m) + '" data-mprov="' + p.id + '" aria-label="Enable or disable"></i></button>';
       }).join('') :
       '<div class="lockban"><i data-lucide="info"></i><span>No models yet — open the provider and press "Fetch models", or add one manually below.</span></div>';
 
@@ -169,16 +189,12 @@
       });
       var host = $(hostSel || '#modelSheetList');
       if (!host) return;
-      var BI = window.REVA_BUILTIN_MODELS || [];
-      var html = '<div class="sec">Built-in models</div>';
-      html += BI.map(function (m) {
-        return '<button class="mcard' + (m.id === db.settings.model ? ' sel' : '') + '" data-builtin="' + BI.indexOf(m) + '">' +
-          '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m.name) + '</b><small>' + H.esc(m.desc) + '</small></span></span></button>';
-      }).join('');
+      var html = '';
+      var disabled = db.settings.disabledModels || [];
       connected.forEach(function (p) {
         if (!p.models.length) return;
         html += '<div class="sec">' + H.esc(p.name) + '</div>';
-        html += p.models.map(function (m) {
+        html += p.models.filter(function (m) { return disabled.indexOf(m) < 0; }).map(function (m) {
           return '<button class="mcard' + (m === db.settings.model && p.id === db.settings.providerId ? ' sel' : '') + '" data-sheet-model="' + H.esc(m) + '" data-from-prov="' + p.id + '">' +
             '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b><small>' + H.esc(p.name) + '</small></span></span></button>';
         }).join('');
@@ -269,7 +285,10 @@
         UI.renderTodoCard(sess); H.icons(); return;
       }
       empty.style.display = 'none';
-      sess.messages.forEach(function (m, mi) { flow.appendChild(UI.msgEl(m, mi)); });
+      sess.messages.forEach(function (m, mi) {
+        if (m.hidden && m.role === 'user') return; // internal continuation — never shown
+        flow.appendChild(UI.msgEl(m, mi));
+      });
       if (live) flow.appendChild(live); // re-attach the in-flight stream after navigating back
       /* resume chip: the run stopped/errored with unfinished work — one tap
          continues exactly where it left off */

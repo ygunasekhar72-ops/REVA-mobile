@@ -130,8 +130,18 @@
     var m = p.match(/^lib\/([^/]+)(?:\/(.*))?$/);
     if (!m) return null;
     var sess = Store.active();
-    var mount = ((sess && sess.mounts) || []).filter(function (x) { return x.slug === m[1]; })[0];
-    if (!mount) return { missing: 'no mounted library "lib/' + m[1] + '/" — the user can mount it from Files → Project Library' };
+    var mounts = ((sess && sess.mounts) || []).slice();
+    /* folder chats: the chat's own Library project is implicitly mounted */
+    if (sess && sess.libId) {
+      var own = Store.lib.get(sess.libId);
+      if (own) {
+        var oslug = String(own.name).toLowerCase().split('\\').join('-').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '');
+        mounts = mounts.filter(function (x) { return x.slug !== oslug; });
+        mounts.unshift({ libId: sess.libId, slug: oslug, name: own.name, implicit: true });
+      }
+    }
+    var mount = mounts.filter(function (x) { return x.slug === m[1]; })[0];
+    if (!mount) return { missing: 'no mounted library "lib/' + m[1] + '/" — open this chat from its project folder, or mount one from Files → Project Library' };
     var project = Store.lib.get(mount.libId);
     if (!project) return { missing: 'the mounted library "' + mount.name + '" no longer exists' };
     return { mount: mount, project: project, rel: m[2] || '', full: p };
@@ -198,6 +208,109 @@
     else if (imports.length) imports.reverse().forEach(function (im) { out.unshift(im); });
     if (!out.length) return 'No symbols found in ' + path + ' (' + lines.length + ' lines, .' + ext + ')';
     return path + ' — ' + out.length + ' symbols\n' + out.slice(0, 150).join('\n');
+  }
+
+  /* ============================================================
+     TOOLS V2 — perception & safety: run_check (build → run → read the
+     console → see the screenshot stats), screenshot, fetch_asset,
+     checkpoint/rollback. These give the agent a self-verification loop:
+     it can SEE what it built and fix it without the user pasting errors.
+     ============================================================ */
+  function buildRunnableHtml(files, entry, hookConsole) {
+    var html = String(files[entry] == null ? '' : files[entry]);
+    var dir = entry.indexOf('/') >= 0 ? entry.slice(0, entry.lastIndexOf('/') + 1) : '';
+    var payload = JSON.stringify({ files: files, dir: dir }).split('</scr' + 'ipt').join('<\\/scr' + 'ipt');
+    var hook = hookConsole ? '<scr' + 'ipt>(function(){var logs=[];["log","warn","error","info"].forEach(function(m){var o=console[m]?console[m].bind(console):function(){};console[m]=function(){try{var a=[].slice.call(arguments).map(function(x){return typeof x==="object"?JSON.stringify(x).slice(0,200):String(x)}).join(" ");logs.push({lvl:m,t:a.slice(0,300)})}catch(e){}o.apply(null,arguments)}});window.addEventListener("error",function(e){logs.push({lvl:"error",t:"Uncaught: "+(e.message||"error")+(e.lineno?" @line "+e.lineno:"")})});window.addEventListener("unhandledrejection",function(e){logs.push({lvl:"error",t:"Unhandled rejection: "+String(e.reason).slice(0,200)})});window.__revaLogs=logs;window.__revaCapture=function(){var out=[];Array.prototype.slice.call(document.querySelectorAll("canvas")).forEach(function(c,i){try{out.push({i:i,w:c.width,h:c.height,url:c.toDataURL("image/png")})}catch(e){out.push({i:i,err:String(e.message||e)})}});return out};})();</scr' + 'ipt>' : '';
+    var resolver = '<scr' + 'ipt>(function(){var F=' + payload + ';' +
+      'function key(u){return (F.dir+String(u||"").split("?")[0].split("#")[0]);}' +
+      'document.addEventListener("DOMContentLoaded",function(){' +
+      'Array.prototype.slice.call(document.querySelectorAll("link[href]")).forEach(function(l){var k=key(l.getAttribute("href"));if(F.files[k]===undefined)return;var st=document.createElement("style");st.textContent=F.files[k];l.parentNode.replaceChild(st,l);});' +
+      'Array.prototype.slice.call(document.querySelectorAll("script[src]")).forEach(function(sc){var k=key(sc.getAttribute("src"));if(F.files[k]===undefined)return;var ns=document.createElement("script");ns.textContent=F.files[k];sc.parentNode.replaceChild(ns,sc);});' +
+      'Array.prototype.slice.call(document.querySelectorAll("img[src]")).forEach(function(im){var k=key(im.getAttribute("src"));if(F.files[k]!==undefined)im.setAttribute("src",F.files[k]);});' +
+      '});})();</scr' + 'ipt>';
+    var head = hook + resolver;
+    if (html.indexOf('<head>') >= 0) html = html.split('<head>').join('<head>' + head);
+    else html = head + html;
+    return html;
+  }
+
+  function pixelStats(dataUrl) {
+    return new Promise(function (res) {
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var c = document.createElement('canvas');
+          c.width = 96; c.height = 64;
+          var cx = c.getContext('2d');
+          cx.drawImage(img, 0, 0, 96, 64);
+          var d = cx.getImageData(0, 0, 96, 64).data;
+          var blank = 0, total = d.length / 4, colors = {};
+          for (var i = 0; i < d.length; i += 4) {
+            var r = d[i], g = d[i + 1], b = d[i + 2];
+            if ((r > 244 && g > 244 && b > 244) || (r < 12 && g < 12 && b < 12)) blank++;
+            var key = (r >> 5) + ',' + (g >> 5) + ',' + (b >> 5);
+            colors[key] = (colors[key] || 0) + 1;
+          }
+          var top = Object.keys(colors).sort(function (a, b) { return colors[b] - colors[a]; }).slice(0, 3)
+            .map(function (k) { var v = k.split(','); return 'rgb(' + (v[0] * 32) + ',' + (v[1] * 32) + ',' + (v[2] * 32) + ') ' + Math.round(colors[k] / total * 100) + '%'; });
+          res({ w: img.naturalWidth, h: img.naturalHeight, nonBlankPct: Math.round((total - blank) / total * 100), topColors: top });
+        } catch (e) { res({ err: e.message }); }
+      };
+      img.onerror = function () { res({ err: 'image load failed' }); };
+      img.src = dataUrl;
+    });
+  }
+
+  function resolveFilesFor(a) {
+    var L = libCtx(a.path);
+    if (L) {
+      if (L.missing) return { err: 'Error: ' + L.missing };
+      var entryL = L.rel || Object.keys(L.project.files || {}).filter(function (f) { return /(^|\/)index\.html?$/i.test(f); })[0] || Object.keys(L.project.files || {}).filter(function (f) { return /\.html?$/i.test(f); })[0];
+      if (!entryL || L.project.files[entryL] === undefined) return { err: 'Error: no HTML entry in "' + L.project.name + '" — write an index.html first' };
+      return { files: L.project.files, entry: entryL, label: 'lib/' + L.mount.slug + '/' + entryL, project: L.project };
+    }
+    var s = WS();
+    var p = normPath(a.path || 'workspace/index.html');
+    if (s.vfsContent[p] === undefined || !/\.html?$/i.test(p)) {
+      var cand = Object.keys(s.vfsContent).filter(function (k) { return k.indexOf(p) === 0 && /\.html?$/i.test(k); }).sort()[0];
+      if (!cand) return { err: 'Error: no HTML entry at ' + p + ' — write an index.html first' };
+      p = cand;
+    }
+    return { files: s.vfsContent, entry: p, label: p };
+  }
+
+  function hiddenRun(html, seconds) {
+    return new Promise(function (res) {
+      var frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups');
+      frame.style.cssText = 'position:fixed;left:-9999px;top:0;width:1024px;height:700px;';
+      frame.setAttribute('srcdoc', html);
+      document.body.appendChild(frame);
+      setTimeout(function () {
+        var logs = [], caps = [];
+        try {
+          var w = frame.contentWindow;
+          if (w && w.__revaLogs) logs = w.__revaLogs;
+          if (w && w.__revaCapture) caps = w.__revaCapture();
+        } catch (e) { caps = [{ err: e.message }]; }
+        frame.remove();
+        res({ logs: logs, caps: caps });
+      }, Math.max(1, seconds) * 1000);
+    });
+  }
+
+  function rebuildTables(s) {
+    s.vfs = { workspace: [] };
+    Object.keys(s.vfsContent).forEach(function (k) {
+      var v = s.vfsContent[k];
+      if (!v) return;
+      var isImg = /^data:image\//.test(v);
+      ensureDirs(parentOf(k) || 'workspace');
+      var dir = parentOf(k) || 'workspace';
+      var list = s.vfs[dir] || (s.vfs[dir] = []);
+      var name = baseOf(k);
+      if (!list.some(function (e) { return e.n === name; })) list.push({ n: name, t: isImg ? 'img' : (/\.(md|txt)$/.test(name) ? 'doc' : 'code'), s: fmtSize(v.length) });
+    });
   }
 
   var IMPL = {
@@ -485,6 +598,122 @@
       if (content.indexOf('data:') === 0) return 'Error: binary file';
       return symbolReport(content, path);
     },
+    /* ---------- Tools v2: perception & safety ---------- */
+    run_check: async function (a) {
+      var rf = resolveFilesFor(a);
+      if (rf.err) return rf.err;
+      var secs = Math.min(10, Math.max(1, parseInt(a.seconds, 10) || 3));
+      var run = await hiddenRun(buildRunnableHtml(rf.files, rf.entry, true), secs);
+      var errors = run.logs.filter(function (l) { return l.lvl === 'error'; });
+      var warns = run.logs.filter(function (l) { return l.lvl === 'warn'; });
+      var shots = [];
+      for (var i = 0; i < run.caps.length && i < 3; i++) {
+        if (run.caps[i].url && !run.caps[i].err) shots.push(await pixelStats(run.caps[i].url));
+        else if (run.caps[i].err) shots.push({ err: run.caps[i].err });
+      }
+      var saved = '';
+      var best = run.caps.filter(function (c) { return c.url && !c.err; })[0];
+      if (best) {
+        var s2 = WS();
+        var pngPath = 'workspace/screenshots/' + Date.now() + '.png';
+        s2.vfsContent[pngPath] = best.url;
+        ensureDirs('workspace/screenshots');
+        var list = s2.vfs['workspace/screenshots'] || (s2.vfs['workspace/screenshots'] = []);
+        var nm = baseOf(pngPath);
+        if (!list.some(function (e) { return e.n === nm; })) list.push({ n: nm, t: 'img', s: fmtSize(best.url.length) });
+        Store.save();
+        saved = ' Screenshot saved to ' + pngPath + ' (view it in Files).';
+      }
+      var out = 'RUN CHECK — ' + rf.label + '\n' +
+        'Console: ' + (run.logs.length ? run.logs.length + ' entries' : 'clean (no output)') +
+        (errors.length ? ' — ' + errors.length + ' ERROR(S):' : '') + '\n' +
+        errors.slice(0, 6).map(function (l) { return '  [error] ' + l.t; }).join('\n') +
+        (warns.length ? '\n  warnings: ' + warns.slice(0, 3).map(function (l) { return l.t; }).join(' | ') : '') + '\n' +
+        'Visual: ' + (shots.length ? shots.map(function (s3, i2) {
+          return s3.err ? 'canvas ' + i2 + ': capture failed (' + s3.err + ')' :
+            'canvas ' + i2 + ' ' + s3.w + 'x' + s3.h + ' — non-blank ' + s3.nonBlankPct + '%, top colors: ' + s3.topColors.join(', ');
+        }).join('; ') : 'no canvas found (static page or nothing rendered)') +
+        '\n' + (errors.length ? 'FIX the errors above, then run_check again — report done only when the console is clean.' : 'Console is clean. Check the screenshot stats match what the user asked for.') + saved;
+      return out;
+    },
+    screenshot: async function (a) {
+      /* capture the live built-in browser if it has canvases; otherwise render args.path hidden */
+      var f = document.getElementById('wbFrame');
+      var caps = [];
+      try {
+        if (f && f.contentWindow && f.contentWindow.__revaCapture) caps = f.contentWindow.__revaCapture();
+      } catch (e) { }
+      if (!caps.length && a && a.path) {
+        var rf = resolveFilesFor(a);
+        if (rf.err) return rf.err;
+        var run = await hiddenRun(buildRunnableHtml(rf.files, rf.entry, true), 2);
+        caps = run.caps;
+      }
+      if (!caps.length) return 'Error: nothing to capture — open a preview in the built-in browser, or pass path (an html file in the workspace or a mounted library)';
+      var stats = [];
+      var saved = '';
+      var best = caps.filter(function (c) { return c.url && !c.err; })[0];
+      for (var i = 0; i < caps.length && i < 3; i++) {
+        if (caps[i].url && !caps[i].err) stats.push(await pixelStats(caps[i].url));
+        else if (caps[i].err) stats.push({ err: caps[i].err });
+      }
+      if (best) {
+        var s2 = WS();
+        var pngPath = 'workspace/screenshots/' + Date.now() + '.png';
+        s2.vfsContent[pngPath] = best.url;
+        ensureDirs('workspace/screenshots');
+        var list = s2.vfs['workspace/screenshots'] || (s2.vfs['workspace/screenshots'] = []);
+        var nm = baseOf(pngPath);
+        if (!list.some(function (e) { return e.n === nm; })) list.push({ n: nm, t: 'img', s: fmtSize(best.url.length) });
+        Store.save();
+        saved = ' Saved to ' + pngPath + '.';
+      }
+      return 'SCREENSHOT — ' + (stats.length ? stats.map(function (s3, i2) {
+        return s3.err ? 'canvas ' + i2 + ': failed (' + s3.err + ')' : 'canvas ' + i2 + ' ' + s3.w + 'x' + s3.h + ', non-blank ' + s3.nonBlankPct + '%, colors: ' + s3.topColors.join(', ');
+      }).join('; ') : 'canvas present but returned no pixels') + '.' + saved;
+    },
+    fetch_asset: async function (a) {
+      var url = String(a.url || '').trim();
+      var path = String(a.path || '').trim();
+      if (!/^https?:\/\//i.test(url)) return 'Error: provide a full http(s) URL';
+      if (window.WebSearch && WebSearch.isPrivateTarget(url)) return 'Error: private/loopback addresses are not reachable through fetch_asset';
+      if (!path) return 'Error: path required (where to save it, e.g. assets/models/ship.glb)';
+      try {
+        var resp = await fetch(url);
+        if (!resp.ok) return 'Error: HTTP ' + resp.status + ' for ' + url;
+        var buf = await resp.arrayBuffer();
+        if (buf.byteLength > 8 * 1024 * 1024) return 'Error: asset too large (' + Math.round(buf.byteLength / 1048576) + ' MB) — cap is 8 MB';
+        var bytes = new Uint8Array(buf);
+        var b64 = ''; var CH = 32768;
+        for (var i = 0; i < bytes.length; i += CH) b64 += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+        var mime = resp.headers.get('content-type') || 'application/octet-stream';
+        var dataUrl = 'data:' + mime + ';base64,' + btoa(b64);
+        var res = IMPL.write_file({ path: path, content: dataUrl });
+        return 'Fetched ' + url + ' → ' + normPath(path) + ' (' + fmtSize(bytes.length) + ', ' + mime + '). ' + res;
+      } catch (e) {
+        return 'Error: fetch failed (' + String(e.message || e).slice(0, 80) + '). Some CDNs block cross-origin reads — try a CORS-enabled source (github raw, jsdelivr, unpkg).';
+      }
+    },
+    checkpoint: async function (a) {
+      var s = WS();
+      var count = Object.keys(s.vfsContent || {}).length;
+      if (!count) return 'Error: the workspace is empty — nothing to checkpoint';
+      var rec = Store.checkpoints.save(s.id, String(a.label || '').trim() || ('checkpoint ' + new Date().toLocaleTimeString()), s.vfsContent);
+      return 'Checkpoint "' + rec.label + '" saved (' + rec.fileCount + ' files). Experiment freely — roll back with rollback{label:"' + rec.label + '"}';
+    },
+    rollback: async function (a) {
+      var s = WS();
+      var rows = await Store.checkpoints.list(s.id);
+      if (!rows.length) return 'Error: no checkpoints saved for this chat yet — save one with checkpoint{label:"..."} first';
+      var pick = null;
+      if (a.label) pick = rows.filter(function (r) { return r.label === String(a.label); })[0] || rows.filter(function (r) { return r.label.indexOf(String(a.label)) >= 0; })[0];
+      if (!pick && !a.label) pick = rows[0];
+      if (!pick) return 'Error: no checkpoint matching "' + a.label + '" — saved checkpoints: ' + rows.map(function (r) { return '"' + r.label + '"'; }).join(', ');
+      s.vfsContent = pick.files;
+      rebuildTables(s);
+      Store.save();
+      return 'Rolled back to "' + pick.label + '" (' + pick.fileCount + ' files, saved ' + new Date(pick.ts).toLocaleString() + '). The workspace is exactly as it was at that checkpoint.';
+    },
     load_skill: function (a) {
       var nm = String(a.name || '').trim();
       var slug = skillSlug(nm);
@@ -607,6 +836,11 @@
     if (name === 'browser_open') return { label: 'Browser · ' + String((args.url || '').replace(/^https?:\/\//, '')).slice(0, 40), meta: '', ok: ok, target: String(args.url || '') };
     if (name === 'browser_read') return { label: 'Read · ' + String((args.url || '').replace(/^https?:\/\//, '')).slice(0, 40), meta: '', ok: ok, target: String(args.url || '') };
     if (name === 'image_gen') return { label: 'Imagining ' + String(args.prompt || '').slice(0, 36), meta: 'FLUX', ok: ok, target: args.path || 'images/' };
+    if (name === 'run_check') return { label: 'Verify · ' + String(args.path || '').split('/').pop(), meta: 'console + visual', ok: ok };
+    if (name === 'screenshot') return { label: 'Screenshot', meta: 'visual check', ok: ok };
+    if (name === 'fetch_asset') return { label: 'Asset · ' + String(args.path || '').split('/').pop(), meta: 'download', ok: ok };
+    if (name === 'checkpoint') return { label: 'Checkpoint · ' + String(args.label || '').slice(0, 26), meta: 'saved', ok: ok };
+    if (name === 'rollback') return { label: 'Rollback · ' + String(args.label || '').slice(0, 26), meta: 'restored', ok: ok };
     if (name === 'shell_exec') return { label: '❯ ' + String(args.command || '').slice(0, 46), meta: '', ok: ok, cmd: args.command, out: s };
     return { label: name, meta: '', ok: ok };
   }
@@ -634,7 +868,11 @@
     { type: 'function', function: { name: 'shell_exec', description: 'Run a REAL shell command on the device (Android app builds). Returns combined stdout+stderr and the true exit code; the working directory persists across calls within the session. Use it to build, test, inspect processes, and verify work. A nonzero exit means failure — read the output and react. Long output is truncated to 64KB.', parameters: { type: 'object', properties: { command: { type: 'string' }, cwd: { type: 'string', description: 'working directory for this command (absolute or relative to the session cwd)' }, timeout_seconds: { type: 'number', description: 'default 120' } }, required: ['command'] } } },
     { type: 'function', function: { name: 'browser_open', description: 'Open a URL in the built-in browser overlay (user-visible). Returns immediately after navigation starts; pair with browser_read for the page text.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     { type: 'function', function: { name: 'browser_read', description: 'Read a web page as clean markdown AND open it in the built-in browser so the user can see it. Best way to show a page to the user while studying it.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
-    { type: 'function', function: { name: 'image_gen', description: 'Generate an image from a text prompt (FLUX via NVIDIA, hosted). The PNG is saved into the workspace (default images/<ts>.png) and shows up in Files and chat. Use when the user asks for a picture, illustration, logo or visual.', parameters: { type: 'object', properties: { prompt: { type: 'string' }, path: { type: 'string', description: 'optional workspace path, e.g. images/logo.png' } }, required: ['prompt'] } } }
+    { type: 'function', function: { name: 'run_check', description: 'Build-quality verification: renders an HTML entry (workspace or lib/ path) in a hidden frame, captures its console errors/warnings and a screenshot analysis (canvas size, non-blank %, dominant colors), and saves the screenshot into workspace/screenshots/. ALWAYS run this after building or changing anything visual/interactive; fix every error and run again until the console is clean before reporting done.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'HTML entry: workspace path or lib/<slug>/index.html' }, seconds: { type: 'number', description: 'seconds to let it run before capture (default 3)' } }, required: ['path'] } } },
+    { type: 'function', function: { name: 'screenshot', description: 'Capture what the built-in browser is currently showing (or render a given HTML path) — returns canvas size, non-blank % and dominant colors, and saves a PNG to workspace/screenshots/. Use to SEE the current state of a visual build.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'optional HTML path to render and capture (defaults to the current browser page)' } } } } },
+    { type: 'function', function: { name: 'fetch_asset', description: 'Download a real asset (3D model .glb/.gltf, texture, image, audio) from a public CORS-enabled URL into the workspace — real assets beat geometric primitives. Cap 8 MB. Use for games/3D: fetch models and textures from github raw / jsdelivr / unpkg.', parameters: { type: 'object', properties: { url: { type: 'string' }, path: { type: 'string', description: 'workspace path to save to, e.g. assets/models/ship.glb' } }, required: ['url', 'path'] } } },
+    { type: 'function', function: { name: 'checkpoint', description: 'Snapshot the whole workspace before a risky experiment or a big refactor. Roll back with rollback{label} if it goes wrong.', parameters: { type: 'object', properties: { label: { type: 'string', description: 'short name, e.g. "before physics refactor"' } }, required: ['label'] } } },
+    { type: 'function', function: { name: 'rollback', description: 'Restore the workspace to a saved checkpoint (latest one, or by label). Use when an experiment made things worse.', parameters: { type: 'object', properties: { label: { type: 'string' } } } } },
   ];
 
   /* ---------- harness console (user terminal + run_command) ---------- */
