@@ -489,6 +489,7 @@
     scroller.scrollTop = scroller.scrollHeight;
     var bubble = null, thinkEl = null, contentEl = null, acc = '', accRe = '';
     state.streaming = true; state.streamingSid = s.id; setSendStop(true);
+    UI.renderHome(); // the drawer row flips to the live spinner immediately
     s.resumeHint = false; // a new run supersedes any stale resume offer
     state.ctrl = new AbortController();
     var toolsOn = db.settings.tools !== false;
