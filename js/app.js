@@ -515,6 +515,8 @@
       if (!thoughtRow) return;
       var secs = Math.max(1, Math.round((Date.now() - thoughtStart) / 1000));
       thoughtRow.classList.remove('live');
+      var lbl = thoughtRow.querySelector('b');
+      if (lbl) lbl.textContent = 'Thought'; // "Thinking" (+pulse) only while it IS thinking
       var rp = thoughtRow.querySelector('.rprev');
       if (rp) rp.remove();
       var sp = thoughtRow.querySelector('.sep');
@@ -1528,6 +1530,7 @@
     db.settings.model = m.id;
     Store.save();
     UI.renderModels(); UI.renderModelSheet(db.settings.providerId); UI.renderSettingsSubs(); renderBuiltinModels(); refreshCtx();
+    if (Store.active()) UI.renderChatHead(Store.active()); // the composer pill must reflect the pick NOW
     H.closeSheets();
     H.toast(m.name + ' selected');
   });
