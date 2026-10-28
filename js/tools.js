@@ -216,11 +216,20 @@
      checkpoint/rollback. These give the agent a self-verification loop:
      it can SEE what it built and fix it without the user pasting errors.
      ============================================================ */
-  function buildRunnableHtml(files, entry, hookConsole) {
+  function mulberry32Tools(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function buildRunnableHtml(files, entry, hookConsole, hookAuto) {
     var html = String(files[entry] == null ? '' : files[entry]);
     var dir = entry.indexOf('/') >= 0 ? entry.slice(0, entry.lastIndexOf('/') + 1) : '';
     var payload = JSON.stringify({ files: files, dir: dir }).split('</scr' + 'ipt').join('<\\/scr' + 'ipt');
     var hook = hookConsole ? '<scr' + 'ipt>(function(){var logs=[];["log","warn","error","info"].forEach(function(m){var o=console[m]?console[m].bind(console):function(){};console[m]=function(){try{var a=[].slice.call(arguments).map(function(x){return typeof x==="object"?JSON.stringify(x).slice(0,200):String(x)}).join(" ");logs.push({lvl:m,t:a.slice(0,300)})}catch(e){}o.apply(null,arguments)}});window.addEventListener("error",function(e){logs.push({lvl:"error",t:"Uncaught: "+(e.message||"error")+(e.lineno?" @line "+e.lineno:"")})});window.addEventListener("unhandledrejection",function(e){logs.push({lvl:"error",t:"Unhandled rejection: "+String(e.reason).slice(0,200)})});window.__revaLogs=logs;window.__revaCapture=function(){var out=[];Array.prototype.slice.call(document.querySelectorAll("canvas")).forEach(function(c,i){try{out.push({i:i,w:c.width,h:c.height,url:c.toDataURL("image/png")})}catch(e){out.push({i:i,err:String(e.message||e)})}});return out};})();</scr' + 'ipt>' : '';
+    hook += hookAuto ? '<scr' + 'ipt>window.addEventListener("message",function(e){var d=e.data;if(!d||!d.__revaAuto)return;var r={id:d.id};try{var el=d.sel?document.querySelector(d.sel):null;if(d.cmd==="click"){if(!el)throw new Error("no element: "+d.sel);try{el.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))}catch(pe){}try{el.dispatchEvent(new PointerEvent("pointerup",{bubbles:true}))}catch(pe2){}el.click();r.ok=true}else if(d.cmd==="fill"){if(!el)throw new Error("no element: "+d.sel);el.focus();el.value=d.value;el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));r.ok=true}else if(d.cmd==="read"){r.value=el?(el.value!==undefined&&el.value!==""?el.value:el.textContent):null;r.ok=true}else if(d.cmd==="exists"){r.ok=!!el}else{r.err="unknown cmd: "+d.cmd}}catch(err){r.err=String(err&&err.message||err)}try{e.source.postMessage({__revaAutoResult:r},"*")}catch(e2){}});</scr' + 'ipt>' : '';
     var resolver = '<scr' + 'ipt>(function(){var F=' + payload + ';' +
       'function key(u){return (F.dir+String(u||"").split("?")[0].split("#")[0]);}' +
       'document.addEventListener("DOMContentLoaded",function(){' +
@@ -299,6 +308,67 @@
     });
   }
 
+  function hiddenRunWithActions(html, actions, seconds) {
+    return new Promise(function (res) {
+      var frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups');
+      frame.style.cssText = 'position:fixed;left:-9999px;top:0;width:1024px;height:700px;';
+      frame.setAttribute('srcdoc', html);
+      document.body.appendChild(frame);
+      var logs = [], results = [];
+      var onMsg = function (e) {
+        var d = e.data;
+        if (d && d.__revaLogs) logs = d.__revaLogs;
+        if (d && d.__revaAutoResult) results.push(d.__revaAutoResult);
+      };
+      window.addEventListener('message', onMsg);
+      function finish() {
+        var caps = [];
+        try {
+          var w = frame.contentWindow;
+          if (w && w.__revaCapture) caps = w.__revaCapture();
+          if (w && w.__revaLogs) logs = w.__revaLogs;
+        } catch (e) { caps = [{ err: e.message }]; }
+        window.removeEventListener('message', onMsg);
+        frame.remove();
+        res({ logs: logs, results: results, caps: caps });
+      }
+      var step = function (i) {
+        if (i >= actions.length) { setTimeout(finish, 500); return; }
+        var cmd = actions[i];
+        cmd.id = 'act' + i; cmd.__revaAuto = 1;
+        var to = setTimeout(function () { step(i + 1); }, 2500);
+        var onRes = function (e) {
+          var d = e.data;
+          if (d && d.__revaAutoResult && d.__revaAutoResult.id === cmd.id) {
+            window.removeEventListener('message', onRes);
+            clearTimeout(to);
+            setTimeout(function () { step(i + 1); }, 300);
+          }
+        };
+        window.addEventListener('message', onRes);
+        try { frame.contentWindow.postMessage(cmd, '*'); } catch (e) { clearTimeout(to); step(i + 1); }
+      };
+      setTimeout(function () { step(0); }, 400);
+      setTimeout(function () { finish(); }, Math.max(4, seconds) * 1000);
+    });
+  }
+  /* 16-bit PCM WAV encoder: Float32 samples -> data:audio/wav URL */
+  function wavDataUrl(samples, sampleRate) {
+    var n = samples.length;
+    var buf = new ArrayBuffer(44 + n * 2);
+    var v = new DataView(buf);
+    function str(off, txt) { for (var i = 0; i < txt.length; i++) v.setUint8(off + i, txt.charCodeAt(i)); }
+    str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
+    str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, 'data'); v.setUint32(40, n * 2, true);
+    for (var i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32767))), true);
+    var bytes = new Uint8Array(buf);
+    var bin = '';
+    for (var j = 0; j < bytes.length; j += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(j, j + 8192));
+    return 'data:audio/wav;base64,' + btoa(bin);
+  }
   function rebuildTables(s) {
     s.vfs = { workspace: [] };
     Object.keys(s.vfsContent).forEach(function (k) {
@@ -714,6 +784,219 @@
       Store.save();
       return 'Rolled back to "' + pick.label + '" (' + pick.fileCount + ' files, saved ' + new Date(pick.ts).toLocaleString() + '). The workspace is exactly as it was at that checkpoint.';
     },
+    /* ---------- Tools v2.5: functional verification + real assets ---------- */
+    interact: async function (a) {
+      var rf = resolveFilesFor(a);
+      if (rf.err) return rf.err;
+      var actions = Array.isArray(a.actions) ? a.actions.slice(0, 24) : [];
+      if (!actions.length) return 'Error: actions required — an array like [{"sel":"#btn","cmd":"click"},{"sel":"#amount","cmd":"fill","value":"100"},{"sel":"#total","cmd":"read"}]. Commands: click, fill (value), read (returns text/value), exists.';
+      var secs = Math.min(15, Math.max(2, parseInt(a.seconds, 10) || 4));
+      var html = buildRunnableHtml(rf.files, rf.entry, true, true);
+      var run = await hiddenRunWithActions(html, actions, secs + 2);
+      var errors = run.logs.filter(function (l) { return l.lvl === 'error'; });
+      var steps = run.results.map(function (r, i) {
+        var a2 = actions[i] || {};
+        var what = a2.cmd + ' ' + (a2.sel || '');
+        if (r.err) return '  step ' + (i + 1) + ' FAILED — ' + what + ': ' + r.err;
+        if (a2.cmd === 'read') return '  step ' + (i + 1) + ' — read ' + (a2.sel || '') + ' → ' + String(r.value === undefined ? '(none)' : r.value).slice(0, 120);
+        return '  step ' + (i + 1) + ' — ' + a2.cmd + ' ok';
+      });
+      var shots = [];
+      for (var i2 = 0; i2 < run.caps.length && i2 < 2; i2++) {
+        if (run.caps[i2].url && !run.caps[i2].err) shots.push(await pixelStats(run.caps[i2].url));
+      }
+      var saved = '';
+      var best = run.caps.filter(function (c) { return c.url && !c.err; })[0];
+      if (best) {
+        var s2 = WS();
+        var pngPath = 'workspace/screenshots/' + Date.now() + '.png';
+        s2.vfsContent[pngPath] = best.url;
+        ensureDirs('workspace/screenshots');
+        var list = s2.vfs['workspace/screenshots'] || (s2.vfs['workspace/screenshots'] = []);
+        var nm = baseOf(pngPath);
+        if (!list.some(function (e) { return e.n === nm; })) list.push({ n: nm, t: 'img', s: fmtSize(best.url.length) });
+        Store.save();
+        saved = ' Screenshot after the actions saved to ' + pngPath + '.';
+      }
+      var failCount = run.results.filter(function (r) { return r.err; }).length;
+      var out = 'INTERACT — ' + rf.label + ' (' + actions.length + ' actions)\n' + steps.join('\n') + '\n' +
+        'Console during session: ' + (run.logs.length ? run.logs.length + ' entries' + (errors.length ? ' — ' + errors.length + ' ERROR(S): ' + errors.slice(0, 4).map(function (l) { return l.t; }).join(' | ') : '') : 'clean') + '\n' +
+        (shots.length ? 'Visual after actions: ' + shots.map(function (s3) { return s3.err ? 'capture failed' : s3.w + 'x' + s3.h + ', non-blank ' + s3.nonBlankPct + '%'; }).join('; ') + '\n' : '') +
+        (failCount ? 'FIX the failed steps and interact again — the feature is not working.' : 'All actions succeeded — verify the read values match what the user asked for.') + saved;
+      return out;
+    },
+    sfx: async function (a) {
+      var type = String(a.type || 'coin').toLowerCase();
+      var known = { jump: 0.28, coin: 0.4, laser: 0.32, explosion: 0.7, powerup: 0.55, blip: 0.14, hit: 0.2, unlock: 0.5 };
+      if (!known[type]) return 'Error: unknown sfx type "' + type + '" — use: ' + Object.keys(known).join(', ');
+      var dur = parseFloat(a.duration) || known[type];
+      var sr = 44100;
+      var n = Math.floor(sr * Math.min(3, Math.max(0.05, dur)));
+      var data = new Float32Array(n);
+      var seed = parseInt(a.seed, 10) || 12345;
+      var rng = mulberry32Tools(seed);
+      var i, t, ph;
+      if (type === 'jump') {
+        for (i = 0; i < n; i++) { t = i / n; ph = 2 * Math.PI * (300 + 700 * t * t) * (i / sr); data[i] = Math.sin(ph) * (1 - t) * 0.8; }
+      } else if (type === 'coin') {
+        for (i = 0; i < n; i++) { t = i / n; var f = t < 0.4 ? 988 : 1319; data[i] = Math.sin(2 * Math.PI * f * i / sr) * (t < 0.4 ? 0.9 : Math.max(0, 1 - (t - 0.4) / 0.6)) * 0.8; }
+      } else if (type === 'laser') {
+        for (i = 0; i < n; i++) { t = i / n; ph = 2 * Math.PI * (1200 - 1000 * t) * (i / sr); data[i] = (Math.sin(ph) * 0.6 + Math.sin(ph * 2) * 0.2) * (1 - t); }
+      } else if (type === 'explosion') {
+        var lastN = 0;
+        for (i = 0; i < n; i++) { t = i / n; var white = rng() * 2 - 1; lastN = lastN * 0.82 + white * 0.18; data[i] = lastN * Math.pow(1 - t, 1.6) * 2.2; }
+      } else if (type === 'powerup') {
+        var steps = [392, 523, 659, 784];
+        for (i = 0; i < n; i++) { t = i / n; var si = Math.min(3, Math.floor(t * 4)); data[i] = Math.sin(2 * Math.PI * steps[si] * i / sr) * 0.7 * (0.6 + 0.4 * t); }
+      } else if (type === 'hit') {
+        for (i = 0; i < n; i++) { t = i / n; data[i] = (rng() * 2 - 1) * Math.pow(1 - t, 3) * 1.5 + Math.sin(2 * Math.PI * 90 * i / sr) * (1 - t) * 0.5; }
+      } else if (type === 'unlock') {
+        var tones = [523, 659, 784, 1047];
+        for (i = 0; i < n; i++) { t = i / n; var tone = tones[Math.min(3, Math.floor(t * 4))]; var env = (t * 4) % 1; data[i] = Math.sin(2 * Math.PI * tone * i / sr) * (1 - env * 0.3) * 0.6; }
+      } else { // blip
+        for (i = 0; i < n; i++) { data[i] = Math.sin(2 * Math.PI * 880 * i / sr) * Math.pow(1 - i / n, 0.5) * 0.7; }
+      }
+      for (i = 0; i < n; i++) { data[i] = Math.max(-1, Math.min(1, data[i])); if (i < sr * 0.004) data[i] *= i / (sr * 0.004); }
+      var path = String(a.path || 'assets/audio/' + type + '-' + seed + '.wav');
+      var wav = wavDataUrl(data, sr);
+      var wr = IMPL.write_file({ path: path, content: wav });
+      return 'SFX "' + type + '" generated (' + Math.round(dur * 1000) + 'ms, ' + fmtSize(n * 2) + ') → ' + normPath(path) + '\n' + wr + '\nPlay it in the app with: new Audio("' + normPath(path) + '").play() — wire it to the action the user asked for (jump, coin, hit…).';
+    },
+    optimize_image: async function (a) {
+      var p = normPath(a.path || '');
+      var s = WS();
+      var content = s.vfsContent[p];
+      if (content === undefined) return notFound(p);
+      if (content.indexOf('data:image') !== 0) return 'Error: ' + p + ' is not an image (expected a data:image/* file)';
+      var maxW = Math.min(4096, Math.max(16, parseInt(a.maxWidth, 10) || 1200));
+      var fmt = String(a.format || (a.path && /\.png$/i.test(a.path) ? 'image/png' : 'image/jpeg')).toLowerCase();
+      var q = Math.min(1, Math.max(0.3, parseFloat(a.quality) || 0.82));
+      var meta = await new Promise(function (res) {
+        var img = new Image();
+        img.onload = function () { res({ w: img.naturalWidth, h: img.naturalHeight }); };
+        img.onerror = function () { res(null); };
+        img.src = content;
+      });
+      if (!meta) return 'Error: could not decode the image';
+      if (meta.w <= maxW && fmt === 'image/png' && content.indexOf('image/png') >= 0) return p + ' is already ' + meta.w + 'px — nothing to optimize';
+      var scaled = await new Promise(function (res) {
+        var img = new Image();
+        img.onload = function () {
+          var scale = Math.min(1, maxW / img.naturalWidth);
+          var c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(img.naturalWidth * scale));
+          c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+          var cx = c.getContext('2d');
+          cx.imageSmoothingQuality = 'high';
+          cx.drawImage(img, 0, 0, c.width, c.height);
+          res(c.toDataURL(fmt, q));
+        };
+        img.onerror = function () { res(null); };
+        img.src = content;
+      });
+      if (!scaled) return 'Error: optimization failed';
+      var before = content.length, after = scaled.length;
+      s.vfsContent[p] = scaled;
+      Store.save();
+      return 'Optimized ' + p + ': ' + meta.w + 'x' + meta.h + ' → ' + Math.round(after / 1024) + ' KB (' + fmt.replace('image/', '') + ' q' + Math.round(q * 100) + ')\nSize: ' + fmtSize(before) + ' → ' + fmtSize(after) + ' (' + (after <= before ? '-' : '+') + Math.abs(Math.round((1 - after / before) * 100)) + '%)';
+    },
+    lint: function (a) {
+      var L = libCtx(a.path);
+      var src, label;
+      if (L) {
+        if (L.missing) return 'Error: ' + L.missing;
+        if (L.rel === '' || L.project.files[L.rel] === undefined) return 'Error: no such file: ' + L.full + libSuggest(L.project, L.rel);
+        src = String(L.project.files[L.rel]); label = L.full;
+      } else {
+        var s = WS();
+        var path = normPath(a.path || '');
+        if (s.vfsContent[path] === undefined) return notFound(path);
+        src = String(s.vfsContent[path]); label = path;
+      }
+      var issues = [];
+      if (/\.html?$/i.test(label)) {
+        var scripts = src.match(/<script\b[^>]*>([\s\S]*?)<\/script>/gi) || [];
+        scripts.forEach(function (block, i) {
+          var body = block.replace(/<script\b[^>]*>/i, '').replace(/<\/script>/i, '').trim();
+          if (!body || /src\s*=/.test(block)) return;
+          try { new Function(body); } catch (e) { issues.push('inline script #' + (i + 1) + ': ' + e.message); }
+        });
+        ['div', 'section', 'main', 'header', 'footer', 'form', 'table', 'ul', 'canvas'].forEach(function (tag) {
+          var open = (src.match(new RegExp('<' + tag + '(\\s|>)', 'gi')) || []).length;
+          var close = (src.match(new RegExp('</' + tag + '>', 'gi')) || []).length;
+          if (open !== close) issues.push('<' + tag + '> opened ' + open + 'x but closed ' + close + 'x');
+        });
+        var ids = {}, dup = [];
+        (src.match(/\sid="[^"]+"/g) || []).forEach(function (m) { var v = m.slice(5); if (ids[v]) dup.push(v); ids[v] = 1; });
+        if (dup.length) issues.push('duplicate ids: ' + dup.join(', '));
+      } else if (/\.(js|mjs|cjs)$/i.test(label)) {
+        if (/^\s*(import[\s{}]|export\s)/m.test(src)) issues.push('module syntax (import/export) — syntax-check skipped for this quick lint');
+        else { try { new Function(src); } catch (e) { issues.push('JS syntax: ' + e.message); } }
+      } else if (/\.css$/i.test(label)) {
+        var open2 = (src.match(/{/g) || []).length, close2 = (src.match(/}/g) || []).length;
+        if (open2 !== close2) issues.push('CSS braces unbalanced: ' + open2 + ' open vs ' + close2 + ' close');
+      } else issues.push('lint: no rules for this file type');
+      return issues.length ? 'LINT — ' + label + '\n' + issues.map(function (x) { return '  ⚠ ' + x; }).join('\n') : 'LINT — ' + label + ': clean';
+    },
+    test_data: function (a) {
+      var kind = String(a.kind || 'users').toLowerCase();
+      var count = Math.min(200, Math.max(1, parseInt(a.count, 10) || 10));
+      var seed = parseInt(a.seed, 10) || 42;
+      var rng = mulberry32Tools(seed);
+      var F = ['Alice', 'Bruno', 'Clara', 'Dmitri', 'Elena', 'Farid', 'Gita', 'Hugo', 'Ines', 'Jonas', 'Kira', 'Liam', 'Mona', 'Nadia', 'Omar'];
+      var L2 = ['Novak', 'Iversen', 'Okafor', 'Silva', 'Tanaka', 'Weber', 'Rossi', 'Kowal', 'Dubois', 'Haddad'];
+      var words = ['aurora', 'basalt', 'cinder', 'delta', 'ember', 'flint', 'grove', 'harbor', 'ion', 'jasper'];
+      function pick(arr) { return arr[Math.floor(rng() * arr.length)]; }
+      var rows = [];
+      for (var i = 0; i < count; i++) {
+        var first = pick(F), last = pick(L2), n = i + 1;
+        if (kind === 'users') rows.push({ id: n, name: first + ' ' + last, email: (first + '.' + last).toLowerCase() + '@example.com', joined: '2026-0' + (1 + Math.floor(rng() * 9)) + '-' + String(1 + Math.floor(rng() * 28)).padStart(2, '0'), active: rng() > 0.3 });
+        else if (kind === 'products') rows.push({ id: n, name: pick(words) + ' ' + pick(['pro', 'mini', 'max', 'one', 'xl']), price: Math.round(rng() * 49000) / 100 + 5, stock: Math.floor(rng() * 120), rating: Math.round(rng() * 20) / 10 + 3 });
+        else rows.push({ id: n, title: pick(words) + ' ' + pick(['note', 'task', 'report', 'log']), done: rng() > 0.5, created: '2026-10-' + String(1 + Math.floor(rng() * 28)).padStart(2, '0') });
+      }
+      var path = normPath(a.path || ('workspace/data/' + kind + '.json'));
+      var json = JSON.stringify(kind === 'products' ? rows : rows, null, 2);
+      var r = IMPL.write_file({ path: path, content: json });
+      return 'Generated ' + count + ' realistic ' + kind + ' records (seed ' + seed + ' — deterministic). ' + r;
+    },
+    pwa_setup: function (a) {
+      var L = libCtx(a.path);
+      var files, root;
+      if (L) {
+        if (L.missing) return 'Error: ' + L.missing;
+        files = L.project.files; root = L.rel || '';
+      } else {
+        var s = WS(); files = s.vfsContent; root = 'workspace';
+      }
+      var entry = Object.keys(files).filter(function (f) { return root === '' ? f === 'index.html' : f.indexOf(root + '/index.html') === 0; })[0] ||
+        Object.keys(files).filter(function (f) { return /\.html?$/i.test(f) && (root === '' ? f.indexOf('/') < 0 : f.slice(root.length + 1).indexOf('/') < 0); })[0];
+      if (!entry) return 'Error: no index.html at the root — a PWA needs one entry page';
+      var name = String(a.name || 'REVA App').slice(0, 40);
+      var theme = String(a.theme || '#7c5cff');
+      var dir = entry.indexOf('/') >= 0 ? entry.slice(0, entry.lastIndexOf('/') + 1) : '';
+      function icon(size) {
+        var c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        var cx = c.getContext('2d');
+        cx.fillStyle = theme; cx.fillRect(0, 0, size, size);
+        cx.fillStyle = '#ffffff'; cx.font = '600 ' + Math.round(size * 0.42) + 'px sans-serif';
+        cx.textAlign = 'center'; cx.textBaseline = 'middle';
+        cx.fillText(name.charAt(0).toUpperCase(), size / 2, size / 2 + size * 0.03);
+        return c.toDataURL('image/png');
+      }
+      files[dir + 'icon-192.png'] = icon(192);
+      files[dir + 'icon-512.png'] = icon(512);
+      files[dir + 'manifest.webmanifest'] = JSON.stringify({ name: name, short_name: name.slice(0, 12), start_url: './' + (entry.slice(dir.length) || 'index.html'), display: 'standalone', background_color: '#101014', theme_color: theme, icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png' }] }, null, 2);
+      files[dir + 'sw.js'] = 'var C="' + (dir + 'pwa-cache-v1') + '";self.addEventListener("install",function(e){e.waitUntil(caches.open(C).then(function(c2){return c2.addAll(["./"])})).then(function(){return self.skipWaiting()})});self.addEventListener("activate",function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==C}).map(function(k){return caches.delete(k)}))}).then(function(){return self.clients.claim()}))});self.addEventListener("fetch",function(e){e.respondWith(caches.match(e.request).then(function(r){return r||fetch(e.request)}))});';
+      var html = String(files[entry]);
+      var inject = '<link rel="manifest" href="manifest.webmanifest">\n<meta name="theme-color" content="' + theme + '">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' + '<scr' + 'ipt>if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");</scr' + 'ipt>';
+      if (html.indexOf('<head>') >= 0) html = html.split('<head>').join('<head>\n' + inject);
+      else if (/<html[^>]*>/i.test(html)) html = html.replace(/<html[^>]*>/i, function (m0) { return m0 + '\n<head>' + inject + '</head>'; });
+      else html = inject + html;
+      files[entry] = html;
+      if (L && L.project) Store.lib.put(L.project); else { Store.save(); }
+      return 'PWA setup complete for "' + name + '" (root: ' + (dir || './') + '):\n  manifest.webmanifest — name, icons 192+512, standalone\n  sw.js — offline cache-first service worker\n  index.html — manifest link + theme-color + SW registration\nInstallable when served over http(s) (run_server). Icons generated from the app name.';
+    },
     load_skill: function (a) {
       var nm = String(a.name || '').trim();
       var slug = skillSlug(nm);
@@ -841,6 +1124,12 @@
     if (name === 'fetch_asset') return { label: 'Asset · ' + String(args.path || '').split('/').pop(), meta: 'download', ok: ok };
     if (name === 'checkpoint') return { label: 'Checkpoint · ' + String(args.label || '').slice(0, 26), meta: 'saved', ok: ok };
     if (name === 'rollback') return { label: 'Rollback · ' + String(args.label || '').slice(0, 26), meta: 'restored', ok: ok };
+    if (name === 'interact') return { label: 'Interact · ' + String(args.path || '').split('/').pop(), meta: (args.actions || []).length + ' steps', ok: ok };
+    if (name === 'sfx') return { label: 'SFX · ' + String(args.type || ''), meta: 'wav', ok: ok };
+    if (name === 'optimize_image') return { label: 'Optimize · ' + String(args.path || '').split('/').pop(), meta: 'image', ok: ok };
+    if (name === 'lint') return { label: 'Lint · ' + String(args.path || '').split('/').pop(), meta: 'static', ok: ok };
+    if (name === 'test_data') return { label: 'Data · ' + String(args.kind || 'users'), meta: 'generated', ok: ok };
+    if (name === 'pwa_setup') return { label: 'PWA setup', meta: 'installable', ok: ok };
     if (name === 'shell_exec') return { label: '❯ ' + String(args.command || '').slice(0, 46), meta: '', ok: ok, cmd: args.command, out: s };
     return { label: name, meta: '', ok: ok };
   }
@@ -873,6 +1162,12 @@
     { type: 'function', function: { name: 'fetch_asset', description: 'Download a real asset (3D model .glb/.gltf, texture, image, audio) from a public CORS-enabled URL into the workspace — real assets beat geometric primitives. Cap 8 MB. Use for games/3D: fetch models and textures from github raw / jsdelivr / unpkg.', parameters: { type: 'object', properties: { url: { type: 'string' }, path: { type: 'string', description: 'workspace path to save to, e.g. assets/models/ship.glb' } }, required: ['url', 'path'] } } },
     { type: 'function', function: { name: 'checkpoint', description: 'Snapshot the whole workspace before a risky experiment or a big refactor. Roll back with rollback{label} if it goes wrong.', parameters: { type: 'object', properties: { label: { type: 'string', description: 'short name, e.g. "before physics refactor"' } }, required: ['label'] } } },
     { type: 'function', function: { name: 'rollback', description: 'Restore the workspace to a saved checkpoint (latest one, or by label). Use when an experiment made things worse.', parameters: { type: 'object', properties: { label: { type: 'string' } } } } },
+    { type: 'function', function: { name: 'interact', description: 'USE the built app like a real user: click buttons, fill inputs, read results — in a hidden frame running the entry HTML. THE functional verification tool: after building a calculator/form/game, drive it — fill inputs, click the action button, read the output, and confirm the values are mathematically correct before reporting done. Commands: click, fill (value), read, exists. Verify behavior, not just rendering.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'HTML entry: workspace path or lib/<slug>/index.html' }, actions: { type: 'array', description: 'ordered steps, e.g. [{"sel":"#bill","cmd":"fill","value":"100"},{"sel":"#tip15","cmd":"click"},{"sel":"#total","cmd":"read"}]', items: { type: 'object', properties: { sel: { type: 'string' }, cmd: { type: 'string', description: 'click | fill | read | exists' }, value: { type: 'string' } }, required: ['sel', 'cmd'] } }, seconds: { type: 'number', description: 'session length before the final capture (default 4)' } }, required: ['path', 'actions'] } } },
+    { type: 'function', function: { name: 'sfx', description: 'Generate procedural sound effects as .wav files — no downloads needed: jump, coin, laser, explosion, powerup, hit, unlock, blip. Use for games so actions have sound; wire with new Audio(path).play(). Deterministic per seed.', parameters: { type: 'object', properties: { type: { type: 'string', description: 'jump | coin | laser | explosion | powerup | hit | unlock | blip' }, path: { type: 'string', description: 'where to save, e.g. assets/audio/jump.wav' }, duration: { type: 'number' }, seed: { type: 'number' } }, required: ['type'] } } },
+    { type: 'function', function: { name: 'optimize_image', description: 'Resize/compress an image in the workspace for web use (canvas-based): scales to maxWidth, converts format, reports the size savings. Use before shipping images so pages load fast.', parameters: { type: 'object', properties: { path: { type: 'string' }, maxWidth: { type: 'number', description: 'default 1200' }, format: { type: 'string', description: 'image/jpeg | image/png | image/webp' }, quality: { type: 'number', description: '0.3-1, default 0.82' } }, required: ['path'] } } },
+    { type: 'function', function: { name: 'lint', description: 'Quick static checks: JS syntax, HTML tag balance and duplicate ids, CSS brace balance. Run before run_check to catch cheap errors early.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+    { type: 'function', function: { name: 'test_data', description: 'Generate realistic deterministic test data (users, products, todos) as JSON in the workspace — so apps and demos have real-looking content instead of lorem ipsum. Seeded: same seed = same data.', parameters: { type: 'object', properties: { kind: { type: 'string', description: 'users | products | todos' }, count: { type: 'number' }, path: { type: 'string', description: 'default workspace/data/<kind>.json' }, seed: { type: 'number' } } } } },
+    { type: 'function', function: { name: 'pwa_setup', description: 'Make a built project installable: generates manifest.webmanifest, icon-192/512.png (from the app name), an offline service worker, and injects them into the entry HTML. Use after building an app so the user can add it to their home screen.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'project root: workspace or lib/<slug>/' }, name: { type: 'string', description: 'app name for the manifest and icon' }, theme: { type: 'string', description: 'theme color hex, default #7c5cff' } } } } },
   ];
 
   /* ---------- harness console (user terminal + run_command) ---------- */
