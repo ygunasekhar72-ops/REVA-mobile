@@ -639,3 +639,6 @@ html,body{margin:0;padding:0;overflow:hidden!important;width:100%}
 #mono-harness .runspin{width:15px;height:15px;border-radius:50%;border:2px solid var(--line);border-top-color:#7c5cff;flex:none;display:inline-block;animation:runtick 0.9s linear infinite}
 @keyframes runtick{to{transform:rotate(360deg)}}
 #mono-harness .runnow{color:#7c5cff;font-weight:600}
+
+/* live holder: rides the transcript, survives wipes when visiting other chats mid-run */
+#mono-harness .live-hold{display:block}

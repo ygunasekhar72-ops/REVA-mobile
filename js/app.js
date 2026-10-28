@@ -415,7 +415,7 @@
   /* follow-up queue: messages typed while a run streams are queued, shown
      in the transcript, and sent automatically when the run finishes —
      typing never stops the agent (the stop button is the only stop) */
-  function queueFollowUp(text) {
+  function queueFollowUp(text, hidden) {
     state.queue.push({ t: text, hidden: !!hidden, sid: (Store.active() || {}).id });
     renderQueue();
     H.toast('Queued — sends when the current run finishes');
@@ -474,7 +474,7 @@
          in stop-mode — end the run with an honest error bubble */
       if (state.streaming) {
         state.streaming = false; state.streamingSid = null; setSendStop(false); state.ctrl = null;
-        s.messages.push({ role: 'assistant', err: true, content: 'Run interrupted by an internal error: ' + (eRun && eRun.message || eRun), ts: Date.now() });
+        s.messages.push({ role: 'assistant', err: true, content: 'Run interrupted by an internal error: ' + (eRun && eRun.message || eRun) + (eRun && eRun.stack ? ' || ' + String(eRun.stack).split('|')[0] : ''), ts: Date.now() });
         Store.save(); UI.renderChat(s); UI.renderChatHead(s);
         H.toast('Run failed — see the error in chat');
       } else throw eRun;
@@ -484,8 +484,13 @@
   async function streamReply(s) {
     var prov = Store.activeProvider();
     var flow = $('#msgFlow'), scroller = $('#chatMsgs');
+    /* persistent live holder: survives ANY transcript wipe (visiting another
+       chat mid-run detaches it, but the reference survives and takeLiveEl
+       re-attaches the whole holder on return) */
+    var liveHold = H.el('<div class="live-hold" data-live="1"></div>');
+    flow.appendChild(liveHold);
     var typing = H.el('<div class="typing" data-live="1"><i></i><i></i><i></i></div>');
-    flow.appendChild(typing);
+    liveHold.appendChild(typing);
     scroller.scrollTop = scroller.scrollHeight;
     var bubble = null, thinkEl = null, contentEl = null, acc = '', accRe = '';
     state.streaming = true; state.streamingSid = s.id; setSendStop(true);
@@ -727,7 +732,7 @@
       if (!bubble) {
         typing.remove();
         bubble = H.el('<div class="msg ai" data-live="1"></div>');
-        flow.appendChild(bubble);
+        liveHold.appendChild(bubble);
       }
       return bubble;
     }
@@ -784,11 +789,8 @@
        after the user navigates away and comes back */
     App.takeLiveEl = function (sess) {
       if (!state.streaming || sess !== s || !flow) return null;
-      var els = Array.prototype.slice.call(flow.querySelectorAll('[data-live]'));
-      if (!els.length) return null;
-      var frag = document.createDocumentFragment();
-      els.forEach(function (el) { frag.appendChild(el); });
-      return frag;
+      if (!liveHold) return null;
+      return liveHold; // persistent holder: survives transcript wipes on other chats
     };
     function callAI(provider, forceNonStream) {
       return AI.chat({
@@ -1102,6 +1104,7 @@
     s.updatedAt = Date.now();
     Store.save();
     state.streaming = false; state.streamingSid = null; setSendStop(false); state.ctrl = null;
+    liveHold = null;
     drainQueue(); // a queued follow-up sends now — typing never stopped the run
     if (Store.active() === s) { UI.renderChat(s); UI.renderChatHead(s); } // don't repaint if the user switched sessions mid-run
     refreshCtx(); UI.renderHome(); UI.renderSettingsSubs();
