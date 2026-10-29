@@ -70,7 +70,14 @@ const LoopCore = require('../js/loopcore.js');
   assert.ok(injected.indexOf('js/vendor/three/three.module.js') > 0, 'harness path in map');
   assert.ok(injected.indexOf('<head>' + '<scr' + 'ipt type="importmap"') === 6, 'map lands first inside <head>');
   assert.strictEqual(LoopCore.injectThreeMap(injected), injected, 'idempotent');
-  assert.strictEqual(LoopCore.injectThreeMap('<html><head><script type="importmap">{"imports":{"three":"https://unpkg.com/three/build/three.module.js"}}</script></head></html>'), '<html><head><script type="importmap">{"imports":{"three":"https://unpkg.com/three/build/three.module.js"}}</script></head></html>', 'project-owned importmap untouched');
+  const IMP = '<script type="module">import * as THREE from "three";</script>';
+  const cdnMap = '<html><head><script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.164/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/"}}</script></head><body>' + IMP + '</body></html>';
+  const rewritten = LoopCore.injectThreeMap(cdnMap);
+  assert.ok(rewritten.indexOf('js/vendor/three/three.module.js') >= 0, 'CDN three rewritten to vendored');
+  assert.ok(rewritten.indexOf('js/vendor/three/addons/') >= 0, 'CDN addons rewritten to vendored');
+  assert.ok(rewritten.indexOf('cdn.jsdelivr') < 0, 'no CDN left');
+  const localMap = '<html><head><script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script></head><body>' + IMP + '</body></html>';
+  assert.strictEqual(LoopCore.injectThreeMap(localMap), localMap, 'explicit local paths untouched');
   assert.strictEqual(LoopCore.injectThreeMap('<html><head></head><body>plain page</body></html>').indexOf('importmap'), -1, 'non-three page untouched');
 
   console.log('loopcore: 7/7 scenarios PASS');

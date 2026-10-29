@@ -272,9 +272,24 @@
       }
     }
       if (db.settings.tools !== false) {
-      var mountsNow = (Store.active() && Store.active().mounts) || [];
-      if (mountsNow.length) p.push('MOUNTED PROJECT LIBRARIES: ' + mountsNow.map(function (m) { return 'lib/' + m.slug + '/ (' + m.name + ', ' + m.count + ' files)'; }).join(' · ') +
-        ' — REAL imported project files mounted into this chat. Work DIRECTLY in these paths with your file tools (read_file, edit_file, write_file, list_files, workspace_search, code_symbols all accept lib/ paths); changes persist across sessions. list_files a lib path to explore it.');
+      var sessNow = Store.active();
+      var mountsNow = ((sessNow && sessNow.mounts) || []).slice();
+      /* folder chats: the OWN project is implicitly mounted (libCtx synthesizes
+         it) — announce it here or the model never learns it exists and builds
+         in workspace/ instead of the project */
+      if (sessNow && sessNow.libId) {
+        var ownLib = Store.lib.get(sessNow.libId);
+        if (ownLib) {
+          var oslug = String(ownLib.name).toLowerCase().split('\\').join('-').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '');
+          if (!mountsNow.some(function (m) { return m.slug === oslug; })) {
+            mountsNow.unshift({ slug: oslug, name: ownLib.name, count: Object.keys(ownLib.files || {}).length, implicit: true });
+          }
+        }
+      }
+      if (mountsNow.length) p.push('MOUNTED PROJECT LIBRARIES: ' + mountsNow.map(function (m) { return 'lib/' + m.slug + '/ (' + m.name + ', ' + m.count + ' files)' + (m.implicit ? ' — THIS CHAT\'S OWN PROJECT' : ''); }).join(' · ') +
+        ' — REAL imported project files mounted into this chat. ' +
+        (sessNow && sessNow.libId ? 'THIS IS A PROJECT CHAT: ALL files you create for the project MUST be written under lib/' + mountsNow[0].slug + '/ (NEVER workspace/) — that is where the user and the preview look. ' : '') +
+        'Work DIRECTLY in these paths with your file tools (read_file, edit_file, write_file, list_files, workspace_search, code_symbols all accept lib/ paths); changes persist across sessions. list_files a lib path to explore it.');
       p.push('You have real tools. Use them proactively, without asking permission, and never say you cannot do something a tool can do. The decision table: ' +
         'LOCATE code → workspace_search FIRST (never read files blind); then code_symbols for the outline; read_file (offset, or startLine/endLine for a numbered window) for the exact region. ' +
         'CHANGE code → edit_file with text copied EXACTLY from a fresh read (small changes); write_file for new files; never rewrite a whole file to change one line. ' +

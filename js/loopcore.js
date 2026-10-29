@@ -103,13 +103,20 @@
 
   /* three.js provider (leverage doctrine): projects importing the bare
      'three' specifier get an import map pointing at the HARNESS's vendored
-     copy (js/vendor/three/) — offline, local-first, no CDN. Skipped when
-     the project manages its own import map. Pure + tested. */
+     copy (js/vendor/three/) — offline, local-first, no CDN. If the project
+     ships its OWN import map pointing three at a CDN, the map is REWRITTEN
+     to the vendored path (offline-first wins; explicit local paths are
+     respected). Pure + tested. */
   function injectThreeMap(html) {
     var s = String(html || '');
-    if (s.indexOf('importmap') >= 0) return s; // project manages its own imports
     if (!/(?:from\s*|import\s*\(?\s*|import\s*)(['"])three(\/addons[^'"]*)?\1/.test(s)) return s;
     var map = '<scr' + 'ipt type="importmap">{"imports":{"three":"js/vendor/three/three.module.js","three/addons/":"js/vendor/three/addons/"}}</scr' + 'ipt>';
+    if (s.indexOf('importmap') >= 0) {
+      /* project-owned map: rewrite only CDN three entries to the vendored copy */
+      s = s.replace(/(["']three["']\s*:\s*["'])(https?:\/\/[^"']+three\.module\.js)(["'])/g, '$1js/vendor/three/three.module.js$3');
+      s = s.replace(/(["']three\/addons\/["']\s*:\s*["'])(https?:\/\/[^"']+)(["'])/g, '$1js/vendor/three/addons/$3');
+      return s;
+    }
     if (s.indexOf('<head>') >= 0) return s.split('<head>').join('<head>' + map);
     return map + s;
   }
