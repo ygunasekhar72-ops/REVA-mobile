@@ -712,6 +712,15 @@
     }
     /* quick line diff: added vs removed between old and new content */
     function diffStat(oldC, newC) {
+      /* REAL diff math (vendored jsdiff) when loaded; multiset fallback below */
+      try {
+        if (window.Diff && Diff.diffLines) {
+          var parts = Diff.diffLines(String(oldC || ''), String(newC || ''));
+          var da = 0, dr = 0;
+          parts.forEach(function (p) { if (p.added) da += p.count || 0; if (p.removed) dr += p.count || 0; });
+          return { added: da, removed: dr };
+        }
+      } catch (e) { }
       var o = oldC ? String(oldC).split('\n') : [];
       var nn = String(newC).split('\n');
       var oldSet = {}, newSet = {};

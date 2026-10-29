@@ -342,9 +342,10 @@
         if (acts.length > 4) inner += '<details class="actwrap"><summary>' + acts.length + ' steps</summary><div class="activity">' + rows + '</div></details>';
         else inner += '<div class="activity">' + rows + '</div>';
       }
-      inner += H.mdLite(m.content);
+      inner += '<div class="mdbody">' + H.mdLite(m.content) + '</div>';
       inner += '<div class="aacts"><button class="uact" data-copyai aria-label="Copy reply"><i data-lucide="copy" style="width:12px;height:12px"></i> Copy</button></div>';
       a.innerHTML = inner;
+      if (window.MDRENDER) MDRENDER.enhance(a.querySelector('.mdbody')); // code blocks → engine color
       a.querySelectorAll('[data-toolpath]').forEach(function (card) {
         var p = card.getAttribute('data-toolpath');
         if (p) card.addEventListener('click', function () { App.openPath(p); });

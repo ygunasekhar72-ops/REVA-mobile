@@ -67,6 +67,12 @@
         py: 'py', rb: 'rb', sh: 'sh', bash: 'sh', zsh: 'sh', yml: 'yaml', yaml: 'yaml', toml: 'toml', conf: 'conf' })[ext] || '';
     },
     mdLite: function (s) {
+      /* real markdown (vendored markdown-it) when the renderer is up; the
+         regex-lite fallback below keeps chat working from the first frame */
+      if (typeof window !== 'undefined' && window.MDRENDER) {
+        var r = window.MDRENDER.render(s);
+        if (r !== null) return r;
+      }
       function inline(t) {
         var e = H.esc(t);
         e = e.replace(/`([^`\n]+)`/g, '<code>$1</code>');

@@ -48,6 +48,17 @@ third-party components:
   highlighting via `js/hljs.js` (CJS-in-browser shim + lazy per-language
   loading — REVA's own integration, MIT).
 
+## markdown-it + jsdiff — MIT (vendored UMD dist bundles)
+- Files: `js/vendor/md/markdown-it.js` (markdown-it 14.1.0 UMD dist) and
+  `js/vendor/diff/jsdiff.js` (diff 5.2.0 UMD dist), vendored by
+  `scripts/vendor-md.sh` from their npm tarballs
+- Sources: https://github.com/markdown-it/markdown-it (MIT) — © Vitaly
+  Puzrin, Alex Kocharin and contributors; https://github.com/kpdecker/
+  jsdiff (MIT) — © Kevin Decker and contributors. markdown-it renders AI
+  replies (html:false — model HTML is always escaped); jsdiff powers real
+  diff stats on file-write activity rows. Integration glue in
+  `js/mdrender.js` + `js/app.js diffStat` (REVA's own, MIT).
+
 ## ripgrep — MIT OR Unlicense (bundled binary)
 - Files: `android/app/…/jniLibs/<abi>/librg.so` (ripgrep 15.2.0, aarch64 +
   x86_64, copied to `filesDir/bin/rg` at runtime)
