@@ -61,3 +61,4 @@ The harness leaders open-sourced their commodity layers (verified licenses: open
 ## Log
 
 - **v1.4.13 (2026-10-29):** W1 starts — shell channel circuit breaker (3 consecutive timeouts → 8s recovery probe → honest wedged guidance + automatic self-heal), plus the first unit test suite (`tests/agentexec-breaker.test.js`, 4 scenarios, wired into CI to run on every commit).
+- **v1.4.14 (2026-10-29, local — first LEVERAGE DOCTRINE increment):** models.dev registry adopted (MIT) — bundled snapshot `js/modeldb-data.js` (4,845 model ids, 174KB, from 5.9MB raw via `scripts/gen-modeldb.js`), runtime `js/modeldb.js` (trim/lookup/refresh), `ctxFor`/`modelVision` now resolve from the registry first with id-heuristics as fallback, silent boot refresh when online, `tests/modeldb.test.js` 6/6 PASS. Attribution in THIRD_PARTY_NOTICES.md. The 12-point "model settings automated" requirement now runs on real data, not guesses.

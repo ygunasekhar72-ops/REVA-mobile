@@ -39,6 +39,18 @@ third-party components:
   license, plus everything installed at runtime via `apk`). Package sources:
   https://gitlab.alpinelinux.org/alpine/aports
 
+## models.dev — MIT (bundled data snapshot + live refresh)
+- Files: `js/modeldb-data.js` (generated snapshot, via `scripts/gen-modeldb.js`),
+  runtime integration in `js/modeldb.js` (trim/lookup logic is REVA's own,
+  MIT-licensed)
+- Source: https://models.dev — the open model database maintained by the
+  opencode team (https://github.com/anomalyco/models.dev, MIT)
+- Supplies automated model metadata (context window, vision, tool-calling,
+  reasoning) for REVA's BYOK model management. The bundled snapshot is a
+  trimmed derivative (id → context tokens + capability flags); the app also
+  refreshes the full registry at runtime when online. © models.dev authors,
+  MIT license.
+
 ## Reference projects (architecture references only — no code copied)
 - TermFold (Apache-2.0): https://github.com/Bibarud/TermFold — proot bundling
   layout and environment invocation were adapted from its documented approach.

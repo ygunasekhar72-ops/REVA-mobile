@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-29T15:59:12.603Z",
+  "date": "2026-10-29T16:28:34.605Z",
   "pass": 10,
   "total": 10,
   "results": [
@@ -7,13 +7,13 @@
       "name": "shell task: correct tool + success report",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 8
+      "ms": 6
     },
     {
       "name": "failure honesty: exit 1 reported as failure",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 5
+      "ms": 2
     },
     {
       "name": "fragmented args: write completes with full payload",
@@ -25,7 +25,7 @@
       "name": "empty-reply ladder: bounded, no hang, honest stop",
       "pass": true,
       "detail": "iters=6",
-      "ms": 6
+      "ms": 9
     },
     {
       "name": "Guard gating: shell_exec + MCP tools excluded in Guard mode",

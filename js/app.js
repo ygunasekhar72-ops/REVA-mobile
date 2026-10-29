@@ -362,14 +362,23 @@
     [/gpt-4o|gpt-4\.1|gpt-4-turbo|o1-|o3-|o4-/, 128],
     [/deepseek|qwen|glm|mini|max|minimax|nemotron|llama-3|mistral|mixtral|phi-3|phi-4|gemma/, 128]
   ];
-  /* automated model capabilities: context size + vision, derived from the id */
+  /* automated model capabilities: context size + vision. PRIMARY source is
+     the bundled models.dev registry (js/modeldb.js — MIT, 4.8k models);
+     id heuristics remain only as the fallback for ids the registry lacks. */
   function modelVision(model) {
+    var mdb = window.REVAMODELDB;
+    if (mdb) { var hit = mdb.lookup(model); if (hit) return hit.vision; }
     var m = String(model || '').toLowerCase();
-    return /vision|vl|-vl|omni|4o|gpt-4-turbo|gemini|claude-3|pixtral|llava|internvl|qvq|qwen2-vl|multimodal/.test(m);
+    return /vision|vl|-vl|omni|4o|gpt-4-turbo|gemini|claude-3|pixtral|llava|internvl|qvq|qwen2-vl|multimodal/.test(m);
   }
   function ctxFor(model) {
-    var m = String(model || '').toLowerCase();
     if (db.modelCtx && db.modelCtx[model]) return db.modelCtx[model]; // explicit override wins if present
+    var mdb = window.REVAMODELDB;
+    if (mdb) {
+      var hit = mdb.lookup(model);
+      if (hit && hit.ctx) return Math.max(1, Math.round(hit.ctx / 1000));
+    }
+    var m = String(model || '').toLowerCase();
     for (var i = 0; i < CTX_RULES.length; i++) if (CTX_RULES[i][0].test(m)) return CTX_RULES[i][1];
     return 128;
   }
@@ -2873,5 +2882,9 @@
 
   fireHook('Session start', { at: Date.now() });
   window.addEventListener('pagehide', function () { fireHook('Session end', { at: Date.now() }); });
+  /* silent models.dev refresh — keeps model metadata current; offline-safe */
+  if (window.REVAMODELDB && navigator.onLine) {
+    try { window.REVAMODELDB.refresh().catch(function () {}); } catch (e) {}
+  }
   window.__appBooted = true;
 })();
