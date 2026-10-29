@@ -40,6 +40,24 @@ What REVA already has (built + verified): goal-driven endurance loop (500/5000-r
 2. On-device is the real gate: the phone finds what the browser hides.
 3. Lines don't count. Working, tested features count.
 
+## Leverage doctrine (2026-10-29 — play smart, not long)
+
+The harness leaders open-sourced their commodity layers (verified licenses: opencode MIT, Codex CLI Apache-2.0, Aider Apache-2.0, models.dev MIT, tree-sitter MIT). We adopt them instead of re-deriving them; years of someone else's grinding is now embeddable code. REVA already does this at the infra layer (proot, busybox, Alpine); the doctrine extends it to the intelligence layer.
+
+**Adopt (with attribution in THIRD_PARTY_NOTICES.md):**
+- `web-tree-sitter` (MIT) → W3: real AST symbol index in the WebView; `code_symbols` regex → syntax trees.
+- `models.dev` snapshot (MIT) → automated context/vision/tool-calling metadata for BYOK models, cached locally for offline; replaces CTX_RULES heuristics.
+- `ripgrep` arm64 static binary (MIT) bundled like busybox → `workspace_search` runs real ripgrep inside proot Linux over /host.
+- Aider's repo-map + edit-format recovery design (Apache-2.0, attribute) → W5 context engine + W4 eval scenarios.
+
+**Read-only (no license, no copying):** Claude Code and ZCode are proprietary; anthropics/skills has NO license — inspiration only, zero content reuse. REVA's skills stay original.
+
+**Never adopt:** their desktop TUIs, the Rust sandbox matrix (macOS/Linux-only, useless in our WebView), their provider matrices (OpenAI-compatible BYOK is simpler and is our feature).
+
+**Still ours to build (the moat, where the nights go):** mobile harness UX, on-device Linux + Project Library + SAF, endurance engine, folder chats, circuit breakers/hardening tuned to this device class.
+
+**Release cadence (user directive, 2026-10-29):** no push after every small update — increments accumulate as verified local commits; GitHub gets milestone batch pushes only.
+
 ## Log
 
 - **v1.4.13 (2026-10-29):** W1 starts — shell channel circuit breaker (3 consecutive timeouts → 8s recovery probe → honest wedged guidance + automatic self-heal), plus the first unit test suite (`tests/agentexec-breaker.test.js`, 4 scenarios, wired into CI to run on every commit).
