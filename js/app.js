@@ -408,6 +408,9 @@
   /* ================= chat ================= */
   function openChat() { H.push('ov-chat'); }
   App = window.App || {};
+  /* L1: per-tool watchdog health (consecutive-timeout counters + wedges) */
+  var toolHealth = window.LoopCore ? LoopCore.makeToolHealth() : {};
+  App.runMcp = runMcpTool; // MCP tools dispatch through Tools.run (budgeted there)
   function ensureSession() { return Store.active() || Store.newSession(); }
   App.isStreaming = function () { return !!state.streaming; };
   App.ctxFor = ctxFor;
@@ -461,8 +464,13 @@
      typing never stops the agent (the stop button is the only stop) */
   function queueFollowUp(text, hidden) {
     state.queue.push({ t: text, hidden: !!hidden, sid: (Store.active() || {}).id });
+    persistQueue();
     renderQueue();
     H.toast('Queued — sends when the current run finishes');
+  }
+  /* L6 RunState slice: the queue survives process death */
+  function persistQueue() {
+    try { db.settings.pendingQueue = state.queue.slice(0, 5); Store.save(); } catch (e) { }
   }
   function renderQueue() {
     var el = $('#queueRow');
@@ -478,6 +486,7 @@
   function drainQueue() {
     if (!state.queue.length || state.streaming) return;
     var next = state.queue.shift();
+    persistQueue();
     renderQueue();
     setTimeout(function () {
       if (state.streaming) return;
@@ -978,16 +987,38 @@
           } catch (e) {
             trackUsage(prov, null, true);
             if (aborted(e)) { stopped = true; break; }
-            /* CONTEXT-EXHAUSTION RECOVERY: a long run can fill the model's
-               window. Compacting the transcript and continuing beats dying —
-               the workspace, todos and mounts all persist across compaction. */
+            /* CONTEXT-EXHAUSTION RECOVERY (v2 — model-summarized): a long run
+               can fill the model's window. The dropped head is SUMMARIZED by
+               the model itself (one cheap call, 30s budget) so the continuation
+               keeps the semantic thread; the trim is still group-safe. */
             if (window.LoopCore && LoopCore.isContextError(e) && cTry < 2) {
               cTry++;
               var keepChars = Math.max(16000, Math.round(ctxFor(db.settings.model) * 1400));
               var c = LoopCore.compactTranscript(apiMsgs.slice(1), keepChars);
+              var droppedMsgs = apiMsgs.slice(1, apiMsgs.length - c.kept.length);
+              var summary = '';
+              if (droppedMsgs.length && window.AI) {
+                try {
+                  var digest = droppedMsgs.map(function (m) {
+                    var t = typeof m.content === 'string' ? m.content : '(multipart)';
+                    return m.role + ': ' + String(t).slice(0, 260);
+                  }).join('\n').slice(0, 8000);
+                  var sumRes = await Promise.race([
+                    AI.chat({
+                      provider: prov, signal: state.ctrl ? state.ctrl.signal : undefined,
+                      messages: [
+                        { role: 'system', content: 'You compress agent-work transcripts. Reply with ONLY a dense summary (max 150 words): the task, key decisions, files created/changed, and the exact step in progress. No preamble.' },
+                        { role: 'user', content: digest }
+                      ], maxTokens: 8
+                    }),
+                    new Promise(function (res) { setTimeout(function () { res(null); }, 30000); })
+                  ]);
+                  if (sumRes && sumRes.content) summary = String(sumRes.content).slice(0, 1200);
+                } catch (eSum) { }
+              }
               apiMsgs = [apiMsgs[0]].concat(c.kept);
-              apiMsgs.push({ role: 'user', content: '[auto-compaction: ' + c.dropped + ' older messages were trimmed to fit the context window. Nothing was lost from the workspace — files, todos and mounted projects are intact. Continue the task exactly where it left off.]' });
-              activity.push({ k: 'note', icon: 'shrink', text: 'Context window filled — auto-compacted ' + c.dropped + ' older messages, continuing', meta: 'attempt ' + cTry + '/2' });
+              apiMsgs.push({ role: 'user', content: '[auto-compaction: ' + c.dropped + ' older messages were trimmed to fit the context window. ' + (summary ? 'Summary of the dropped work: ' + summary + ' ' : '') + 'Nothing was lost from the workspace — files, todos and mounted projects are intact. Continue the task exactly where it left off.]' });
+              activity.push({ k: 'note', icon: 'shrink', text: 'Context window filled — auto-compacted ' + c.dropped + ' older messages' + (summary ? ' (model summary included)' : '') + ', continuing', meta: 'attempt ' + cTry + '/2' });
               H.toast('Context compacted — run continues');
               UI.renderHome();
               continue;
@@ -1105,7 +1136,7 @@
             infoP.name = tcP.function.name; infoP.args = argsP;
             return fireHook('PreToolUse', { name: tcP.function.name, args: argsP }, tcP.function.name).then(function (blocked) {
               if (blocked) return 'BLOCKED: a PreToolUse hook vetoed this tool call. Tell the user and continue without it.';
-              return Tools.run(tcP.function.name, argsP).catch(function (er) { return 'Error: ' + (er && er.message || er); });
+              return Promise.resolve(Tools.run(tcP.function.name, argsP)).catch(function (er) { return 'Error: ' + (er && er.message || er); });
             }).then(function (rP) {
               if (!infoP.meta) infoP = Tools.brief(tcP.function.name, argsP, rP);
               infoP.name = tcP.function.name;
@@ -1140,32 +1171,43 @@
             result = 'BLOCKED: a PreToolUse hook vetoed this tool call. Tell the user and continue without it.';
             info.ok = false;
           } else if (tc.function.name === 'web_search' && window.WebSearch) {
-            var ws = await WebSearch.search(String(args.query || ''));
-            result = (ws.text || '') + '\n\nResults:\n' + ws.results.map(function (r, i) { return (i + 1) + '. ' + r.title + ' — ' + r.url; }).join('\n');
-            info = Tools.brief('web_search', { query: (ws.results.length ? ws.results.length + ' results' : args.query) }, result);
-            info.label = 'Search · ' + String(args.query || '').slice(0, 40);
-            info.meta = ws.results.length ? ws.results.length + ' results' : (ws.via || '');
+            var wsR = await LoopCore.withBudget(function () { return WebSearch.search(String(args.query || '')); }, 'web_search', toolHealth);
+            if (!wsR.ok) {
+              result = wsR.out; info.ok = false; ex = { exit: 1, out: result };
+            } else {
+              var ws = wsR.value;
+              result = (ws.text || '') + '\n\nResults:\n' + ws.results.map(function (r, i) { return (i + 1) + '. ' + r.title + ' — ' + r.url; }).join('\n');
+              info = Tools.brief('web_search', { query: (ws.results.length ? ws.results.length + ' results' : args.query) }, result);
+              info.label = 'Search · ' + String(args.query || '').slice(0, 40);
+              info.meta = ws.results.length ? ws.results.length + ' results' : (ws.via || '');
+            }
           } else if (tc.function.name === 'web_read' && window.WebSearch) {
-            result = await WebSearch.read(String(args.url || ''));
-            if (String(result).indexOf('Error') === 0) ex = { exit: 1, out: result };
+            var wrR = await LoopCore.withBudget(function () { return WebSearch.read(String(args.url || '')); }, 'web_read', toolHealth);
+            result = wrR.ok ? wrR.value : wrR.out;
+            if (String(result).indexOf('Error') === 0 || !wrR.ok) ex = { exit: 1, out: result };
           } else if (tc.function.name === 'browser_open' && window.REVABrowser) {
             result = window.REVABrowser.open(String(args.url || ''));
           } else if (tc.function.name === 'browser_read' && window.WebSearch) {
-            result = await WebSearch.read(String(args.url || ''));
-            if (String(result).indexOf('Error') === 0) ex = { exit: 1, out: result };
+            var brR = await LoopCore.withBudget(function () { return WebSearch.read(String(args.url || '')); }, 'web_read', toolHealth);
+            result = brR.ok ? brR.value : brR.out;
+            if (String(result).indexOf('Error') === 0 || !brR.ok) ex = { exit: 1, out: result };
             if (window.REVABrowser) window.REVABrowser.open(String(args.url || ''));
           } else if (tc.function.name === 'image_gen' && window.REVAImages) {
             info.ok = true;
-            result = await REVAImages.generate(String(args.prompt || ''), String(args.path || 'images/' + Date.now() + '.png'));
-            if (String(result).indexOf('Error') === 0) { info.ok = false; ex = { exit: 1, out: result }; }
+            var ig = await LoopCore.withBudget(function () { return REVAImages.generate(String(args.prompt || ''), String(args.path || 'images/' + Date.now() + '.png')); }, 'image_gen', toolHealth);
+            result = ig.ok ? ig.value : ig.out;
+            if (String(result).indexOf('Error') === 0 || !ig.ok) { info.ok = false; ex = { exit: 1, out: result }; }
           } else if (tc.function.name.indexOf('mcp_') === 0) {
-            result = await runMcpTool(tc.function.name, args);
+            /* L1: MCP tools dispatch through Tools.run, which owns the budget */
+            result = await Tools.run(tc.function.name, args);
             if (String(result).indexOf('Error') === 0) ex = { exit: 1, out: result };
           } else if (tc.function.name === 'shell_exec' && window.REVAAgent) {
             ex = await AgentExec.exec(String(args.command || ''), { cwd: args.cwd, timeoutMs: (args.timeout_seconds || 120) * 1000 });
             result = (ex.timedOut ? 'TIMEOUT — process killed. Partial output:\n' + (ex.out || '') :
               (ex.out || '') + (ex.out ? '\n' : '') + '[exit ' + ex.exit + ']');
           } else {
+            /* L1: every generic tool call runs under the unified budget —
+               Tools.run owns the watchdog; repeat offenders wedge briefly */
             result = await Tools.run(tc.function.name, args);
           }
           fireHook('PostToolUse', { name: tc.function.name, args: args, result: String(result).slice(0, 500) }, tc.function.name);
@@ -1177,6 +1219,24 @@
           addToolRow(info, result);
           var toolResultCount2 = apiMsgs.filter(function (m) { return m.role === 'tool'; }).length;
           apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(result).slice(0, toolResultCount2 > 5 ? 600 : 4000) });
+          /* L2a VISION TOOL-RESULTS: after run_check/screenshot, a vision-capable
+             model SEES the newest screenshot (hidden user turn with the image) —
+             visual verification without the user opening anything. */
+          if ((tc.function.name === 'run_check' || tc.function.name === 'screenshot') && window.App && App.modelVision(db.settings.model)) {
+            try {
+              var vShots = Object.keys(s.vfsContent || {}).filter(function (f) { return /^workspace\/screenshots\/.+\.png$/i.test(f); }).sort();
+              var vShot = vShots[vShots.length - 1];
+              if (vShot && String(s.vfsContent[vShot]).indexOf('data:image') === 0) {
+                apiMsgs.push({
+                  role: 'user', hidden: true,
+                  content: [
+                    { type: 'text', text: '[' + tc.function.name + ' screenshot — this is the current state of the build you just verified. Look at it and react: what renders, what is broken, what to improve next.]' },
+                    { type: 'image_url', image_url: { url: String(s.vfsContent[vShot]) } }
+                  ]
+                });
+              }
+            } catch (eVis) { }
+          }
         }
         acc = ''; contentEl = null;
         try { refreshRepoMap(s); } catch (eRm) { } // background: map follows the edits
@@ -3012,5 +3072,12 @@
   if (window.REVAMODELDB && navigator.onLine) {
     try { window.REVAMODELDB.refresh().catch(function () {}); } catch (e) {}
   }
+  /* L6: restore a queue that survived process death */
+  try {
+    if (db.settings.pendingQueue && db.settings.pendingQueue.length) {
+      state.queue = db.settings.pendingQueue.slice(0, 5);
+      if (state.queue.length) { renderQueue(); H.toast(state.queue.length + ' queued message(s) restored'); }
+    }
+  } catch (eQ) { }
   window.__appBooted = true;
 })();

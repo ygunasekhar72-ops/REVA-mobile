@@ -1292,9 +1292,28 @@
     },
     run: function (name, args) {
       args = args || {};
-      var fn = IMPL[name];
-      if (!fn) return 'Error: unknown tool ' + name;
-      try { return fn(args); } catch (e) { return 'Error: ' + e.message; }
+      var toolName = String(name || '');
+      var fn = IMPL[toolName];
+      var isMcp = false;
+      if (!fn && toolName.indexOf('mcp_') === 0 && window.App && App.runMcp) {
+        /* MCP tools: dispatched through the app bridge, same budget rules */
+        isMcp = true;
+        var mcpRun = App.runMcp;
+        fn = function (a) { return mcpRun(toolName, a); };
+      }
+      if (!fn) return 'Error: unknown tool ' + toolName;
+      var call = function () { return fn(args); };
+      /* L1 watchdog: budgeted tools (network/iframe) get the unified
+         watchdog + circuit breaker from loopcore; local file ops stay
+         direct (a timed-out write must never be discarded mid-flight) */
+      if (window.LoopCore && LoopCore.DEFAULT_BUDGETS[toolName]) {
+        var health = (window.App && App.toolHealth) || null;
+        return LoopCore.withBudget(call, toolName, health).then(function (r) {
+          return r.ok ? r.value : r.out;
+        });
+      }
+      if (isMcp) return call(); // runMcpTool is async and catches internally
+      try { return call(); } catch (e) { return 'Error: ' + e.message; }
     }
   };
 

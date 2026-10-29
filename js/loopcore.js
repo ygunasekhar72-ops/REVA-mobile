@@ -121,5 +121,65 @@
     return map + s;
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap };
+  /* ---- unified tool-call watchdog + per-tool circuit breaker (L1) ----
+     Budgets apply to tools that can HANG (network/iframe); local file ops
+     are exempt (side-effect safety: a timed-out write must not be discarded
+     while still possibly landing). 3 consecutive timeouts wedge the tool —
+     further calls fail fast for a cooldown, then get one fresh budget. */
+  var DEFAULT_BUDGETS = {
+    web_search: 45000, web_read: 45000, browser_open: 30000, browser_read: 45000,
+    fetch_asset: 60000, image_gen: 120000, run_check: 90000, screenshot: 45000,
+    interact: 90000
+  };
+  var WEDGE_COOLDOWN_MS = 120000;
+
+  function makeToolHealth() { return {}; }
+
+  /* withBudget(run, name, health) — run is a FUNCTION returning the promise
+     (lazy: wedged tools never start the underlying call) */
+  function withBudget(run, name, health) {
+    var H = health || {};
+    var budget = (DEFAULT_BUDGETS[name] || 90000);
+    var th = H[name] = H[name] || { consec: 0 };
+    var now = Date.now();
+    if (th.wedgedUntil && now < th.wedgedUntil) {
+      return Promise.resolve({
+        timedOut: false, wedged: true, exit: -1,
+        out: 'Error: ' + name + ' was unresponsive (' + th.lastConsec + ' consecutive timeouts recently) — call skipped without running. It will be allowed again automatically; continue with other work meanwhile.'
+      });
+    }
+    var settled = false;
+    return new Promise(function (resolve) {
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        th.consec = (th.consec || 0) + 1;
+        th.lastConsec = th.consec;
+        var wedgedNow = false;
+        if (th.consec >= 3) { th.wedgedUntil = now + WEDGE_COOLDOWN_MS; th.consec = 0; wedgedNow = true; }
+        resolve({
+          timedOut: true, wedged: wedgedNow, exit: -1,
+          out: 'Error: ' + name + ' timed out after ' + Math.round(budget / 1000) + 's and was treated as failed' + (wedgedNow ? ' — the tool is now on cooldown and further calls will be skipped briefly' : '') + '. React to this like any tool failure.'
+        });
+      }, budget);
+      Promise.resolve()
+        .then(run)
+        .then(function (v) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          th.consec = 0; // any completion proves the tool alive
+          resolve({ ok: true, value: v });
+        })
+        .catch(function (e) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          th.consec = 0;
+          resolve({ ok: false, out: 'Error: ' + String((e && e.message) || e) });
+        });
+    });
+  }
+
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS };
 });

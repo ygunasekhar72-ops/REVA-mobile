@@ -80,6 +80,30 @@ const LoopCore = require('../js/loopcore.js');
   assert.strictEqual(LoopCore.injectThreeMap(localMap), localMap, 'explicit local paths untouched');
   assert.strictEqual(LoopCore.injectThreeMap('<html><head></head><body>plain page</body></html>').indexOf('importmap'), -1, 'non-three page untouched');
 
-  console.log('loopcore: 7/7 scenarios PASS');
+  // 7. tool watchdog: budgets, honest timeout, wedge after 3, reset on success
+  LoopCore.DEFAULT_BUDGETS['test_tool'] = 60;
+  const health = LoopCore.makeToolHealth();
+  const fast = await LoopCore.withBudget(() => Promise.resolve('fine'), 'test_tool', health);
+  assert.ok(fast.ok && fast.value === 'fine', 'fast tool passes through');
+
+  let hangRuns = 0;
+  const hang = () => { hangRuns++; return new Promise(() => { }); }; // never settles
+  for (let i = 0; i < 3; i++) {
+    const r = await LoopCore.withBudget(hang, 'test_tool', health);
+    assert.ok(!r.ok && r.timedOut, 'timeout ' + (i + 1) + ' reported honestly');
+  }
+  assert.strictEqual(hangRuns, 3, 'hanging tool ran each attempt');
+  const wedged = await LoopCore.withBudget(hang, 'test_tool', health);
+  assert.ok(wedged.wedged && !wedged.ok, '4th call wedged without running');
+  assert.strictEqual(hangRuns, 3, 'wedged call never started the tool');
+  assert.ok(/unresponsive/.test(wedged.out), 'wedged message explains itself');
+  const ok2 = await LoopCore.withBudget(() => Promise.resolve('back'), 'test_tool', health);
+  assert.ok(!ok2.ok && ok2.wedged, 'cooldown holds (call skipped, tool never started)');
+  health['test_tool'].wedgedUntil = Date.now() - 1; // simulate the cooldown elapsing
+  const ok3 = await LoopCore.withBudget(() => Promise.resolve('back'), 'test_tool', health);
+  assert.ok(ok3.ok && ok3.value === 'back', 'after cooldown the tool runs and resets the counter');
+  delete LoopCore.DEFAULT_BUDGETS['test_tool'];
+
+  console.log('loopcore: 8/8 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

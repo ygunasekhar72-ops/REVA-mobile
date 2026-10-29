@@ -53,17 +53,9 @@
         term.writeln('\x1b[1mREVA shell\x1b[0m — real pty · REVA Linux (Alpine via proot) + busybox (~300 cmds) + ripgrep');
         term.writeln('\x1b[2mtry: apk add git · pkg install curl · lx · rg pattern\x1b[0m\r');
         REVAShell.start();
-        /* one-shot pty sizing: the device knows the real dimensions, so
-           full-screen apps (vim, top) get them from the first paint. Sent
-           once at session start — guaranteed to land at a shell prompt;
-           never re-sent mid-session (it would type into running apps). */
-        setTimeout(function () {
-          try {
-            var cols = Math.max(20, Math.floor($('#termHost').clientWidth / (fontSize() * 0.6)));
-            var rows = Math.max(8, Math.floor($('#termHost').clientHeight / (fontSize() * 1.5)));
-            REVAShell.writeRaw('stty rows ' + rows + ' cols ' + cols + '\n');
-          } catch (e) { }
-        }, 700);
+        /* one-shot pty sizing at session start (guaranteed shell prompt);
+           the Fit key re-sends it on demand — user-invoked, so safe */
+        setTimeout(function () { sendStty(); }, 700);
       } else {
         term.writeln('\x1b[1mREVA terminal\x1b[0m — harness console backend (browser). \x1b[2mhelp\x1b[0m lists commands.');
         term.writeln('\x1b[2mThe Android APK runs a real unrestricted device shell here.\x1b[0m\r\n');
@@ -150,6 +142,7 @@
       if (k === 'esc') { send('\u001b'); if (backend !== 'android') term.write('\x1b'); }
       else if (k === 'tab') { send('\t'); if (backend !== 'android') term.write('\t'); }
       else if (k === 'ctrl') { ctrlArmed = !ctrlArmed; armCtrl(ctrlArmed); }
+      else if (k === 'fit') { sendStty(); }
       else if (k === 'paste') { paste(); }
       else if (k === 'up') send('\u001b[A');
       else if (k === 'down') send('\u001b[B');
@@ -178,6 +171,18 @@
   function armCtrl(on) {
     var b = $('#termCtrl');
     if (b) b.classList.toggle('armed', !!on);
+  }
+
+  /* push the real screen dimensions into the pty so full-screen apps
+     (vim, top) layout correctly. Send at session start or via the Fit
+     key — only when the user knows they are at a shell prompt. */
+  function sendStty() {
+    if (backend !== 'android' || !window.REVAShell || !REVAShell.writeRaw) return;
+    try {
+      var cols = Math.max(20, Math.floor($('#termHost').clientWidth / (fontSize() * 0.6)));
+      var rows = Math.max(8, Math.floor($('#termHost').clientHeight / (fontSize() * 1.5)));
+      REVAShell.writeRaw('stty rows ' + rows + ' cols ' + cols + '\n');
+    } catch (e) { }
   }
 
   function paste() {
