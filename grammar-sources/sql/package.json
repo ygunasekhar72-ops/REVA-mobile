@@ -21,5 +21,14 @@
   "devDependencies": {
     "prettier": "2.3.0",
     "tree-sitter-cli": "^0.19.5"
-  }
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.sql",
+      "file-types": [
+        "sql"
+      ],
+      "injection-regex": "^sql$"
+    }
+  ]
 }

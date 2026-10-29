@@ -73,5 +73,14 @@
     "prestart": "tree-sitter build --wasm",
     "start": "tree-sitter playground",
     "test": "node --test bindings/node/*_test.js"
-  }
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.ruby",
+      "file-types": [
+        "ruby"
+      ],
+      "injection-regex": "^ruby$"
+    }
+  ]
 }
