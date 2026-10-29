@@ -56,6 +56,13 @@ const LoopCore = require('../js/loopcore.js');
   assert.strictEqual(one.kept.length, 2, 'an over-budget single group is still kept');
   assert.strictEqual(one.dropped, 0);
 
-  console.log('loopcore: 5/5 scenarios PASS');
+  // 6. parallel-reads classifier: all-read-only batches only
+  assert.strictEqual(LoopCore.isParallelSafe(['read_file', 'list_files', 'workspace_search']), true, 'read batch is parallel');
+  assert.strictEqual(LoopCore.isParallelSafe(['read_file', 'write_file']), false, 'mixed batch stays sequential');
+  assert.strictEqual(LoopCore.isParallelSafe(['shell_exec']), false, 'shell never parallel');
+  assert.strictEqual(LoopCore.isParallelSafe(['read_file']), false, 'single call gains nothing');
+  assert.strictEqual(LoopCore.isParallelSafe([]), false, 'empty batch');
+
+  console.log('loopcore: 6/6 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

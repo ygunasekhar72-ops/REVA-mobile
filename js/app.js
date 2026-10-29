@@ -1030,6 +1030,35 @@
             for (var di = 0; di < autos.length - 8; di++) Store.checkpoints.del(autos[di].id);
           } catch (eCp) { /* checkpointing must never break the run */ }
         }
+        /* PARALLEL READS: an all-read-only batch runs concurrently — the
+           "read these 6 files" pattern stops costing 6 round-trips. Rows
+           appear as each finishes; tool results push in call order. Any
+           mutating/stateful batch keeps the ordered sequential path below. */
+        if (window.LoopCore && LoopCore.isParallelSafe(res.toolCalls.map(function (t) { return t.function.name; }))) {
+          var pOut = await Promise.all(res.toolCalls.map(function (tcP) {
+            var argsP = {};
+            try { argsP = JSON.parse(tcP.function.arguments || '{}'); } catch (e) {}
+            var infoP = Tools.brief(tcP.function.name, argsP, 'ok');
+            infoP.name = tcP.function.name; infoP.args = argsP;
+            return fireHook('PreToolUse', { name: tcP.function.name, args: argsP }, tcP.function.name).then(function (blocked) {
+              if (blocked) return 'BLOCKED: a PreToolUse hook vetoed this tool call. Tell the user and continue without it.';
+              return Tools.run(tcP.function.name, argsP).catch(function (er) { return 'Error: ' + (er && er.message || er); });
+            }).then(function (rP) {
+              if (!infoP.meta) infoP = Tools.brief(tcP.function.name, argsP, rP);
+              infoP.name = tcP.function.name;
+              addToolRow(infoP, rP);
+              return rP;
+            });
+          }));
+          for (var pj = 0; pj < res.toolCalls.length; pj++) {
+            var trcQ = apiMsgs.filter(function (m) { return m.role === 'tool'; }).length;
+            apiMsgs.push({ role: 'tool', tool_call_id: res.toolCalls[pj].id, content: String(pOut[pj]).slice(0, trcQ > 5 ? 600 : 4000) });
+            fireHook('PostToolUse', { name: res.toolCalls[pj].function.name, args: {}, result: String(pOut[pj]).slice(0, 500) }, res.toolCalls[pj].function.name);
+          }
+          acc = ''; contentEl = null;
+          refreshCtx(); UI.renderHome();
+          continue;
+        }
         for (var i = 0; i < res.toolCalls.length; i++) {
           var tc = res.toolCalls[i];
           var args = {};

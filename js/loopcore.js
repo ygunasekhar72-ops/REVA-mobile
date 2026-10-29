@@ -66,5 +66,16 @@
     return { kept: kept.reduce(function (a, g) { return a.concat(g); }, []), dropped: dropped };
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript };
+  /* read-only Tools.run tools that may run concurrently. Anything mutating,
+     stateful, shell-backed, hook-UI-bound or special-cased in the dispatch
+     loop stays on the ordered sequential path. A batch qualifies only when
+     EVERY call is safe and there is more than one call. */
+  var PARALLEL_SAFE = /^(read_file|list_files|workspace_search|code_symbols|memory_search|lint|test_data)$/;
+  function isParallelSafe(names) {
+    if (!names || names.length < 2) return false;
+    for (var i = 0; i < names.length; i++) if (!PARALLEL_SAFE.test(String(names[i]))) return false;
+    return true;
+  }
+
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe };
 });
