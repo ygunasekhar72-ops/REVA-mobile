@@ -254,6 +254,9 @@
     /* ACTIVE skills: full instructions injected (auto-matched to the request
        or pulled with load_skill) — real progressive disclosure, not an index */
     var sess0 = Store.active();
+    /* L3 CONTEXT ENGINE: the repo-map of the mounted project rides the
+       prompt — rebuilt in the background as the agent edits (sig-cached) */
+    if (sess0 && sess0.repoMap) p.push(sess0.repoMap);
     var active = (sess0 && sess0.activeSkills) || [];
     active.forEach(function (nm) {
       var body = skillBody(nm);
@@ -499,7 +502,35 @@
     }
   }
 
+  /* L3 CONTEXT ENGINE — repo-map: build/refresh the mounted project's map.
+     Sig-cached on the session; AST symbols via the tree-sitter engine when
+     up (REVATS.symbolsFor), regex fallback otherwise. Capped at 4s so map
+     building can never stall a run. */
+  function refreshRepoMap(s, wait) {
+    if (!s || !s.libId || !window.REVAMAP) return Promise.resolve();
+    var proj = Store.lib.get(s.libId);
+    if (!proj || !proj.files) return Promise.resolve();
+    var n = 0, bytes = 0;
+    Object.keys(proj.files).forEach(function (p) { n++; bytes += String(proj.files[p] || '').length; });
+    var sig = n + ':' + bytes;
+    if (s._mapSig === sig && s.repoMap) return Promise.resolve();
+    var label = 'lib/' + String(proj.name).toLowerCase().split('\\').join('-').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '/';
+    var job = REVAMAP.build(proj.files, function (p, content) {
+      var ext = (p.split('.').pop() || '').toLowerCase();
+      return window.REVATS ? REVATS.symbolsFor(ext, content) : Promise.resolve(null);
+    }, label).then(function (r) {
+      s.repoMap = r.text; s._mapSig = r.sig;
+      return r.text;
+    });
+    if (!wait) return job;
+    return Promise.race([job, new Promise(function (res) { setTimeout(function () { res(); }, 4000); })]);
+  }
+  App.refreshRepoMap = refreshRepoMap;
+
   async function streamReply(s) {
+    /* L3: freshen the repo-map before the first round (await, small budgets)
+       and let later rounds refresh it in the background */
+    try { await refreshRepoMap(s, true); } catch (eMap) { }
     var prov = Store.activeProvider();
     var flow = $('#msgFlow'), scroller = $('#chatMsgs');
     /* persistent live holder: survives ANY transcript wipe (visiting another
@@ -1116,6 +1147,7 @@
           apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(result).slice(0, toolResultCount2 > 5 ? 600 : 4000) });
         }
         acc = ''; contentEl = null;
+        try { refreshRepoMap(s); } catch (eRm) { } // background: map follows the edits
         refreshCtx(); UI.renderHome();
         continue;
       }

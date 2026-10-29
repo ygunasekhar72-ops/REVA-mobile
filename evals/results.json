@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-29T17:34:45.750Z",
+  "date": "2026-10-29T17:49:54.852Z",
   "pass": 10,
   "total": 10,
   "results": [
@@ -19,13 +19,13 @@
       "name": "fragmented args: write completes with full payload",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 2
+      "ms": 3
     },
     {
       "name": "empty-reply ladder: bounded, no hang, honest stop",
       "pass": true,
       "detail": "iters=6",
-      "ms": 5
+      "ms": 12
     },
     {
       "name": "Guard gating: shell_exec + MCP tools excluded in Guard mode",
