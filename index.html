@@ -34,6 +34,7 @@
       <button class="ditem" data-tab="files" data-close><i data-lucide="folder"></i>Files</button>
       <button class="ditem" id="webPill" data-close><i data-lucide="globe"></i>Browser</button>
       <button class="ditem" id="idePill" data-close><i data-lucide="monitor"></i>IDE</button>
+      <button class="ditem" id="termPill" data-close><i data-lucide="square-terminal"></i>Terminal</button>
       <button class="ditem" data-tab="ai" data-close><i data-lucide="brain"></i>Memory</button>
       <button class="ditem" data-go="ov-servers" data-close><i data-lucide="monitor-dot"></i>Dev servers</button>
       <div class="dsec">Chats</div>
@@ -48,6 +49,7 @@
     <!-- ================= FILES ================= -->
     <section class="screen tab-scr" id="scr-files">
       <div class="shead"><button class="iconb" data-drawer aria-label="Menu"><i data-lucide="menu"></i></button><h2>Files</h2>
+        <button class="iconb" id="filesTermBtn" aria-label="Open terminal"><i data-lucide="square-terminal"></i></button>
         <button class="iconb" id="ideBtn" aria-label="Open workspace IDE"><i data-lucide="monitor"></i></button>
         <button class="iconb" id="newFileBtn" aria-label="New file"><i data-lucide="file-plus-2"></i></button>
         <button class="iconb" id="deployBtn" aria-label="Deploy workspace"><i data-lucide="cloud-upload"></i></button>
@@ -294,6 +296,36 @@
     </section>
 
     <!-- ================= BROWSER ================= -->
+    <!-- ================= TERMINAL (real pty · REVA Linux) ================= -->
+    <div id="terminal" style="display:none">
+      <div class="ide-head">
+        <span class="ide-logo"><i data-lucide="square-terminal"></i></span>
+        <b>Terminal</b>
+        <span class="ide-path kbd" id="termBackend">—</span>
+        <span style="flex:1"></span>
+        <button class="iconb" id="termFontMinus" aria-label="Smaller text" style="width:32px;height:32px;font-size:12px">A-</button>
+        <button class="iconb" id="termFontPlus" aria-label="Larger text" style="width:32px;height:32px;font-size:14px">A+</button>
+        <button class="iconb" id="termHome" aria-label="Back to chat"><i data-lucide="message-square"></i></button>
+        <button class="iconb" id="termRestart" aria-label="Restart session"><i data-lucide="rotate-ccw"></i></button>
+        <button class="iconb" id="termClose" aria-label="Close"><i data-lucide="x"></i></button>
+      </div>
+      <div id="termHost"></div>
+      <div class="term-keys" id="termKeys">
+        <button data-k="esc">Esc</button>
+        <button data-k="tab">Tab</button>
+        <button data-k="ctrl" id="termCtrl">Ctrl</button>
+        <button data-k="paste" title="Paste"><i data-lucide="clipboard" style="width:13px;height:13px"></i></button>
+        <button data-k="up">▲</button>
+        <button data-k="down">▼</button>
+        <button data-k="left">◀</button>
+        <button data-k="right">▶</button>
+        <button data-k="ch">|</button>
+        <button data-k="ch">/</button>
+        <button data-k="ch">-</button>
+        <button data-k="ch">~</button>
+      </div>
+    </div>
+
     <section class="screen ov with-tabs" id="ov-browser">
       <div class="shead">
         <button class="iconb" data-back aria-label="Back"><i data-lucide="arrow-left"></i></button>
@@ -592,6 +624,8 @@
 <script src="js/modeldb-data.js"></script>
 <script src="js/modeldb.js"></script>
 <script src="js/loopcore.js"></script>
+<script src="js/vendor/xterm.js"></script>
+<script src="js/term.js"></script>
 <script src="js/hljs.js"></script>
 <script src="js/vendor/md/markdown-it.js"></script>
 <script src="js/vendor/diff/jsdiff.js"></script>

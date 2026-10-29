@@ -1994,6 +1994,9 @@
   });
   // IDE
   $('#idePill').addEventListener('click', function () { IDE.open(); });
+  $('#termPill').addEventListener('click', function () { if (window.Term) Term.open(); });
+  var ftb = $('#filesTermBtn');
+  if (ftb) ftb.addEventListener('click', function () { if (window.Term) Term.open(); });
   $('#ideBtn').addEventListener('click', function () { IDE.open(); });
   $('#qResume').addEventListener('click', function () {
     var last = db.sessions.slice().sort(function (a, b) { return b.updatedAt - a.updatedAt; })[0];
