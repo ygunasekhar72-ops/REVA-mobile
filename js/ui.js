@@ -25,7 +25,7 @@
         var pct = Math.min(100, Math.round(tok / (db.settings.ctxK * 1000) * 100));
         return '<button class="row sess" data-sess="' + s.id + '">' +
           (running ? '<span class="runspin"></span>' : '<span class="tile"><i data-lucide="message-square"></i></span>') +
-          '<span class="rtxt"><b>' + H.esc(s.title) + '</b><small>' + (running ? '<span class="runnow">running now…</span>' : H.esc(s.model) + ' · ' + H.ago(s.updatedAt) + ' · ' + H.fmtK(tok) + ' tok') + '</small></span>' +
+          '<span class="rtxt"><b>' + H.esc(s.title) + '</b><small>' + (running ? '<span class="runnow rv-flow-text">running now…</span>' : H.esc(s.model) + ' · ' + H.ago(s.updatedAt) + ' · ' + H.fmtK(tok) + ' tok') + '</small></span>' +
           '<span class="cbar"><b style="width:' + pct + '%"></b></span></button>';
       }
       var html = '';
@@ -315,7 +315,8 @@
           '<button class="uact" data-copymsg="' + i + '" aria-label="Copy message"><i data-lucide="copy" style="width:12px;height:12px"></i></button></div></div>');
         u.querySelector('.utext').textContent = m.content;
         if (m.image) {
-          var im = H.el('<img class="uimg" alt="attached image"/>');
+          var im = H.el('<img class="uimg rv-img-loading" alt="attached image"/>');
+          im.onload = function () { im.classList.remove('rv-img-loading'); };
           im.src = m.image;
           u.insertBefore(im, u.firstChild);
         }
@@ -346,6 +347,20 @@
       inner += '<div class="aacts"><button class="uact" data-copyai aria-label="Copy reply"><i data-lucide="copy" style="width:12px;height:12px"></i> Copy</button></div>';
       a.innerHTML = inner;
       if (window.MDRENDER) MDRENDER.enhance(a.querySelector('.mdbody')); // code blocks → engine color
+      /* ZCode motion: stagger-stream only NEWLY completed messages — history
+         repaints stay still (identity = session + role + ts) */
+      try {
+        var mid = s.id + ':' + (m.role || '') + ':' + (m.ts || 0);
+        UI._mseen = UI._mseen || {};
+        if (!UI._mseen[mid]) {
+          UI._mseen[mid] = 1;
+          var kids = a.querySelectorAll('.mdbody > *, .aacts');
+          for (var ki = 0; ki < kids.length; ki++) {
+            kids[ki].classList.add('m-in');
+            kids[ki].style.setProperty('--d', Math.min(ki * 55, 550) + 'ms');
+          }
+        }
+      } catch (eSt) { }
       a.querySelectorAll('[data-toolpath]').forEach(function (card) {
         var p = card.getAttribute('data-toolpath');
         if (p) card.addEventListener('click', function () { App.openPath(p); });
@@ -353,7 +368,7 @@
       a.querySelectorAll('.act-row[data-open]').forEach(function (row) {
         var p = row.getAttribute('data-open');
         row.style.cursor = 'pointer';
-        row.addEventListener('click', function () { App.openPath(p); });
+        row.addEventListener('click', function () { row.classList.add('rv-flash'); App.openPath(p); });
       });
       var cp = a.querySelector('[data-copyai]');
       if (cp) cp.addEventListener('click', function () { H.copy(m.content); H.toast('Reply copied'); });

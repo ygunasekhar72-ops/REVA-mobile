@@ -447,6 +447,14 @@
     b.innerHTML = '<i data-lucide="' + (stopMode ? 'square' : 'arrow-up') + '"></i>';
     H.icons();
   }
+  /* ZCode motion: completion feedback lives ONLY here — a keystroke also
+     calls setSendStop(false) and must not pop the button */
+  function sendBtnDone() {
+    var b = $('#sendBtn');
+    if (!b) return;
+    b.classList.add('rv-pop', 'rv-burst');
+    setTimeout(function () { b.classList.remove('rv-pop', 'rv-burst'); }, 650);
+  }
 
   /* follow-up queue: messages typed while a run streams are queued, shown
      in the transcript, and sent automatically when the run finishes —
@@ -553,7 +561,7 @@
        re-attaches the whole holder on return) */
     var liveHold = H.el('<div class="live-hold" data-live="1"></div>');
     flow.appendChild(liveHold);
-    var typing = H.el('<div class="typing" data-live="1"><i></i><i></i><i></i></div>');
+    var typing = H.el('<div class="typing rv-connecting" data-live="1"><i></i><i></i><i></i></div>');
     liveHold.appendChild(typing);
     scroller.scrollTop = scroller.scrollHeight;
     var bubble = null, thinkEl = null, contentEl = null, acc = '', accRe = '';
@@ -653,7 +661,7 @@
       /* ZCode-style Thinking row: brain icon + "Thinking" + a live faded
          preview of the actual reasoning text + ticking duration — all on
          one inline row, never a separate panel above the reply */
-      thoughtRow = H.el('<div class="act-row live"><i data-lucide="brain"></i><b>Thinking</b><span class="sep">·</span><span class="rprev"></span><span class="meta">a few seconds</span></div>');
+      thoughtRow = H.el('<div class="act-row live m-in"><i data-lucide="brain"></i><b class="rv-flow-text">Thinking</b><span class="sep">·</span><span class="rprev"></span><span class="meta">a few seconds</span></div>');
       act.insertBefore(thoughtRow, pendRow || spinRow || null);
       H.icons();
     }
@@ -761,7 +769,7 @@
     function beginToolRow(name, args) {
       clearPend();
       var v = verbFor(name, args);
-      liveToolRow = H.el('<div class="act-row live"><i data-lucide="' + verbIconFor(name) + '"></i><b>' + H.esc(v.live) + '</b><span class="apath">' + H.esc(args && (args.path || args.command || args.query || args.url) || '') + '</span><span class="meta"></span></div>');
+      liveToolRow = H.el('<div class="act-row live m-in"><i data-lucide="' + verbIconFor(name) + '"></i><b class="rv-flow-text">' + H.esc(v.live) + '</b><span class="apath">' + H.esc(args && (args.path || args.command || args.query || args.url) || '') + '</span><span class="meta"></span></div>');
       var act = ensureAct();
       if (spinRow && spinRow.parentNode === act) act.insertBefore(liveToolRow, spinRow);
       else act.appendChild(liveToolRow);
@@ -797,7 +805,7 @@
         row.classList.remove('live');
         row.innerHTML = '<i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i>' + flat;
       } else {
-        row = H.el('<div class="act-row"><i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i>' + flat + '</div>');
+        row = H.el('<div class="act-row m-in"><i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i>' + flat + '</div>');
         ensureAct().appendChild(row);
       }
       H.icons();
@@ -1247,6 +1255,7 @@
     Store.save();
     state.streaming = false; state.streamingSid = null; setSendStop(false); state.ctrl = null;
     liveHold = null;
+    sendBtnDone(); // ZCode motion: the glyph flip pops + bursts only on real completion
     drainQueue(); // a queued follow-up sends now — typing never stopped the run
     if (Store.active() === s) { UI.renderChat(s); UI.renderChatHead(s); } // don't repaint if the user switched sessions mid-run
     refreshCtx(); UI.renderHome(); UI.renderSettingsSubs();

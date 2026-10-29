@@ -79,6 +79,20 @@ third-party components:
   distributed unmodified as a separate aggregated work; REVA's code
   interops only via the process streams.
 
+## ZCode motion system — Apache-2.0 (ported CSS animations)
+- Files: the "ZCODE MOTION SYSTEM" block in `css/app.css` + animation hooks
+  in `js/ui.js` / `js/app.js`
+- Source: https://github.com/zai-org/ZCode — `packages/ui/src/styles.css`
+  (Apache-2.0). © Z.ai and ZCode contributors.
+- Ported patterns (adapted to REVA's design tokens, all with
+  prefers-reduced-motion guards as upstream): stream-in with stagger,
+  prompt waterfall (clip-path reveal), indeterminate tool-progress sweep,
+  working-icon breathe, gradient-flow text, image loading shimmer,
+  highlight flash, reaction pop + particle burst, connecting breathe,
+  and native `<details>` content transitions. This product/repo ("REVA")
+  uses these portions under Apache-2.0; no warranty from the upstream
+  authors is implied.
+
 ## tree-sitter grammar sources — MIT (vendored build inputs)
 - Files: `grammar-sources/<lang>/` for 19 languages (grammar.js DSL source,
   src/parser.c + scanner.c as distributed by their npm packages, node-types,

@@ -663,3 +663,70 @@ html,body{margin:0;padding:0;overflow:hidden!important;width:100%}
 
 /* live holder: rides the transcript, survives wipes when visiting other chats mid-run */
 #mono-harness .live-hold{display:block}
+
+/* ============================================================
+   ZCODE MOTION SYSTEM — ported from zai-org/ZCode (Apache-2.0,
+   packages/ui/src/styles.css) and adapted to REVA's design tokens.
+   Every animation carries a prefers-reduced-motion guard, as the
+   upstream original does. See THIRD_PARTY_NOTICES.md.
+   ============================================================ */
+
+/* 1. STREAM-IN — new content fades up with a stagger variable
+      (--d set per element by ui.js), cubic-bezier(0.16,1,0.3,1) */
+@keyframes rv-stream-in{from{opacity:0}to{opacity:1}}
+#mono-harness .m-in{animation:rv-stream-in .9s cubic-bezier(.16,1,.3,1) var(--d,0ms) both;will-change:opacity}
+
+/* 2. WATERFALL — user bubbles + queued rows drop in behind a
+      clip-path reveal (260ms, cubic-bezier(0.22,1,0.36,1)) */
+@keyframes rv-waterfall{from{opacity:0;clip-path:inset(0 0 100% 0);transform:translateY(-12px)}to{opacity:1;clip-path:inset(0 0 0 0);transform:translateY(0)}}
+#mono-harness .msg.user{animation:rv-waterfall .26s cubic-bezier(.22,1,.36,1) both}
+#mono-harness .queued{animation:rv-waterfall .26s cubic-bezier(.22,1,.36,1) both}
+
+/* 3. INDETERMINATE TOOL PROGRESS — thin sweep line on the live row */
+#mono-harness .act-row.live{position:relative;overflow:hidden}
+#mono-harness .act-row.live::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:33%;border-radius:2px;background:linear-gradient(90deg,transparent,rgba(124,92,255,.55),transparent);animation:rv-indeterminate 1.2s ease-in-out infinite}
+@keyframes rv-indeterminate{from{left:-33%}to{left:100%}}
+
+/* 4. BREATHE — the live row icon breathes (opacity + scale), the
+      honest way to say "working" without a spinning wheel */
+@keyframes rv-breathe{0%,100%{opacity:.5;transform:scale(.9)}50%{opacity:1;transform:scale(1.08)}}
+#mono-harness .act-row.live>i{transform-origin:center;animation:rv-breathe .9s ease-in-out infinite;will-change:opacity,transform}
+
+/* 5. GRADIENT FLOW — "running" text shimmers with a travelling
+      violet gradient (background-clip:text) */
+@keyframes rv-gradient-flow{0%{background-position:100% 0}100%{background-position:-100% 0}}
+#mono-harness .rv-flow-text{background:linear-gradient(90deg,var(--ink) 35%,#7c5cff 50%,var(--ink) 65%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;animation:rv-gradient-flow 1.6s linear infinite;will-change:background-position;transform:translateZ(0)}
+
+/* 6. SHIMMER — images while they load */
+@keyframes rv-shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+#mono-harness .rv-img-loading{background-color:var(--fld);background-image:linear-gradient(135deg,var(--fld) 0%,var(--porcelain, #eceaf2) 50%,var(--fld) 100%);background-size:240% 100%;animation:rv-shimmer 1.8s linear infinite}
+
+/* 7. HIGHLIGHT FLASH — a row/file flashes violet when opened or
+      jumped to (search hit → source) */
+@keyframes rv-flash{0%{background-color:rgba(124,92,255,.20);box-shadow:inset 0 0 0 1px rgba(124,92,255,.28)}45%{background-color:rgba(124,92,255,.14);box-shadow:inset 0 0 0 1px rgba(124,92,255,.20)}100%{background-color:transparent;box-shadow:inset 0 0 0 1px transparent}}
+#mono-harness .rv-flash{animation:rv-flash 1.2s ease-out both;border-radius:10px}
+
+/* 8. POP — send button and completion check pop */
+@keyframes rv-pop{0%{transform:scale(0)}45%{transform:scale(1.3)}70%{transform:scale(.95)}100%{transform:scale(1)}}
+#mono-harness .rv-pop{animation:rv-pop .45s cubic-bezier(.34,1.56,.64,1) both}
+@keyframes rv-particles{0%{opacity:0;box-shadow:7.7px 2.1px 0 0 #7c5cff,2.1px 7.7px 0 0 #57c78f,-5.7px 5.7px 0 0 #7c5cff,-7.7px -2.1px 0 0 #82aaff,-2.1px -7.7px 0 0 #57c78f,5.7px -5.7px 0 0 #82aaff}20%{opacity:.7}100%{opacity:0;box-shadow:15.5px 4.1px 0 -1px #7c5cff,4.1px 15.5px 0 -1px #57c78f,-11.3px 11.3px 0 -1px #7c5cff,-15.5px -4.1px 0 -1px #82aaff,-4.1px -15.5px 0 -1px #57c78f,11.3px -11.3px 0 -1px #82aaff}}
+#mono-harness .rv-burst{position:relative}
+#mono-harness .rv-burst::after{content:"";position:absolute;inset:50% auto auto 50%;width:6px;height:6px;margin:-3px;border-radius:50%;animation:rv-particles .6s ease-out both;pointer-events:none}
+
+/* 9. CONNECTING BREATHE — connecting/pending surfaces pulse */
+@keyframes rv-connect-breathe{0%,100%{background-color:rgba(124,92,255,.10);box-shadow:inset 0 0 0 1px rgba(124,92,255,.10)}50%{background-color:rgba(124,92,255,.16);box-shadow:inset 0 0 0 1px rgba(124,92,255,.18)}}
+#mono-harness .rv-connecting{animation:rv-connect-breathe 1.8s ease-in-out infinite;border-radius:12px}
+
+/* 10. DETAILS COLLAPSE — activity + code cards animate open/closed
+       natively (Chromium supports ::details-content transitions) */
+#mono-harness details.actwrap,#mono-harness details.codecard{interpolate-size:allow-keywords}
+#mono-harness details.actwrap::details-content,#mono-harness details.codecard::details-content{transition:height .3s ease,content-visibility .3s ease;overflow:hidden}
+#mono-harness details.actwrap[open]::details-content,#mono-harness details.codecard[open]::details-content{animation:rv-stream-in .3s ease both}
+
+/* reduced motion: every animation above switches off (upstream rule) */
+@media (prefers-reduced-motion: reduce){
+  #mono-harness .m-in,#mono-harness .msg.user,#mono-harness .queued,#mono-harness .rv-flow-text,#mono-harness .rv-pop,#mono-harness .rv-burst::after,#mono-harness .rv-connecting{animation:none!important}
+  #mono-harness .act-row.live::after,#mono-harness .rv-img-loading{animation:none!important}
+  #mono-harness .act-row.live>i{animation:none!important;opacity:1;transform:none}
+  #mono-harness details.actwrap::details-content,#mono-harness details.codecard::details-content{transition:none}
+}
