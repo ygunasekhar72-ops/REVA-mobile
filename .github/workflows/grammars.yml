@@ -43,6 +43,10 @@ jobs:
             # prebuilt wasm (tree-sitter-wasms) stays committed and works
             if [ "$name" = "yaml" ]; then echo "== yaml: prebuilt wasm kept =="; continue; fi
             echo "== forging $name =="
+            # regenerate parser.c from grammar.js at OUR pinned CLI — some
+            # npm-latest packages ship ABI-15 parsers; generating here forces
+            # ABI 14 (the true from-source build)
+            (cd "$d" && tree-sitter generate) || echo "  (generate failed — building the committed parser.c)"
             (cd "$d" && tree-sitter build --wasm)
             built=$(ls "$d"tree-sitter-*.wasm 2>/dev/null | head -1)
             if [ -z "$built" ]; then
