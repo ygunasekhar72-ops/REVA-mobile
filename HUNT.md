@@ -1,0 +1,45 @@
+# HUNT — REVA to opencode/ZCode class
+
+Directive (user, 2026-10-29): the harness must match opencode/ZCode-class quality — **no matter the file count or line count**. This file is the campaign ledger: the honest gap matrix, the workstreams that close it, and the done-conditions. Updated every release. No inflation — working features and green tests are the only currency.
+
+## Baseline (v1.4.12, honest numbers)
+
+| | REVA | opencode | Codex CLI | Aider |
+|---|---|---|---|---|
+| First-party code | ~9.7K lines | ~1M (40MB TS) | ~2M (80MB Rust) | ~35K Python |
+| Tests/evals | 10 agent evals | hundreds | thousands | extensive |
+| Platforms | PWA + Android | 80+ terminals | macOS/Linux/Win | CLI |
+| Code intelligence | regex symbol scan | LSP + tree-sitter | tree-sitter | tree-sitter repo-map |
+| Terminal | external (user-built, pending) | full TUI | full TUI | n/a |
+
+What REVA already has (built + verified): goal-driven endurance loop (500/5000-round caps), quota-aware multi-key rotation, transient auto-retry, stream watchdog, follow-up queue with cross-chat delivery, persistent live UI state, IndexedDB storage layering, Project Library + SAF native import, folder chats with implicit mounts, 33 tools, 15 seeded expert skills, shell channel with marker protocol + argv quoting, CI-built signed releases.
+
+## The gap that matters (in priority order)
+
+1. **Execution reliability** — the on-device shell wedge (573s spinner on `echo hi`) is exactly the class of bug real harnesses engineer away. Failures must be fast, honest, and self-healing. → **W1, starts now.**
+2. **Testing depth** — 10 evals ≈ 0. Real harnesses unit-test parsers, protocols, and failure paths on every commit. → **W4.**
+3. **Code intelligence** — models navigate big repos by structure, not grep luck: symbol index, references, repo-map. → **W3.**
+4. **Context engine** — compaction, repo-map, state-of-the-world blocks for 100K-token runs. → **W5.**
+5. **Terminal** — user-built PolyDev terminal integration against the standing contract (pty + marker protocol, /host bind, seccomp-aware proot, libtalloc naming). → **W2, blocked on the user's build.**
+6. **Platform hardening** — process-death restore, background runs, long-session stability. → **W6.**
+7. **Multimodal results** — screenshots/vision flowing through the tool loop, not just text pixel stats. → **W7.**
+
+## Workstreams and done-conditions
+
+- **W1 Execution reliability** — circuit breakers, watchdogs, graceful degradation. *Done when:* every failure mode observed on-device has an automated guard + a test reproducing it; no failure can burn more than its declared budget.
+- **W2 Terminal integration** — integrate the user's terminal against the contract. *Done when:* long-running commands stream live, exit codes land via markers, /host bind works, a 10-min install survives the session.
+- **W3 Code intelligence** — upgrade `code_symbols` to a real symbol index (defs/refs per language family), then a repo-map for prompts. *Done when:* the agent finds any symbol in a 100-file project in one tool call.
+- **W4 Testing depth** — unit suite (parsers, protocols, breaker, storage migration) + eval suite growth 10 → 50 scenarios (failure paths included). *Done when:* CI runs the full suite < 5 min and every shipped bug class has a regression test.
+- **W5 Context engine** — compaction + repo-map + STATE-OF-THE-WORLD persistence. *Done when:* a 500-round run stays coherent end-to-end.
+- **W6 Platform hardening** — process-death restore, background continuation. *Done when:* killing the app mid-run and reopening resumes cleanly every time.
+- **W7 Multimodal** — tool-result images into the model loop. *Done when:* the agent sees its own screenshots when the model supports vision.
+
+## Rules of the hunt
+
+1. Every increment verified (unit test or live run) before commit; CI green; honest reporting — if it fails, say so with the output.
+2. On-device is the real gate: the phone finds what the browser hides.
+3. Lines don't count. Working, tested features count.
+
+## Log
+
+- **v1.4.13 (2026-10-29):** W1 starts — shell channel circuit breaker (3 consecutive timeouts → 8s recovery probe → honest wedged guidance + automatic self-heal), plus the first unit test suite (`tests/agentexec-breaker.test.js`, 4 scenarios, wired into CI to run on every commit).

@@ -6,6 +6,8 @@
 (function () {
   var ID_RE = /__REVA_DONE__(\d+)__([\w.-]+)(\n|$)/;
   var MAX_CAPTURE = 65536;
+  var WEDGE_LIMIT = 3;   // consecutive timeouts before the channel is declared wedged
+  var PROBE_MS = 8000;   // fast recovery-probe budget (vs the 120s command default)
 
   /* pure: feed chunks + a target id, get {done, exit, out}
      strips the non-pty shell's "$ " prompt noise; exposed for unit tests */
@@ -55,6 +57,18 @@
     var state = { buf: '' };
     var self = AgentExec;
     if (self._pending) { return Promise.resolve({ out: 'Error: another shell_exec is still running', exit: -1 }); }
+    if (!opts._probe && (self.consecTimeouts || 0) >= WEDGE_LIMIT) {
+      /* circuit breaker: the channel has timed out WEDGE_LIMIT times in a row.
+         Verify with one fast probe instead of burning the full command timeout;
+         if the probe answers, the channel recovered — proceed transparently. */
+      return run('echo reva-probe-ok', { timeoutMs: PROBE_MS, _probe: true }).then(function (p) {
+        if (!p.timedOut) return run(task, opts);
+        return {
+          out: 'Error: shell channel unresponsive — ' + self.consecTimeouts + ' consecutive timeouts and the recovery probe also timed out. Do NOT call shell_exec again this round: continue with the built-in tools (read_file, write_file, edit_file, list_files, workspace_search, run_check) which do not need the shell, then retry shell_exec later — REVA probes for recovery automatically.',
+          exit: -1, wedged: true
+        };
+      });
+    }
 
     return new Promise(function (resolve) {
       var settled = false;
@@ -67,6 +81,8 @@
         settled = true;
         clearTimeout(timer);
         self._pending = null;
+        if (extra && extra.timedOut) self.consecTimeouts = (self.consecTimeouts || 0) + 1;
+        else self.consecTimeouts = 0; // any completed execution (incl. a healthy probe) proves the channel alive
         resolve(extra || {});
       }
       self._pending = {
@@ -116,5 +132,5 @@
     return run(args.join(' '), opts);
   }
 
-  window.AgentExec = { exec: run, execArgs: runArgs, parse: parse, ensure: ensure, _pending: null };
+  window.AgentExec = { exec: run, execArgs: runArgs, parse: parse, ensure: ensure, consecTimeouts: 0, WEDGE_LIMIT: WEDGE_LIMIT, _pending: null };
 })();
