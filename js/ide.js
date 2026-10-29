@@ -103,11 +103,19 @@
     g.scrollTop = ta.scrollTop;
   }
 
-  /* transparent-textarea-over-highlighted-pre keeps editing simple and code colored */
+  /* transparent-textarea-over-highlighted-pre keeps editing simple and code colored.
+     Progressive: the regex pass paints instantly; when the vendored highlight.js
+     engine has the language ready it takes over (stale-guarded against typing). */
   function refreshHl() {
     var pre = $('#ideHl'), ta = $('#ideEditor');
     if (!pre || !ta) return;
-    pre.innerHTML = H.hl(ta.value, H.extLang(curPath)) + '\n';
+    var code = ta.value;
+    pre.innerHTML = H.hl(code, H.extLang(curPath)) + '\n';
+    if (window.HLJS) {
+      HLJS.highlight(code, curPath).then(function (html) {
+        if (html && ta.value === code && $('#ideEditor') === ta) pre.innerHTML = html + '\n';
+      });
+    }
     pre.scrollTop = ta.scrollTop;
     pre.scrollLeft = ta.scrollLeft;
   }

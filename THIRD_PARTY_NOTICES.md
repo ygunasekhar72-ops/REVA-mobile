@@ -39,6 +39,15 @@ third-party components:
   license, plus everything installed at runtime via `apk`). Package sources:
   https://gitlab.alpinelinux.org/alpine/aports
 
+## highlight.js — MIT (vendored unminified source)
+- Files: `js/vendor/hljs/core.js` + `js/vendor/hljs/languages/*.js`
+  (highlight.js 11.12.0, 386 languages, vendored by `scripts/vendor-hljs.sh`
+  from the npm tarball)
+- Source: https://highlightjs.org / https://github.com/highlightjs/
+  highlight.js (MIT). © the highlight.js authors. Powers REVA's IDE syntax
+  highlighting via `js/hljs.js` (CJS-in-browser shim + lazy per-language
+  loading — REVA's own integration, MIT).
+
 ## ripgrep — MIT OR Unlicense (bundled binary)
 - Files: `android/app/…/jniLibs/<abi>/librg.so` (ripgrep 15.2.0, aarch64 +
   x86_64, copied to `filesDir/bin/rg` at runtime)

@@ -364,6 +364,14 @@
 #ide .tok-num{color:#f2a97e}
 #ide .tok-com{color:#68686f;font-style:italic}
 #ide .tok-tag{color:#82aaff}
+/* highlight.js output mapped onto the same palette (engine-generated spans) */
+#ide .hljs-keyword,#ide .hljs-selector-tag,#ide .hljs-built_in,#ide .hljs-literal,#ide .hljs-type{color:#c792ea}
+#ide .hljs-string,#ide .hljs-regexp,#ide .hljs-addition{color:#a5d6a7}
+#ide .hljs-number,#ide .hljs-symbol,#ide .hljs-bullet,#ide .hljs-attr,#ide .hljs-attribute,#ide .hljs-meta{color:#f2a97e}
+#ide .hljs-comment,#ide .hljs-quote,#ide .hljs-deletion{color:#68686f;font-style:italic}
+#ide .hljs-title,#ide .hljs-name,#ide .hljs-tag,#ide .hljs-section,#ide .hljs-selector-id,#ide .hljs-selector-class{color:#82aaff}
+#ide .hljs-emphasis{font-style:italic}
+#ide .hljs-strong{font-weight:600}
 
 /* ---------- LIVE ACTIVITY FEED (ZCode-style) ---------- */
 #mono-harness .msg.ai .activity{margin:2px 0 8px;border-radius:12px;background:var(--fld);box-shadow:inset 1.5px 1.5px 4px var(--sd),inset -1px -1px 3px var(--sl);padding:3px 11px}
