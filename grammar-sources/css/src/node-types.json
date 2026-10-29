@@ -517,10 +517,6 @@
           "named": true
         },
         {
-          "type": "scope_statement",
-          "named": true
-        },
-        {
           "type": "supports_statement",
           "named": true
         }
@@ -659,25 +655,6 @@
         },
         {
           "type": "universal_selector",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "class_name",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
-        {
-          "type": "escape_sequence",
-          "named": true
-        },
-        {
-          "type": "identifier",
           "named": true
         }
       ]
@@ -1480,10 +1457,6 @@
           "named": true
         },
         {
-          "type": "important_value",
-          "named": true
-        },
-        {
           "type": "integer_value",
           "named": true
         },
@@ -1662,77 +1635,6 @@
         },
         {
           "type": "selectors",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "scope_statement",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "adjacent_sibling_selector",
-          "named": true
-        },
-        {
-          "type": "attribute_selector",
-          "named": true
-        },
-        {
-          "type": "block",
-          "named": true
-        },
-        {
-          "type": "child_selector",
-          "named": true
-        },
-        {
-          "type": "class_selector",
-          "named": true
-        },
-        {
-          "type": "descendant_selector",
-          "named": true
-        },
-        {
-          "type": "id_selector",
-          "named": true
-        },
-        {
-          "type": "namespace_selector",
-          "named": true
-        },
-        {
-          "type": "nesting_selector",
-          "named": true
-        },
-        {
-          "type": "pseudo_class_selector",
-          "named": true
-        },
-        {
-          "type": "pseudo_element_selector",
-          "named": true
-        },
-        {
-          "type": "sibling_selector",
-          "named": true
-        },
-        {
-          "type": "string_value",
-          "named": true
-        },
-        {
-          "type": "tag_name",
-          "named": true
-        },
-        {
-          "type": "universal_selector",
           "named": true
         }
       ]
@@ -1942,26 +1844,11 @@
   {
     "type": "string_value",
     "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
-        {
-          "type": "escape_sequence",
-          "named": true
-        },
-        {
-          "type": "string_content",
-          "named": true
-        }
-      ]
-    }
+    "fields": {}
   },
   {
     "type": "stylesheet",
     "named": true,
-    "root": true,
     "fields": {},
     "children": {
       "multiple": true,
@@ -1997,10 +1884,6 @@
         },
         {
           "type": "rule_set",
-          "named": true
-        },
-        {
-          "type": "scope_statement",
           "named": true
         },
         {
@@ -2048,11 +1931,6 @@
         }
       ]
     }
-  },
-  {
-    "type": "to",
-    "named": true,
-    "fields": {}
   },
   {
     "type": "unary_query",
@@ -2187,10 +2065,6 @@
     "named": false
   },
   {
-    "type": "@scope",
-    "named": false
-  },
-  {
     "type": "@supports",
     "named": false
   },
@@ -2215,12 +2089,11 @@
     "named": true
   },
   {
-    "type": "comment",
-    "named": true,
-    "extra": true
+    "type": "class_name",
+    "named": true
   },
   {
-    "type": "escape_sequence",
+    "type": "comment",
     "named": true
   },
   {
@@ -2240,21 +2113,12 @@
     "named": true
   },
   {
-    "type": "identifier",
-    "named": true
-  },
-  {
     "type": "important",
     "named": true
   },
   {
-    "type": "important_value",
-    "named": true
-  },
-  {
     "type": "js_comment",
-    "named": true,
-    "extra": true
+    "named": true
   },
   {
     "type": "keyframes_name",
@@ -2274,10 +2138,6 @@
   },
   {
     "type": "not",
-    "named": false
-  },
-  {
-    "type": "of",
     "named": false
   },
   {
@@ -2301,16 +2161,12 @@
     "named": false
   },
   {
-    "type": "string_content",
-    "named": true
-  },
-  {
     "type": "tag_name",
     "named": true
   },
   {
     "type": "to",
-    "named": false
+    "named": true
   },
   {
     "type": "unit",

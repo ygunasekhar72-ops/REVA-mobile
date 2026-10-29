@@ -1,14 +1,14 @@
 /**
  * @file CSS grammar for tree-sitter
  * @author Max Brunsfeld <maxbrunsfeld@gmail.com>
- * @author Amaan Qureshi <contact@amaanq.com>
+ * @author Amaan Qureshi <amaanq12@gmail.com>
  * @license MIT
  */
 
 /// <reference types="tree-sitter-cli/dsl" />
 // @ts-check
 
-export default grammar({
+module.exports = grammar({
   name: 'css',
 
   extras: $ => [
@@ -40,7 +40,6 @@ export default grammar({
       $.namespace_statement,
       $.keyframes_statement,
       $.supports_statement,
-      $.scope_statement,
       $.at_rule,
     ),
 
@@ -88,7 +87,7 @@ export default grammar({
     ),
 
     keyframe_block: $ => seq(
-      sep1(',', choice($.from, $.to, $.integer_value)),
+      choice($.from, $.to, $.integer_value),
       $.block,
     ),
 
@@ -101,20 +100,9 @@ export default grammar({
       $.block,
     ),
 
-    scope_statement: $ => seq(
-      '@scope',
-      optional(
-        seq(
-          '(', $._selector, ')',
-          optional(seq('to', '(', $._selector, ')')),
-        ),
-      ),
-      $.block,
-    ),
-
     postcss_statement: $ => prec(-1, seq(
       $.at_keyword,
-      repeat(choice($._value, $.important_value)),
+      repeat($._value),
       ';',
     )),
 
@@ -149,7 +137,6 @@ export default grammar({
       $.namespace_statement,
       $.keyframes_statement,
       $.supports_statement,
-      $.scope_statement,
       $.postcss_statement,
       $.at_rule,
     ),
@@ -180,7 +167,7 @@ export default grammar({
     class_selector: $ => prec(1, seq(
       optional($._selector),
       '.',
-      $.class_name,
+      alias($.identifier, $.class_name),
     )),
 
     pseudo_class_selector: $ => seq(
@@ -190,36 +177,18 @@ export default grammar({
         // Either a specific pseudo-class that can only accept a selector…
         seq(
           alias(
-            choice('has', 'not', 'is', 'where', 'host', 'host-context'),
+            choice('has', 'not', 'is', 'where'),
             $.class_name,
           ),
           alias($.pseudo_class_with_selector_arguments, $.arguments),
         ),
-
-        // …or an `nth-child` or `nth-last-child` selector (which can
-        // optionally accept a selector)…
-        $._nth_child_pseudo_class_selector,
-
         // …or any other pseudo-class (for which we'll allow a more diverse set
         // of arguments).
         seq(
-          $.class_name,
+          alias($.identifier, $.class_name),
           optional(alias($.pseudo_class_arguments, $.arguments)),
         ),
-
-        // …or a standalone `host` pseudo-class (as `:host` doesn't require arguments).
-        alias('host', $.class_name),
       ),
-    ),
-
-    // Only `nth-child`/`nth-last-child`, not `nth-of-type`/`nth-last-of-type`,
-    // allows an optional filtering selector as a parameter.
-    _nth_child_pseudo_class_selector: $ => seq(
-      alias(
-        choice('nth-child', 'nth-last-child'),
-        $.class_name,
-      ),
-      alias($.pseudo_class_nth_child_arguments, $.arguments),
     ),
 
     pseudo_element_selector: $ => seq(
@@ -237,7 +206,7 @@ export default grammar({
 
     attribute_selector: $ => seq(
       optional($._selector),
-      token(prec(1, '[')),
+      '[',
       alias(choice($.identifier, $.namespace_selector), $.attribute_name),
       optional(seq(
         choice('=', '~=', '^=', '|=', '*=', '$='),
@@ -246,15 +215,15 @@ export default grammar({
       ']',
     ),
 
-    child_selector: $ => prec.left(seq(optional($._selector), '>', $._selector)),
+    child_selector: $ => prec.left(seq($._selector, '>', $._selector)),
 
     descendant_selector: $ => prec.left(seq($._selector, $._descendant_operator, $._selector)),
 
-    sibling_selector: $ => prec.left(seq(optional($._selector), '~', $._selector)),
+    sibling_selector: $ => prec.left(seq($._selector, '~', $._selector)),
 
-    adjacent_sibling_selector: $ => prec.left(seq(optional($._selector), '+', $._selector)),
+    adjacent_sibling_selector: $ => prec.left(seq($._selector, '+', $._selector)),
 
-    namespace_selector: $ => prec.left(seq(optional($._selector), '|', $._selector)),
+    namespace_selector: $ => prec.left(seq($._selector, '|', $._selector)),
 
     pseudo_class_arguments: $ => seq(
       token.immediate('('),
@@ -267,26 +236,6 @@ export default grammar({
       sep(',', $._selector),
       ')',
     ),
-
-    pseudo_class_nth_child_arguments: $ => prec(-1, seq(
-      token.immediate('('),
-      choice(
-        alias('even', $.plain_value),
-        alias('odd', $.plain_value),
-        $.integer_value,
-        alias($._nth_functional_notation, $.plain_value),
-      ),
-      optional(
-        seq(
-          'of',
-          $._selector,
-        ),
-      ),
-      ')',
-    )),
-
-    // An+B notation for `nth-child`/`nth-last-child`.
-    _nth_functional_notation: _ => /-?(\d)*n\s*(\+\s*\d+)?/,
 
     pseudo_element_arguments: $ => seq(
       token.immediate('('),
@@ -388,32 +337,10 @@ export default grammar({
 
     color_value: _ => seq('#', token.immediate(/[0-9a-fA-F]{3,8}/)),
 
-    string_value: $ => choice(
-      seq(
-        '\'',
-        repeat(choice(
-          alias(/[^\\'\n]+/, $.string_content),
-          $.escape_sequence,
-        )),
-        '\'',
-      ),
-      seq(
-        '"',
-        repeat(choice(
-          alias(/[^\\"\n]+/, $.string_content),
-          $.escape_sequence,
-        )),
-        '"',
-      ),
+    string_value: _ => choice(
+      seq('\'', /([^'\n]|\\(.|\n))*/, '\''),
+      seq('"', /([^"\n]|\\(.|\n))*/, '"'),
     ),
-
-    escape_sequence: _ => token(seq(
-      '\\',
-      choice(
-        /[0-9a-fA-F]{1,6}\s?/,
-        /[^0-9a-fA-F\n\r]/,
-      ),
-    )),
 
     integer_value: $ => seq(
       token(seq(
@@ -461,14 +388,6 @@ export default grammar({
       ')',
     ),
 
-    class_name: $ => seq(
-      choice($.identifier, $.escape_sequence),
-      repeat(choice(
-        alias(/[a-zA-Z0-9-_\xA0-\xFF]+/, $.identifier),
-        $.escape_sequence,
-      )),
-    ),
-
     identifier: _ => /(--|-?[a-zA-Z_\xA0-\xFF])[a-zA-Z0-9-_\xA0-\xFF]*/,
 
     at_keyword: _ => /@[a-zA-Z-_]+/,
@@ -492,12 +411,6 @@ export default grammar({
         /\/[^\*\s,;!{}()\[\]]/, // Slash not followed by a '*' (which would be a comment)
       )),
     )),
-
-    important_value: _ => token(seq(
-      '!',
-      /[a-zA-Z]/,
-      repeat(/[a-zA-Z0-9-_]/),
-    )),
   },
 });
 
@@ -508,7 +421,8 @@ export default grammar({
  *
  * @param {RuleOrLiteral} rule
  *
- * @returns {ChoiceRule}
+ * @return {ChoiceRule}
+ *
  */
 function sep(separator, rule) {
   return optional(sep1(separator, rule));
@@ -521,7 +435,8 @@ function sep(separator, rule) {
  *
  * @param {RuleOrLiteral} rule
  *
- * @returns {SeqRule}
+ * @return {SeqRule}
+ *
  */
 function sep1(separator, rule) {
   return seq(rule, repeat(seq(separator, rule)));

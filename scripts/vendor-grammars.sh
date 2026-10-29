@@ -12,23 +12,25 @@ ROOT=$(pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-# name:npm-package[:subdir] — subdir for grammars that ship multiple in one package
+# name:npm-package[@version][:subdir] — pinned to 0.22-CLI-compatible
+# grammar.js DSL (npm-latest grammars use newer DSL the ABI-14 CLI rejects);
+# subdir for grammars that ship multiple in one package
 GRAMMARS="
-javascript:tree-sitter-javascript
-typescript:tree-sitter-typescript:typescript
-tsx:tree-sitter-typescript:tsx
+javascript:tree-sitter-javascript@0.21.4
+typescript:tree-sitter-typescript@0.21.1:typescript
+tsx:tree-sitter-typescript@0.21.1:tsx
 python:tree-sitter-python
 html:tree-sitter-html
-css:tree-sitter-css
+css:tree-sitter-css@0.21.1
 json:tree-sitter-json
 bash:tree-sitter-bash
 c:tree-sitter-c
-cpp:tree-sitter-cpp
+cpp:tree-sitter-cpp@0.22.3
 java:tree-sitter-java
 kotlin:tree-sitter-kotlin
 rust:tree-sitter-rust
 go:tree-sitter-go
-php:tree-sitter-php:php
+php:tree-sitter-php@0.22.6:php
 ruby:tree-sitter-ruby
 lua:tree-sitter-lua
 sql:tree-sitter-sql
@@ -46,8 +48,9 @@ echo "$GRAMMARS" | while read -r entry; do
   sub="${sub#*:}"          # no subdir case: rest==pkg → sub==pkg → strip again
   [ "$sub" = "$pkg" ] && sub=""
   echo "== $name ($pkg${sub:+ / $sub}) =="
-  # resolve the latest version's tarball URL from the npm packument
-  URL=$(curl -sL "https://registry.npmjs.org/$pkg" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);const v=j['dist-tags'].latest;console.log(j.versions[v].dist.tarball)}catch(e){console.log('')}})")
+  # resolve the tarball URL from the npm packument (pinned version or latest)
+  PKGNAME="${pkg%%@*}"
+  URL=$(curl -sL "https://registry.npmjs.org/$PKGNAME" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);const want=process.argv[1]||'';const v=want&&j.versions[want]?want:j['dist-tags'].latest;console.log(j.versions[v].dist.tarball)}catch(e){console.log('')}})" "${pkg##*@}")
   if [ -z "$URL" ]; then echo "  SKIP: no npm packument for $pkg"; FAIL="$FAIL $name"; continue; fi
   curl -sL -o "$TMP/$name.tgz" "$URL" || { echo "  SKIP: download failed"; FAIL="$FAIL $name"; continue; }
   rm -rf "$TMP/x"; mkdir -p "$TMP/x"; tar -xzf "$TMP/$name.tgz" -C "$TMP/x" || { echo "  SKIP: bad tarball"; continue; }
