@@ -77,5 +77,29 @@
     return true;
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe };
+  /* ---- ripgrep integration (search at scale) ----
+     Pure argv construction + output parsing so the real binary is exercised
+     identically in tests. rg exit codes: 0 = matches, 1 = none, 2 = error. */
+  function rgArgs(pattern, dir, opts) {
+    opts = opts || {};
+    var argv = ['rg', '--line-number', '--no-heading', '--smart-case', '--max-filesize', '512K'];
+    if (opts.glob) { argv.push('--glob', String(opts.glob)); }
+    if (!opts.isRegex) argv.push('--fixed-strings');
+    argv.push('-e', String(pattern), String(dir));
+    return argv;
+  }
+
+  function parseRg(text, maxResults) {
+    var hits = [], total = 0;
+    String(text || '').split('\n').forEach(function (line) {
+      if (!line) return;
+      var m = line.match(/^([^:]+):(\d+):(.*)$/);
+      if (!m) return;
+      total++;
+      if (hits.length < (maxResults || 60)) hits.push({ path: m[1], line: parseInt(m[2], 10), text: m[3].slice(0, 160) });
+    });
+    return { hits: hits, total: total };
+  }
+
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg };
 });

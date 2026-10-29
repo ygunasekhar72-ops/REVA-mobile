@@ -594,8 +594,37 @@
     },
     workspace_search: function (a) {
       // ripgrep-style recursive search over the workspace: regex or plain
-      // text, glob filter, ignore rules, bounded results with line numbers
-      var s = WS();
+      // text, glob filter, ignore rules, bounded results with line numbers.
+      // ON-DEVICE FAST PATH: mounted Library projects are REAL files on disk
+      // (/host/library/<slug>/) — search them with the bundled ripgrep via
+      // the agent shell; any failure falls back to the JS scan below.
+      var pat0 = String(a.pattern || '');
+      if (!pat0) return 'Error: pattern required';
+      var rgFast = (window.REVAAgent && window.AgentExec && window.LoopCore) ? rgFastSearch(a, pat0) : null;
+      if (rgFast) return rgFast;
+      return jsSearch(a, pat0);
+
+      function rgFastSearch(a, pat) {
+        var Ls = libCtx(String(a.dir || a.path || 'lib/'));
+        if (!Ls || Ls.missing) return null; // not a lib target → JS path
+        var slug = Ls.mount.slug;
+        var argv = LoopCore.rgArgs(pat, '/host/library/' + slug, { glob: a.glob, isRegex: a.isRegex });
+        var max = Math.min(+a.maxResults || 60, 200);
+        return AgentExec.execArgs(argv, { timeoutMs: 30000 }).then(function (ex) {
+          if (ex.exit === 127 || String(ex.out || '').indexOf('not found') >= 0) { rgFastSearch = null; return jsSearch(a, pat); }
+          if (ex.timedOut || (ex.exit !== 0 && ex.exit !== 1)) return jsSearch(a, pat);
+          var r = LoopCore.parseRg(ex.out, max);
+          var hits = r.hits.map(function (h) {
+            return h.path.replace('/host/library/' + slug, 'lib/' + slug) + ':' + h.line + ': ' + h.text.trim();
+          });
+          if (!hits.length) return 'No matches for "' + pat + '" in lib/' + slug + ' (ripgrep, real files on disk).';
+          var note = r.total > hits.length ? '\n… ' + (r.total - hits.length) + ' more not shown (bounded at ' + max + ').' : '';
+          return hits.join('\n') + '\n' + r.total + ' match(es) — ripgrep over lib/' + slug + ' (disk-fast).' + note;
+        }).catch(function () { return jsSearch(a, pat); });
+      }
+
+      function jsSearch(a, pat) {
+        var s = WS();
       var pat = String(a.pattern || '');
       if (!pat) return 'Error: pattern required';
       var re;
@@ -647,6 +676,7 @@
       var note2 = '';
       if (total > out.length) note2 = '\n… ' + (total - out.length) + ' more match(es) not shown (bounded at ' + max + ').';
       return (out.length ? out.join('\n') : '') + '\n' + total + ' match(es) across ' + scanned + ' files.' + note2;
+      }
     },
     code_symbols: function (a) {
       /* regex outline — the always-available fallback (also the path for

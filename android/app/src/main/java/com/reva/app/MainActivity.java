@@ -218,6 +218,31 @@ public class MainActivity extends Activity {
             return busybox;
         }
 
+        private String rg;
+
+        /** ripgrep: copy librg.so → filesDir/bin/rg + exec bit (search at
+         *  scale over the Library's real disk files) */
+        private String rgPath() {
+            if (rg != null) return rg;
+            try {
+                File src = new File(getApplicationInfo().nativeLibraryDir, "librg.so");
+                if (!src.exists()) { rg = ""; return rg; }
+                File bin = new File(getFilesDir(), "bin");
+                if (!bin.exists()) bin.mkdirs();
+                File dst = new File(bin, "rg");
+                if (!dst.exists() || dst.length() != src.length()) {
+                    java.io.FileInputStream in = new java.io.FileInputStream(src);
+                    java.io.FileOutputStream outS = new java.io.FileOutputStream(dst);
+                    byte[] b = new byte[65536]; int n;
+                    while ((n = in.read(b)) > 0) outS.write(b, 0, n);
+                    in.close(); outS.close();
+                }
+                dst.setExecutable(true, false);
+                rg = dst.canExecute() ? dst.getAbsolutePath() : "";
+            } catch (Exception e) { rg = ""; }
+            return rg;
+        }
+
         private void emit(String chunk) {
             final String payload = chunk.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "");
             final String js = emitTarget + " && " + emitTarget + "('" + payload + "')";
@@ -242,6 +267,7 @@ public class MainActivity extends Activity {
         /** busybox copy + shell profile + REVA Linux rootfs — idempotent */
         void setupEnv() {
             busyboxPath();
+            rgPath();
             writeProfile();
             ensureLinux();
         }

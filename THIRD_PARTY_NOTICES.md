@@ -39,6 +39,15 @@ third-party components:
   license, plus everything installed at runtime via `apk`). Package sources:
   https://gitlab.alpinelinux.org/alpine/aports
 
+## ripgrep — MIT OR Unlicense (bundled binary)
+- Files: `android/app/…/jniLibs/<abi>/librg.so` (ripgrep 15.2.0, aarch64 +
+  x86_64, copied to `filesDir/bin/rg` at runtime)
+- Source: https://github.com/BurntSushi/ripgrep — MIT OR Unlicense.
+  Binaries from the Termux packaging of the unmodified upstream release
+  (https://packages.termux.dev/apt/termux-main/pool/main/r/ripgrep/),
+  distributed unmodified as a separate aggregated work; REVA's code
+  interops only via the process streams.
+
 ## web-tree-sitter + grammar WASMs — MIT (bundled, vendored)
 - Files: `js/vendor/tree-sitter.js` + `js/vendor/tree-sitter.wasm`
   (web-tree-sitter 0.22.6, https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web);
