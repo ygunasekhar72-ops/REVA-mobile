@@ -240,7 +240,8 @@
     var head = hook + resolver;
     if (html.indexOf('<head>') >= 0) html = html.split('<head>').join('<head>' + head);
     else html = head + html;
-    return html;
+    /* three.js projects import the harness's vendored copy (offline, no CDN) */
+    return window.LoopCore ? LoopCore.injectThreeMap(html) : html;
   }
 
   function pixelStats(dataUrl) {

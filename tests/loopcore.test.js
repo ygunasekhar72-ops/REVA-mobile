@@ -63,6 +63,16 @@ const LoopCore = require('../js/loopcore.js');
   assert.strictEqual(LoopCore.isParallelSafe(['read_file']), false, 'single call gains nothing');
   assert.strictEqual(LoopCore.isParallelSafe([]), false, 'empty batch');
 
-  console.log('loopcore: 6/6 scenarios PASS');
+  // 7. three.js provider: import map injected only when needed
+  const threeHtml = '<html><head><title>t</title></head><body><script type="module">import * as THREE from "three";</script></body></html>';
+  const injected = LoopCore.injectThreeMap(threeHtml);
+  assert.ok(injected.indexOf('type="importmap"') >= 0, 'map injected');
+  assert.ok(injected.indexOf('js/vendor/three/three.module.js') > 0, 'harness path in map');
+  assert.ok(injected.indexOf('<head>' + '<scr' + 'ipt type="importmap"') === 6, 'map lands first inside <head>');
+  assert.strictEqual(LoopCore.injectThreeMap(injected), injected, 'idempotent');
+  assert.strictEqual(LoopCore.injectThreeMap('<html><head><script type="importmap">{"imports":{"three":"https://unpkg.com/three/build/three.module.js"}}</script></head></html>'), '<html><head><script type="importmap">{"imports":{"three":"https://unpkg.com/three/build/three.module.js"}}</script></head></html>', 'project-owned importmap untouched');
+  assert.strictEqual(LoopCore.injectThreeMap('<html><head></head><body>plain page</body></html>').indexOf('importmap'), -1, 'non-three page untouched');
+
+  console.log('loopcore: 7/7 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

@@ -48,6 +48,17 @@ third-party components:
   highlighting via `js/hljs.js` (CJS-in-browser shim + lazy per-language
   loading — REVA's own integration, MIT).
 
+## three.js — MIT (vendored module build + addons)
+- Files: `js/vendor/three/three.module.js` (r160.1 module build) +
+  `js/vendor/three/addons/{controls/OrbitControls.js,loaders/GLTFLoader.js,
+  utils/BufferGeometryUtils.js}`, vendored by `scripts/vendor-three.sh`
+  from the npm tarball
+- Source: https://github.com/mrdoob/three.js (MIT). © three.js authors.
+  The harness PROVIDES three to built projects: previews and run_check
+  inject an import map pointing the bare `three` / `three/addons/`
+  specifiers at the vendored copy (`js/loopcore.js injectThreeMap` —
+  REVA's own, MIT), so 3D builds run offline without a CDN.
+
 ## markdown-it + jsdiff — MIT (vendored UMD dist bundles)
 - Files: `js/vendor/md/markdown-it.js` (markdown-it 14.1.0 UMD dist) and
   `js/vendor/diff/jsdiff.js` (diff 5.2.0 UMD dist), vendored by
