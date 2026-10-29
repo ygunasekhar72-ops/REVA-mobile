@@ -39,6 +39,9 @@ jobs:
           mkdir -p js/vendor/ts
           for d in grammar-sources/*/; do
             name=$(basename "$d")
+            # yaml's C++ scanner cannot link under the ABI-14 CLI — its
+            # prebuilt wasm (tree-sitter-wasms) stays committed and works
+            if [ "$name" = "yaml" ]; then echo "== yaml: prebuilt wasm kept =="; continue; fi
             echo "== forging $name =="
             (cd "$d" && tree-sitter build --wasm)
             built=$(ls "$d"tree-sitter-*.wasm 2>/dev/null | head -1)
