@@ -410,6 +410,7 @@
       return rec;
     },
     list: cpAll,
-    get: cpGet
+    get: cpGet,
+    del: function (id) { try { cpDb.transaction('checkpoints', 'readwrite').objectStore('checkpoints').delete(id); } catch (e) { } }
   };
 })();

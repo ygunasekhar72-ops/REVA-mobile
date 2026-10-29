@@ -906,7 +906,7 @@
       setStatus(iters === 1 ? 'Connecting…' : 'Working…');
       if (pendingRes) { res = pendingRes; pendingRes = null; }
       else {
-        var tTry = 0, callDone = false;
+        var tTry = 0, cTry = 0, callDone = false;
         while (!callDone) {
           try {
             res = await callAI(prov);
@@ -915,6 +915,20 @@
           } catch (e) {
             trackUsage(prov, null, true);
             if (aborted(e)) { stopped = true; break; }
+            /* CONTEXT-EXHAUSTION RECOVERY: a long run can fill the model's
+               window. Compacting the transcript and continuing beats dying —
+               the workspace, todos and mounts all persist across compaction. */
+            if (window.LoopCore && LoopCore.isContextError(e) && cTry < 2) {
+              cTry++;
+              var keepChars = Math.max(16000, Math.round(ctxFor(db.settings.model) * 1400));
+              var c = LoopCore.compactTranscript(apiMsgs.slice(1), keepChars);
+              apiMsgs = [apiMsgs[0]].concat(c.kept);
+              apiMsgs.push({ role: 'user', content: '[auto-compaction: ' + c.dropped + ' older messages were trimmed to fit the context window. Nothing was lost from the workspace — files, todos and mounted projects are intact. Continue the task exactly where it left off.]' });
+              activity.push({ k: 'note', icon: 'shrink', text: 'Context window filled — auto-compacted ' + c.dropped + ' older messages, continuing', meta: 'attempt ' + cTry + '/2' });
+              H.toast('Context compacted — run continues');
+              UI.renderHome();
+              continue;
+            }
             /* QUOTA-AWARE ENDURANCE: rotate to the next API key first, then
                auto-retry transient blips, then the fallback provider, and only
                pause when everything is exhausted — "runs until the project or
@@ -1002,6 +1016,19 @@
               }
             }
           }
+        }
+        /* AUTO-CHECKPOINT: any round that mutates the workspace is undoable —
+           snapshot before the batch (throttled to every 10 mutating rounds;
+           only the newest 8 auto checkpoints are kept) */
+        var mutating = res.toolCalls.some(function (t) { return /^(write_file|edit_file|delete_file)$/.test(t.function.name); });
+        if (mutating && (s._autoCpIter === undefined || iters - s._autoCpIter >= 10)) {
+          s._autoCpIter = iters;
+          try {
+            Store.checkpoints.save(s.id, 'auto · round ' + iters, s.vfsContent);
+            var cpRows = await Store.checkpoints.list(s.id);
+            var autos = cpRows.filter(function (r) { return /^auto · /.test(r.label); });
+            for (var di = 0; di < autos.length - 8; di++) Store.checkpoints.del(autos[di].id);
+          } catch (eCp) { /* checkpointing must never break the run */ }
         }
         for (var i = 0; i < res.toolCalls.length; i++) {
           var tc = res.toolCalls[i];
