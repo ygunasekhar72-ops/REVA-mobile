@@ -61,6 +61,18 @@ echo "$GRAMMARS" | while read -r entry; do
   cp -r "$SRC/src" "$DEST/src"
   [ -f "$SRC/package.json" ] && cp "$SRC/package.json" "$DEST/"
   [ -f "$SRC/tree-sitter.json" ] && cp "$SRC/tree-sitter.json" "$DEST/"
+  # shared scanner headers: php/typescript/tsx scanners include
+  # ../../common/scanner.h — vendor the package's common/ INTO the grammar
+  # dir and rewrite the include depth so each grammar is self-contained
+  if grep -q '\.\./\.\./common/' "$DEST/src/scanner.c" 2>/dev/null; then
+    PKGROOT="$TMP/x/package"
+    if [ -d "$PKGROOT/common" ]; then
+      mkdir -p "$DEST/common"
+      cp -r "$PKGROOT/common/." "$DEST/common/"
+      sed -i 's#\.\./\.\./common/#../common/#g' "$DEST/src/scanner.c"
+      echo "  + vendored shared common/ (include rewritten)"
+    fi
+  fi
   echo "  vendored $(find "$DEST" \( -name '*.c' -o -name '*.js' -o -name '*.json' \) | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}') lines"
 done
 echo "=== grammar sources: $(du -sh "$ROOT/grammar-sources" | cut -f1) total ==="
