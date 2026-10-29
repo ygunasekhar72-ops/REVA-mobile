@@ -39,6 +39,18 @@ third-party components:
   license, plus everything installed at runtime via `apk`). Package sources:
   https://gitlab.alpinelinux.org/alpine/aports
 
+## web-tree-sitter + grammar WASMs — MIT (bundled, vendored)
+- Files: `js/vendor/tree-sitter.js` + `js/vendor/tree-sitter.wasm`
+  (web-tree-sitter 0.22.6, https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web);
+  `js/vendor/ts/tree-sitter-*.wasm` — 19 prebuilt grammars (javascript,
+  typescript, tsx, python, html, css, json, bash, c, cpp, java, kotlin,
+  rust, go, php, ruby, lua, sql, yaml) from the `tree-sitter-wasms`
+  0.1.13 package (https://github.com/helix-editor/tree-sitter-wasms... —
+  registry: https://www.npmjs.com/package/tree-sitter-wasms)
+- Powers REVA's AST code intelligence (`js/treesitter.js` — extraction and
+  integration code is REVA's own, MIT). Each grammar is distributed
+  unmodified under its MIT license. © tree-sitter contributors.
+
 ## models.dev — MIT (bundled data snapshot + live refresh)
 - Files: `js/modeldb-data.js` (generated snapshot, via `scripts/gen-modeldb.js`),
   runtime integration in `js/modeldb.js` (trim/lookup logic is REVA's own,

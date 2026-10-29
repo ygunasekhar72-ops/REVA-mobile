@@ -649,24 +649,49 @@
       return (out.length ? out.join('\n') : '') + '\n' + total + ' match(es) across ' + scanned + ' files.' + note2;
     },
     code_symbols: function (a) {
-      // tree-sitter-style structural outline: functions, classes, imports,
-      // exports with line numbers — enough to navigate before editing
-      var Ls = libCtx(a.path);
-      if (Ls) {
-        if (Ls.missing) return 'Error: ' + Ls.missing;
-        if (Ls.rel === '') return 'Error: lib/' + Ls.mount.slug + '/ is a mount root — pick a file inside it (list_files first)';
-        var lbody = Ls.project.files[Ls.rel];
-        if (lbody === undefined) return 'Error: no such file: ' + Ls.full + libSuggest(Ls.project, Ls.rel);
-        if (String(lbody).indexOf('data:') === 0) return 'Error: binary file';
-        return symbolReport(String(lbody), Ls.full);
+      /* regex outline — the always-available fallback (also the path for
+         languages without a grammar) */
+      function regexOutline() {
+        // structural outline: functions, classes, imports, exports with
+        // line numbers — enough to navigate before editing
+        var Ls = libCtx(a.path);
+        if (Ls) {
+          if (Ls.missing) return 'Error: ' + Ls.missing;
+          if (Ls.rel === '') return 'Error: lib/' + Ls.mount.slug + '/ is a mount root — pick a file inside it (list_files first)';
+          var lbody = Ls.project.files[Ls.rel];
+          if (lbody === undefined) return 'Error: no such file: ' + Ls.full + libSuggest(Ls.project, Ls.rel);
+          if (String(lbody).indexOf('data:') === 0) return 'Error: binary file';
+          return symbolReport(String(lbody), Ls.full);
+        }
+        var s = WS();
+        var path = normPath(a.path || '');
+        var content = s.vfsContent[path];
+        if (content === undefined) return notFound(path);
+        content = String(content);
+        if (content.indexOf('data:') === 0) return 'Error: binary file';
+        return symbolReport(content, path);
       }
-      var s = WS();
-      var path = normPath(a.path || '');
-      var content = s.vfsContent[path];
-      if (content === undefined) return notFound(path);
-      content = String(content);
-      if (content.indexOf('data:') === 0) return 'Error: binary file';
-      return symbolReport(content, path);
+      // AST-FIRST: real tree-sitter syntax trees for 19 languages when the
+      // engine is available; every failure falls back to the outline above.
+      var tsExt = (String(a.path || '').split('.').pop() || '').toLowerCase();
+      if (!window.REVATS || !REVATS.extLang(tsExt)) return regexOutline();
+      var tsSrc = null, tsLabel = '';
+      var Ts = libCtx(a.path);
+      if (Ts && !Ts.missing && Ts.rel !== '') {
+        var tbody = Ts.project.files[Ts.rel];
+        if (tbody !== undefined && String(tbody).indexOf('data:') !== 0) { tsSrc = String(tbody); tsLabel = Ts.full; }
+      } else if (!Ts) {
+        var tsPath = normPath(a.path || '');
+        var tsBody = WS().vfsContent[tsPath];
+        if (tsBody !== undefined) { tsSrc = String(tsBody); tsLabel = tsPath; }
+      }
+      if (tsSrc === null) return regexOutline();
+      return REVATS.symbolsFor(tsExt, tsSrc).then(function (r) {
+        if (!r || !r.symbols.length) return regexOutline();
+        return 'SYMBOLS — ' + tsLabel + '  [tree-sitter AST · ' + r.lang + ']\n' +
+          r.symbols.map(function (x) { return '  L' + x.line + '  ' + x.kind + '  ' + x.name; }).join('\n') +
+          '\n  ' + r.symbols.length + ' symbols (real syntax tree — navigable, line-accurate)';
+      });
     },
     /* ---------- Tools v2: perception & safety ---------- */
     run_check: async function (a) {

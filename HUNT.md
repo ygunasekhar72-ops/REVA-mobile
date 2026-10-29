@@ -38,7 +38,20 @@ What REVA already has (built + verified): goal-driven endurance loop (500/5000-r
 
 1. Every increment verified (unit test or live run) before commit; CI green; honest reporting — if it fails, say so with the output.
 2. On-device is the real gate: the phone finds what the browser hides.
-3. Lines don't count. Working, tested features count.
+3. **THE GOAL (user, 2026-10-29): cross 600,000 lines of real, high-quality code** — every line ships a capability; padding is forbidden. Lines come from two sources only: our own tested features, and vendored/adopted open-source layers doing real jobs (leverage doctrine). Real line counts (cloc) reported at every adoption.
+
+## The 600K roadmap (capability-first, lines as the byproduct)
+
+1. **web-tree-sitter + grammar packs** — AST code intelligence (L2). In progress.
+2. **highlight.js** (~190 languages, source) — replaces the 18-extension regex highlighter in the IDE; real quality jump.
+3. **jsdiff** — real diff stats for edit_file/write_file rows and rollback previews.
+4. **markdown-it** — proper markdown rendering of AI replies in chat.
+5. **three.js** — the original plan's 3D-build capability, vendored for built projects.
+6. **Terminal integration** (user's PolyDev build) + xterm-class primitives where the contract needs them.
+7. **L3 context engine** — repo-map over the tree-sitter symbols, compaction v2.
+8. **L1/L5/L6 completion** — tool-call hang guards, 50+ evals, process-death restore.
+
+Our own code grows on every rung; the vendor stack carries the mass. Both are audited: no line without a job.
 
 ## Leverage doctrine (2026-10-29 — play smart, not long)
 
@@ -64,3 +77,4 @@ The harness leaders open-sourced their commodity layers (verified licenses: open
 - **v1.4.14 (2026-10-29, local — first LEVERAGE DOCTRINE increment):** models.dev registry adopted (MIT) — bundled snapshot `js/modeldb-data.js` (4,845 model ids, 174KB, from 5.9MB raw via `scripts/gen-modeldb.js`), runtime `js/modeldb.js` (trim/lookup/refresh), `ctxFor`/`modelVision` now resolve from the registry first with id-heuristics as fallback, silent boot refresh when online, `tests/modeldb.test.js` 6/6 PASS. Attribution in THIRD_PARTY_NOTICES.md. The 12-point "model settings automated" requirement now runs on real data, not guesses.
 - **v1.4.15 (2026-10-29, local — L0 DEEPENING: the loop never dies from its own history):** context-exhaustion auto-recovery — when a long run fills the model's window (OpenAI/Anthropic/Gemini wordings classified by `js/loopcore.js`), the transcript is compacted group-wise (tool results stay glued to their tool_calls — no provider 400s), a continuation note is appended, and the run continues; 2 attempts then honest failure. Plus AUTO-CHECKPOINT: every round that mutates the workspace snapshots first (throttled every 10 mutating rounds, newest 8 kept, `Store.checkpoints.del` added) — the whole run is undoable without the model opting in. `tests/loopcore.test.js` 5/5 PASS. The two loop deaths opencode closed years ago are now closed here.
 - **v1.4.16 (2026-10-29, local — L0 COMPLETE: parallel tool execution):** all-read-only tool batches (read_file/list_files/workspace_search/code_symbols/memory_search/lint/test_data, classifier `LoopCore.isParallelSafe`) now run CONCURRENTLY — the "read these 6 files" pattern costs one round-trip instead of six; rows render as each finishes, tool results push in call order, hooks fire per tool. Mutating, stateful and shell batches keep the ordered sequential path. Ladder status: **L0 = 100%** (core loop, endurance, queue, compaction, auto-checkpoint, breaker, parallel reads). `tests/loopcore.test.js` 6/6 PASS.
+- **v1.4.17 (2026-10-29, local — 600K GOAL SET + tree-sitter AST SHIPPED):** user goal: **cross 600K lines of real code** (ledger amended — every line ships a capability, no padding; roadmap added: highlight.js → jsdiff → markdown-it → three.js → terminal → repo-map). Vendored web-tree-sitter 0.22.6 + 19 prebuilt grammar WASMs (21MB, MIT) — `code_symbols` is now AST-FIRST with real syntax trees for 19 languages (js/ts/tsx/py/html/css/json/bash/c/cpp/java/kotlin/rust/go/php/ruby/lua/sql/yaml), regex outline kept as fallback; lazy engine load (nothing parses until first use), ancestry-aware methods (python), arrow-function declarations (JS family). `js/treesitter.js` pure extractWith() runs identically in node tests and the WebView. `tests/treesitter.test.js` 5/5 PASS with the real parsers. L2: ~40% → ~60%.
