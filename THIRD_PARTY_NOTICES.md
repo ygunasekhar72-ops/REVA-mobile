@@ -79,6 +79,17 @@ third-party components:
   distributed unmodified as a separate aggregated work; REVA's code
   interops only via the process streams.
 
+## tree-sitter grammar sources — MIT (vendored build inputs)
+- Files: `grammar-sources/<lang>/` for 19 languages (grammar.js DSL source,
+  src/parser.c + scanner.c as distributed by their npm packages, node-types,
+  package.json) — vendored by `scripts/vendor-grammars.sh`
+- These are the BUILD INPUTS compiled by `.github/workflows/grammars.yml`
+  (the "grammar forge") into the WASM parsers REVA ships in
+  `js/vendor/ts/` — ABI 14, via tree-sitter-cli 0.22.6 + emscripten.
+  Per-grammar MIT licenses; © the respective grammar authors. Upstream:
+  tree-sitter-javascript/-typescript/-python/-html/-css/-json/-bash/-c/
+  -cpp/-java/-kotlin/-rust/-go/-php/-ruby/-lua/-sql/-yaml on npm.
+
 ## web-tree-sitter + grammar WASMs — MIT (bundled, vendored)
 - Files: `js/vendor/tree-sitter.js` + `js/vendor/tree-sitter.wasm`
   (web-tree-sitter 0.22.6, https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web);

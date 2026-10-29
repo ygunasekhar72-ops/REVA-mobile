@@ -1,0 +1,71 @@
+name: Grammar forge
+
+# Builds REVA's tree-sitter WASM parsers FROM SOURCE: the vendored grammar
+# packages (grammar-sources/ — grammar.js + src/parser.c, exactly what npm
+# distributes) are compiled with tree-sitter-cli 0.22.6 (ABI 14, matching our
+# web-tree-sitter 0.22.6 runtime) under emscripten, verified by the real
+# parse tests, and committed when the parsers change.
+# Runs on demand + monthly (upstream refresh), not on every push.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 1 * *'
+
+permissions:
+  contents: write
+
+jobs:
+  forge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.61'
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Install tree-sitter CLI (pinned — ABI must match web-tree-sitter 0.22.6)
+        run: npm install -g tree-sitter-cli@0.22.6
+
+      - name: Forge WASM parsers from vendored sources
+        run: |
+          set -e
+          mkdir -p js/vendor/ts
+          for d in grammar-sources/*/; do
+            name=$(basename "$d")
+            echo "== forging $name =="
+            (cd "$d" && tree-sitter build --wasm)
+            built=$(ls "$d"tree-sitter-*.wasm 2>/dev/null | head -1)
+            if [ -z "$built" ]; then
+              built=$(ls "$d"*.wasm 2>/dev/null | head -1)
+            fi
+            if [ -z "$built" ]; then
+              echo "  no wasm produced for $name"
+              exit 1
+            fi
+            cp "$built" "js/vendor/ts/tree-sitter-$name.wasm"
+            echo "  -> js/vendor/ts/tree-sitter-$name.wasm ($(du -h "js/vendor/ts/tree-sitter-$name.wasm" | cut -f1))"
+          done
+
+      - name: Verify forged parsers (the real parse tests)
+        run: |
+          node tests/treesitter.test.js
+          node tests/repomap.test.js
+
+      - name: Commit refreshed parsers
+        run: |
+          git config user.name "reva-forge"
+          git config user.email "actions@users.noreply.github.com"
+          git add js/vendor/ts
+          if git diff --cached --quiet; then
+            echo "parsers unchanged — nothing to commit"
+          else
+            git commit -m "grammar forge: rebuild WASM parsers from vendored sources"
+            git push
+          fi
