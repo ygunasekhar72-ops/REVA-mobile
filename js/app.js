@@ -410,7 +410,6 @@
   App = window.App || {};
   /* L1: per-tool watchdog health (consecutive-timeout counters + wedges) */
   var toolHealth = window.LoopCore ? LoopCore.makeToolHealth() : {};
-  App.runMcp = runMcpTool; // MCP tools dispatch through Tools.run (budgeted there)
   function ensureSession() { return Store.active() || Store.newSession(); }
   App.isStreaming = function () { return !!state.streaming; };
   App.ctxFor = ctxFor;
@@ -967,6 +966,7 @@
         return 'Error: MCP ' + hit.server.name + ' — ' + (e && e.message || e) + ' (server marked unreachable; it will re-probe)';
       }
     }
+    App.runMcp = runMcpTool; // MCP tools dispatch through Tools.run (budgeted there)
 
     var apiMsgs = apiMessages();
     var toolResults = [], failed = null, stopped = false, usedFallback = false, fbName = '', iters = 0, res = null, pendingRes = null, quotaPaused = false, capPaused = false;

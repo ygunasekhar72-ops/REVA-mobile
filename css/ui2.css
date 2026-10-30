@@ -193,6 +193,15 @@
 #mono-harness.reva2 .rv2-flow-text { background: linear-gradient(90deg, var(--foreground) 35%, var(--brand) 50%, var(--foreground) 65%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: rv2-gflow 1.6s linear infinite; }
 @keyframes rv2-gflow { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 
+/* ---------- hero empty state ---------- */
+#mono-harness.reva2 .rv2-hero { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 64px 16px 24px; }
+#mono-harness.reva2 .rv2-hero-logo { width: 64px; height: 64px; border-radius: 20px; background: var(--card); border: 1px solid var(--border); display: grid; place-items: center; font-size: 28px; margin-bottom: 18px; }
+#mono-harness.reva2 .rv2-hero-t1 { font-size: var(--text-ui-lg); font-weight: 600; color: var(--foreground); }
+#mono-harness.reva2 .rv2-hero-t2 { font-size: var(--text-ui-caption); color: var(--foreground-subtlest); margin-top: 4px; }
+#mono-harness.reva2 .rv2-chips { display: flex; flex-direction: column; gap: 8px; margin-top: 26px; width: 100%; max-width: 320px; }
+#mono-harness.reva2 .rv2-chip { border: 1px solid var(--border); background: var(--card); color: var(--foreground); border-radius: var(--r-lg); padding: 11px 14px; font: inherit; font-size: var(--text-ui-caption); text-align: left; cursor: default; }
+#mono-harness.reva2 .rv2-chip:active { background: var(--surface-hover); }
+
 @media (prefers-reduced-motion: reduce) {
   #mono-harness.reva2 *, #mono-harness.reva2 *::before, #mono-harness.reva2 *::after { animation: none !important; transition: none !important; }
 }

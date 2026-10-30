@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>REVA v2 — ZCode Mobile</title>
+  <link rel="stylesheet" href="css/ui2.css">
+</head>
+<body>
+  <div id="mono-harness" class="reva2">
+    <div class="rv2-chat">
+      <div class="rv2-chat-head">
+        <button id="rv2Menu" class="rv2-comp-btn">☰</button>
+        <span id="rv2Title" class="rv2-chat-title">New chat</span>
+        <span id="rv2CtxBadge" class="rv2-badge">100%</span>
+      </div>
+      <div id="rv2Flow" class="rv2-flow">
+        <div id="rv2Hero" class="rv2-hero">
+          <div class="rv2-hero-logo">⚡</div>
+          <div class="rv2-hero-t1">Fresh context window.</div>
+          <div class="rv2-hero-t2">Everything you send goes to your configured provider.</div>
+          <div class="rv2-chips">
+            <button class="rv2-chip" data-fill="Explain in 2 short paragraphs what makes a local-first AI harness different from cloud assistants.">What makes REVA different?</button>
+            <button class="rv2-chip" data-fill="Write a haiku about shipping code at 3am, then explain why developers do it.">Haiku + explanation</button>
+            <button class="rv2-chip" data-fill="Give me a 5-step checklist for testing a mobile app release.">Release checklist</button>
+          </div>
+        </div>
+      </div>
+      <div class="rv2-composer">
+        <div class="rv2-comp-box">
+          <input id="rv2Input" class="rv2-comp-input" placeholder="Ask REVA…" autocomplete="off">
+          <div class="rv2-comp-row">
+            <button class="rv2-comp-btn">+</button>
+            <span id="rv2Ctx" class="rv2-pill">100%</span>
+            <span id="rv2Model" class="rv2-pill"><b>no model</b></span>
+            <button id="rv2Send" class="rv2-comp-send">↑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="rv2Scrim" class="rv2-scrim"></div>
+    <div id="rv2Drawer" class="rv2-drawer">
+      <div class="rv2-drawer-head">
+        <div class="rv2-drawer-brand">REVA</div>
+        <div class="rv2-drawer-sub">local-first AI harness · v2 UI</div>
+      </div>
+      <button class="rv2-newchat">+ New chat</button>
+      <div class="rv2-drawer-scroll">
+        <div class="rv2-dsec">Projects</div>
+        <div id="rv2Projects"></div>
+        <div class="rv2-dsec">Engine status</div>
+        <div style="padding:4px 10px;font-size:var(--text-ui-xs);color:var(--foreground-subtle)">
+          <div id="rv2Engines">loading…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="js/vendor/lucide.min.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/modeldb-data.js"></script>
+  <script src="js/modeldb.js"></script>
+  <script src="js/loopcore.js"></script>
+  <script src="js/vendor/md/markdown-it.js"></script>
+  <script src="js/vendor/diff/jsdiff.js"></script>
+  <script src="js/hljs.js"></script>
+  <script src="js/mdrender.js"></script>
+  <script src="js/v2chat.js"></script>
+  <script>
+    /* test infra: the live relay loads only when asked (?relay=1) */
+    if (new URLSearchParams(location.search).get('relay') === '1') {
+      document.write('<script src="relay.js"><\\/script>');
+    }
+  </script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      setTimeout(function () {
+        var e = document.getElementById('rv2Engines');
+        if (e) e.textContent = ['store', 'ai', 'modeldb(' + (window.REVAMODELDB ? REVAMODELDB.size() : 0) + ')', 'markdown-it', 'hljs', 'loopcore'].join(' · ');
+      }, 400);
+    });
+  </script>
+</body>
+</html>

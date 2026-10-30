@@ -635,6 +635,12 @@
 <script src="js/treesitter.js"></script>
 <script src="js/repomap.js"></script>
 <script src="js/web.js"></script>
-<script src="js/app.js"></script>
-</body>
+  <script src="js/app.js"></script>
+  <script>
+    /* TEST INFRA: the live relay loads only when asked (?relay=1) */
+    if (new URLSearchParams(location.search).get('relay') === '1') {
+      document.write('<script src="relay.js"><\\/script>');
+    }
+  </script>
+  </body>
 </html>
