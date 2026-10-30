@@ -161,7 +161,12 @@
      ("excel" fires xlsx, "build" fires nothing); light stemming handles
      plurals ("spreadsheets" → "spreadsheet"). */
   var SKILL_STOP = /^(the|and|for|with|this|that|from|into|your|you|are|was|have|has|can|not|but|all|any|out|use|using|make|need|want|when|what|how|please|help|about|like|just|also|very|more|than|then|them|they|will|would|should|could|there|their|been|being|were|some|give|show|does|doing)$/;
-  function stemWord(w) { return w.replace(/(ies)$/, 'y').replace(/(sses)$/, 'ss').replace(/([^s])s$/, '$1'); }
+  function stemWord(w) {
+    w = w.replace(/(ies)$/, 'y').replace(/(sses)$/, 'ss').replace(/([^s])s$/, '$1');
+    if (w.length > 4) w = w.replace(/(ing|ed)$/, '');
+    if (w.length > 3) w = w.replace(/e$/, '');
+    return w;
+  }
   function matchSkills(text) {
     var raw = String(text || '').toLowerCase().match(/[a-z0-9+#.-]{3,}/g) || [];
     var words = [];
@@ -178,8 +183,10 @@
     });
     var hits = [];
     en.forEach(function (k) {
-      var toks = ((k.name + ' ' + (k.desc || '')).toLowerCase().match(/[a-z0-9+#.-]{3,}/g) || []).map(stemWord);
-      var nameToks = ((k.name || '').toLowerCase().match(/[a-z0-9+#.-]{3,}/g) || []).map(stemWord);
+      /* hyphenated names must split: 'three-js-3d' → three / js / 3d,
+         otherwise '3d' in a task can never match the skill */
+      var toks = ((k.name + ' ' + (k.desc || '')).toLowerCase().split(/[^a-z0-9+#]+/).filter(function (w) { return w.length >= 3; })).map(stemWord);
+      var nameToks = ((k.name || '').toLowerCase().split(/[^a-z0-9+#]+/).filter(function (w) { return w.length >= 2; })).map(stemWord);
       var score = 0, seen = {};
       toks.forEach(function (w) {
         if (words.indexOf(w) < 0 || seen[w]) return;
@@ -192,8 +199,8 @@
     return hits.sort(function (a, b) { return b.score - a.score; }).slice(0, 2).map(function (h) { return h.name; });
   }
   /* activate matched skills for this session (idempotent, once per message) */
-  function autoLoadSkills(text) {
-    var s = Store.active();
+  function autoLoadSkills(text, sess) {
+    var s = sess || Store.active();
     if (!s || db.settings.skills === false) return [];
     s.activeSkills = s.activeSkills || [];
     var added = [];
@@ -203,6 +210,27 @@
     if (added.length) { Store.save(); H.toast('Skill' + (added.length > 1 ? 's' : '') + ' loaded: ' + added.join(', ')); }
     return added;
   }
+  /* trigger-rich descriptions: the skill matcher scores against name + desc —
+     a skill whose desc is just its own name can never be auto-matched */
+  var BUILD_SKILL_DESCS = {
+    'ui-design-system': 'ui design system palette spacing typography states craft pages look designed',
+    'animation-motion': 'animation motion transition fade easing keyframes stagger entrance micro-interaction',
+    'canvas-2d-games': 'canvas 2d game platformer sprites collision jump physics loop',
+    'shaders-glsl': 'shader glsl webgl fragment vertex uniform noise bloom effects',
+    'data-viz': 'chart graph data visualization axes bars line plot dashboard expenses monthly budget finance statistics',
+    'forms-validation': 'form input validation fields submit error signup login',
+    'api-integration': 'api fetch rest endpoint request http external service weather forecast connect integration',
+    'pwa-offline': 'pwa offline service worker installable manifest cache',
+    'copywriting': 'copy text content writing headline microcopy',
+    'three-js-3d': 'three js 3d webgl scene cube solar orbit planet mesh camera render model',
+    'webgl-performance': 'webgl fps performance draw calls gpu mobile frame budget',
+    'game-architecture': 'game architecture loop state machine entity collision physics gameplay platformer level score health shooter',
+    'procedural-worlds': 'procedural terrain noise world generation chunk seed',
+    'mobile-optimization': 'mobile touch performance viewport battery responsive phone',
+    'asset-pipeline': 'assets models textures audio glb gltf loading pipeline',
+    'linux-toolchain': 'linux shell terminal command line compile build toolchain'
+  };
+
   /* BUILD_SKILL_BODIES (Skills v2) — dense expert procedures auto-seeded into
      every chat's workspace so build quality is systematic, not lucky */
   var BUILD_SKILL_BODIES = {
@@ -231,14 +259,22 @@
     var allPresent = Object.keys(BUILD_SKILL_BODIES).every(function (nm) {
       return sess.vfsContent && sess.vfsContent['workspace/skills/' + skillSlug(nm) + '.md'] !== undefined;
     });
+    /* keep build-skill descriptions in sync with the code (the code is the
+       source of truth) — runs even when skill files are already seeded */
+    Object.keys(BUILD_SKILL_DESCS).forEach(function (nm) {
+      var ex = db.skills.find(function (x) { return x.name === nm && BUILD_SKILL_DESCS[nm]; });
+      if (ex) ex.desc = BUILD_SKILL_DESCS[nm];
+    });
     if (allPresent) { sess._buildSkillsSeeded = true; return; }
     sess._buildSkillsSeeded = true;
     Object.keys(BUILD_SKILL_BODIES).forEach(function (nm) {
       var fname = 'workspace/skills/' + skillSlug(nm) + '.md';
       if (sess.vfsContent && sess.vfsContent[fname] === undefined) {
-        sess.vfsContent[fname] = '---\nname: ' + nm + '\ndescription: ' + nm + '\n---\n\n' + BUILD_SKILL_BODIES[nm] + '\n';
+        sess.vfsContent[fname] = '---\nname: ' + nm + '\ndescription: ' + (BUILD_SKILL_DESCS[nm] || nm) + '\n---\n\n' + BUILD_SKILL_BODIES[nm] + '\n';
       }
-      if (!db.skills.some(function (x) { return x.name === nm; })) db.skills.push({ id: 'sk' + H.uid(), name: nm, desc: nm, on: true });
+      var existing = db.skills.find(function (x) { return x.name === nm; });
+      if (!existing) db.skills.push({ id: 'sk' + H.uid(), name: nm, desc: (BUILD_SKILL_DESCS[nm] || nm), on: true });
+      else if (existing.desc === nm && BUILD_SKILL_DESCS[nm]) existing.desc = BUILD_SKILL_DESCS[nm]; // migrate name-only descs
     });
     Store.save();
   }
@@ -410,6 +446,9 @@
   App = window.App || {};
   /* L1: per-tool watchdog health (consecutive-timeout counters + wedges) */
   var toolHealth = window.LoopCore ? LoopCore.makeToolHealth() : {};
+  /* skill-system audit surface: expose the matcher + loader (hoisted fns) */
+  App.matchSkills = function (text) { return matchSkills(text); };
+  App.autoLoadSkills = function (text, sess) { var s = sess || Store.active(); return autoLoadSkills.call(null, text, s); };
   function ensureSession() { return Store.active() || Store.newSession(); }
   App.isStreaming = function () { return !!state.streaming; };
   App.ctxFor = ctxFor;
