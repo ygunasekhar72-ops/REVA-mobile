@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-31T16:04:54.364Z",
+  "date": "2026-10-31T19:20:43.507Z",
   "pass": 18,
   "total": 18,
   "results": [
@@ -7,25 +7,25 @@
       "name": "shell task: correct tool + success report",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 6
+      "ms": 5
     },
     {
       "name": "failure honesty: exit 1 reported as failure",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 2
+      "ms": 4
     },
     {
       "name": "fragmented args: write completes with full payload",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 2
+      "ms": 5
     },
     {
       "name": "empty-reply ladder: bounded, no hang, honest stop",
       "pass": true,
       "detail": "iters=6",
-      "ms": 3
+      "ms": 5
     },
     {
       "name": "Guard gating: shell_exec + MCP tools excluded in Guard mode",
@@ -67,19 +67,19 @@
       "name": "malformed args: broken JSON executes safely, run completes",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 2
+      "ms": 4
     },
     {
       "name": "tool batch: two calls in one round both execute",
       "pass": true,
       "detail": "toolCalls=2",
-      "ms": 1
+      "ms": 2
     },
     {
-      "name": "flood compaction: 54KB tool output compacted, run coherent",
+      "name": "flood compaction: 54KB output compacted + SotW continuation",
       "pass": true,
       "detail": "compactions=1",
-      "ms": 1
+      "ms": 3
     },
     {
       "name": "quota honesty: 429 with quota wording fails the run loudly",
