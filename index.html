@@ -596,17 +596,40 @@
       <b>REVA IDE</b>
       <span class="ide-path kbd" id="idePath">—</span>
       <span style="flex:1"></span>
+      <button class="ide-btn" id="ideSearchBtn"><i data-lucide="search"></i>Search</button>
       <button class="ide-btn" id="ideNewFile"><i data-lucide="file-plus-2"></i>New</button>
+      <button class="ide-btn" id="ideRename"><i data-lucide="pencil"></i></button>
+      <button class="ide-btn" id="ideDelete"><i data-lucide="trash-2"></i></button>
       <button class="ide-btn" id="ideGit"><i data-lucide="git-branch"></i>Git</button>
       <button class="ide-btn" id="ideSave"><i data-lucide="save"></i>Save</button>
       <button class="ide-btn" id="ideClose"><i data-lucide="x"></i>Close</button>
     </div>
     <div class="ide-main">
-      <div class="ide-tree" id="ideTree"></div>
-      <div class="ide-edit"><div id="ideTabs"></div><div class="ide-editwrap"><pre id="ideGutter" aria-hidden="true"></pre><pre id="ideHl" class="tokhl" aria-hidden="true"></pre><textarea id="ideEditor" spellcheck="false" placeholder="Select a file from the tree — or ask the model to write one. Ctrl+S saves, Ctrl+P quick-open."></textarea></div></div>
+      <div class="ide-side">
+        <div class="ide-tree" id="ideTree"></div>
+        <div class="ide-outline" id="ideOutline"></div>
+      </div>
+      <div class="ide-edit">
+        <div id="ideTabs"></div>
+        <div class="ide-editwrap">
+          <pre id="ideGutter" aria-hidden="true"></pre>
+          <pre id="ideHl" class="tokhl" aria-hidden="true"></pre>
+          <textarea id="ideEditor" spellcheck="false" placeholder="Select a file from the tree — or ask the model to write one. Ctrl+S saves · Ctrl+P quick-open · Ctrl+Shift+F search · Ctrl+G jump to line."></textarea>
+          <div id="ideAc" class="ide-ac" style="display:none"></div>
+        </div>
+        <div class="ide-status" id="ideStatus"></div>
+      </div>
       <div class="ide-prev" id="idePreviewWrap">
         <div class="ide-prevbar"><span id="idePrevLabel">preview</span><span style="flex:1"></span><button class="ide-btn" id="ideRun"><i data-lucide="play"></i>Run</button></div>
         <iframe id="ideFrame" sandbox="allow-scripts allow-modals" title="Live preview"></iframe>
+      </div>
+      <div class="ide-search" id="ideSearch" style="display:none">
+        <div class="ide-searchbar">
+          <i data-lucide="search"></i>
+          <input id="ideSearchIn" placeholder="search across every file — text or tokens" autocomplete="off" spellcheck="false"/>
+          <button class="ide-btn" id="ideSearchX"><i data-lucide="x"></i></button>
+        </div>
+        <div class="ide-searchout" id="ideSearchOut"></div>
       </div>
     </div>
     <div class="ide-term">
@@ -623,6 +646,8 @@
 <script src="js/ai.js"></script>
 <script src="js/mcp.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/idecore.js"></script>
+<script src="js/ide-keywords.js"></script>
 <script src="js/ide.js"></script>
 <script src="js/deploy.js"></script>
 <script src="js/agentexec.js"></script>

@@ -331,6 +331,36 @@
 #ide .ide-in input{flex:1;background:transparent;border:0;outline:none;color:#f4f4f6;font:inherit;font-size:12.5px}
 @media (max-width:900px){#ide .ide-main{grid-template-columns:180px 1fr}#ide .ide-prev{display:none}}
 
+/* ---- IDE Phase A: outline, search, autocomplete, status bar ---- */
+#ide .ide-side{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#ide .ide-tree{flex:1.4;min-height:0}
+#ide .ide-treewslbl{display:flex;align-items:center;gap:6px;padding:4px 9px 8px;font-size:10.5px;color:#68686f;text-transform:uppercase;letter-spacing:.6px}
+#ide .ide-treewslbl svg{width:11px;height:11px}
+#ide .ide-outline{flex:1;min-height:0;overflow-y:auto;border-top:1px solid #1d1d22;padding:8px;background:#0c0c0f}
+#ide .ide-outlbl{font-size:10.5px;color:#68686f;text-transform:uppercase;letter-spacing:.6px;padding:2px 9px 6px}
+#ide .ide-sym{padding:5px 9px;font-size:11.5px}
+#ide .ide-symln{margin-left:auto;color:#5a5a63;font-size:10px}
+#ide .ide-search{position:absolute;inset:0 0 auto auto;width:min(430px,60%);max-height:80%;background:#101014ee;border:1px solid #232329;border-radius:0 0 0 12px;display:grid;grid-template-rows:auto 1fr;z-index:5;backdrop-filter:blur(6px);box-shadow:-12px 12px 32px #0008}
+#ide .ide-main{position:relative}
+#ide .ide-searchbar{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid #1d1d22}
+#ide .ide-searchbar svg{width:14px;height:14px;color:#68686f}
+#ide .ide-searchbar input{flex:1;background:transparent;border:0;outline:none;color:#f4f4f6;font:inherit;font-size:12.5px}
+#ide .ide-searchout{overflow-y:auto;padding:6px}
+#ide .ide-hit{display:block;width:100%;text-align:left;background:none;border:0;padding:6px 9px;border-radius:8px;cursor:pointer;font:inherit}
+#ide .ide-hit:hover{background:#17171c}
+#ide .ide-hitp{display:block;font-size:10.5px;color:#82aaff;font-family:ui-monospace,Consolas,monospace}
+#ide .ide-hitt{display:block;font-size:11.5px;color:#a4a4b0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ide .ide-editwrap{position:relative;flex:1;display:flex;min-height:0}
+#ide .ide-edit{position:relative;display:flex;flex-direction:column}
+#ide .ide-ac{position:absolute;display:none;min-width:190px;max-width:260px;max-height:186px;overflow-y:auto;background:#14141a;border:1px solid #26262e;border-radius:10px;z-index:6;box-shadow:0 8px 24px #000a;padding:3px}
+#ide .ide-ac-i{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:0;padding:5px 8px;border-radius:7px;color:#c9c9d2;font:inherit;font-size:11.5px;cursor:pointer}
+#ide .ide-ac-i.on,#ide .ide-ac-i:hover{background:#22222c}
+#ide .ide-ac-i b{font-weight:600;font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+#ide .ide-ac-i span{margin-left:auto;color:#5a5a63;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px}
+#ide .ide-status{display:flex;align-items:center;gap:14px;padding:4px 12px;background:#0c0c0f;border-top:1px solid #1d1d22;font-size:10.5px;color:#a4a4b0;min-height:24px}
+#ide .ide-st-dim{color:#68686f}
+#ide .ide-st-dirty{color:#e8c56f}
+
 /* ---------- NATIVE MODE (real phones: no mockup hardware) ---------- */
 #mono-harness.native{padding:0;height:100vh;overflow:hidden}
 #mono-harness.native .stage{height:100%}
