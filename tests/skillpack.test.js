@@ -11,7 +11,7 @@ const P = require('../js/skillpack.js');
 
   // 1. batch size + shape (batches 1+2)
   const names = P.names;
-  assert.strictEqual(names.length, 40, 'batches 1+2 = 40 skills, got ' + names.length);
+  assert.strictEqual(names.length, 60, 'batches 1+2+3 = 60 skills, got ' + names.length);
   assert.strictEqual(new Set(names).size, names.length, 'slugs unique');
   names.forEach(n => {
     assert.ok(P.descs[n], 'desc present for ' + n);
@@ -41,7 +41,9 @@ const P = require('../js/skillpack.js');
        or CSS custom properties — data: URIs excluded by the trailing ; */
     assert.ok(/```|\bvar \b|\bfunction\b|\bconst \b|=>|\+=|\*=|\{\./.test(b) ||
       /[\w-]+\s*:\s*[^;\n]{2,};/.test(b) || /--[\w-]+/.test(b), n + ' body contains real code');
-    assert.ok((b.match(/\n\n/g) || []).length >= 3, n + ' body has sections');
+    /* organized = paragraph sections AND/OR a numbered top-level list */
+    const sections = (b.match(/\n\n/g) || []).length + (b.match(/\n\d+\. /g) || []).length;
+    assert.ok(sections >= 4, n + ' body has sections (' + sections + ')');
     assert.ok(/Verify|verify/.test(b), n + ' body ends with a verify step');
   });
 

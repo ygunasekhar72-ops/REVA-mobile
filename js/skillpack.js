@@ -13,6 +13,27 @@
   'use strict';
 
   var descs = {
+    /* ---- batch 3: engineering process — how the agent works ---- */
+    'debugging-methodology': 'debug bug fix reproduce isolate bisect root cause hypothesis console log breakpoint minimal test investigate',
+    'testing-strategy': 'testing test strategy assertions assert unit integration edge cases deterministic seeded coverage smoke verify behavior',
+    'code-review-self': 'code review self checklist quality dead code naming duplication edge cases simplify before done polish audit',
+    'git-workflow': 'git commit branch merge message history diff stash revert reset undo changelog conventional commits workflow',
+    'refactoring-safety': 'refactor safety small steps seams characterization test behavior preserving extract function rename dead code risk',
+    'security-essentials': 'security xss escape injection sanitization secrets keys cors trust boundary input validation sanitize attacker safe',
+    'naming-structure': 'naming conventions structure file organization module boundaries consistency folders architecture organize project layout',
+    'comments-docs': 'comments documentation readme docstring why not what inline docs examples keep updated maintainability',
+    'scope-slicing': 'scope mvp slicing vertical slice increment milestone first playable core loop feature cut priorities phases deliver',
+    'error-prevention': 'prevent errors defensive defaults invariants assertions fail fast guard clauses lint mindset null undefined checks boundary',
+    'dependency-discipline': 'dependencies vendor library choice bundle size license maintenance alternatives implement vs adopt offline local first',
+    'audio-visualization': 'audio visualizer analyser frequency waveform spectrum bars fft music visual beats canvas sound reactive',
+    'charts-canvas-impl': 'canvas chart implementation scales axes ticks hover tooltip tooltip position rendering series line bar engine custom',
+    'file-handling-browser': 'file api upload import drag drop filereader blob object url download save export json text files browser',
+    'clipboard-share': 'clipboard copy paste navigator clipboard write text share api fallback execcommand textarea copy link',
+    'url-state-routing': 'url query params history api pushstate hash routing deep link back button state shareable bookmark single page',
+    'canvas-text-rendering': 'canvas text filltext measuretext font metrics wrapping alignment multiline custom fonts baseline width',
+    'math-for-games': 'vectors math dot cross normalize distance angle reflection interpolation easing lerp trigonometry games physics',
+    'state-machines-ui': 'state machine fsm states transitions explicit menu wizard loading idle enum impossible invalid guard flow',
+    'async-ui-patterns': 'async ui loading skeleton empty error success states optimistic update rollback pending spinner progressive',
     /* ---- batch 2: 3D depth, game systems, data, platform ---- */
     'three-animations': 'three js animation mixer keyframe morph target tween interpolate lerp quaternion rotation clip model animated character',
     'three-postprocessing': 'three postprocessing effect composer bloom glow outline pass render target vignette film grain crt screen effects',
@@ -58,6 +79,310 @@
   };
 
   var bodies = {};
+  /* ---- batch 3 bodies: the engineering process ---- */
+  bodies['debugging-methodology'] = [
+    'Debugging is a discipline — random poking burns rounds:',
+    '',
+    '1. REPRODUCE deterministically. A bug you cannot reproduce on demand cannot be proven fixed. Find the minimal input: which file, which action, which data. run_check/interact exist exactly for this.',
+    '2. READ the actual error. The message names the THING and the PLACE. A TypeError "x is not a function" means x held something unexpected — log WHAT it actually was, do not guess.',
+    '3. Form ONE hypothesis, predict its observable consequence, test the PREDICTION — not the hypothesis. "Maybe the state resets" predicts "a log right after load shows empty" — check that log.',
+    '4. Bisect the surface: comment out half the pipeline; the half that still breaks contains the bug. Halves of halves — 5 steps isolate a line in 100.',
+    '5. Fix the CAUSE, not the symptom. Guarding a null at the crash site hides WHERE it became null. Walk upstream to the origin and fix there — or add the invariant check at the boundary.',
+    '',
+    'Tools: console.log with CONTEXT (JSON.stringify of the object + a label — "cart at checkout:", never a bare value); the harness watchdog turns hangs into honest errors (read them); diff the last working version (diff_texts tool) when it recently worked — the delta IS the suspect list.',
+    '',
+    'Anti-patterns: changing 3 things at once (you will not know which fixed it); fixing by re-writing the whole file (destroys 2 working things per 1 fixed); "works now, moving on" without understanding WHY it broke (it returns, deeper, at the worst time).',
+    '',
+    'Verify: the original repro passes; the minimal repro passes; TWO neighboring behaviors still pass (the fix did not trade one bug for another).'
+  ].join('\n');
+  bodies['testing-strategy'] = [
+    'Test what breaks, not what obviously works:',
+    '',
+    'Priority order: (1) math/logic with a right answer (totals, physics, conversions — the interact tool verifies outputs MATHEMATICALLY), (2) boundary conditions (0, 1, max, empty, negative, huge string), (3) the state transitions users hit every session (save → reload → intact), (4) everything visual last — run_check covers it cheaply.',
+    '',
+    'Determinism first: seed the RNG (mulberry32 from procedural-worlds) and freeze Date.now where logic depends on time — a test that flakes randomly is worse than no test (it teaches you to ignore red).',
+    '',
+    'Assert helpers (drop into any built app):',
+    'function eq(actual, expected, label) { var ok = JSON.stringify(actual) === JSON.stringify(expected); console[(ok ? "log" : "error")((ok ? "PASS " : "FAIL ") + label, ok ? "" : JSON.stringify(actual) + " !== " + JSON.stringify(expected))); return ok; }',
+    'Test DATA transforms as pure functions — if the logic lives inside a click handler, extract it first (refactoring-safety); pure functions test in one line, DOM flows test through interact.',
+    '',
+    'The harness evals practice what this preaches: live failure paths (broken args, floods, quota) not just happy paths — every bug class you ship once deserves a permanent check (the HUNT rule).',
+    '',
+    'Anti-patterns: testing the framework (does addEventListener work? no); snapshot-only tests (break on every intentional change); chasing a coverage NUMBER (unasserted coverage is decoration).',
+    '',
+    'Verify: the suite runs green BEFORE declaring done; every previously-shipped bug of this project has a named test.'
+  ].join('\n');
+  bodies['code-review-self'] = [
+    'The 10-point self-review before declaring any task done:',
+    '',
+    '1. Dead code: unused functions, unreachable branches, console.logs from debugging — delete (git remembers).',
+    '2. Naming: does every name still tell the truth? After edits, "temp" variables persist for months. Rename at the moment of understanding.',
+    '3. Duplication: the same 5 lines twice = extract now, three times = you already waited too long.',
+    '4. Edge cases: empty, one, many, huge, malformed — walk each input of every handler (testing-strategy has the list).',
+    '5. Error paths: every await has a fate on rejection; every user action has a failure surface with an honest message (error-handling-ux).',
+    '6. State: who owns each piece? Can two owners disagree? Anything stored twice will drift — single source of truth.',
+    '7. Numbers: every count/size/timeout is a named constant or obviously inline — magic 847s are unexplainable in a month.',
+    '8. The diff read-through: read YOUR diff top to bottom as if reviewing a stranger — diff_texts makes this trivial; you will catch more in 2 minutes of reading than 20 of staring at code.',
+    '9. The user surface: run_check the entry file — clean console, non-blank, and interact the MAIN flow once (verification-before-success is a harness law: never claim done without evidence).',
+    '10. The todo list: todo_write marks reality — unfinished work stays honestly unchecked rather than silently dropped.',
+    '',
+    'Verify: 10 minutes of review before "done" catches the majority of would-be bug reports — this skill is the cheapest QA you own.'
+  ].join('\n');
+  bodies['git-workflow'] = [
+    'Git for the harness era (real git runs in REVA Linux on-device):',
+    '',
+    'Commits are units of INTENT: one logical change per commit, message = imperative summary ("fix: clamp dt in the game loop") + a body line of WHY when non-obvious. Conventional prefixes (feat/fix/refactor/test/docs/chore) make history skimmable.',
+    '',
+    'The saving rhythm: commit at every GREEN state (tests pass, app boots) — the run may continue for hours, and the commit trail is your undo system. git add -p to stage partial files when two changes belong in different commits.',
+    '',
+    'Undo ladder (memorize the order of violence): git stash (shelve, keep working), git checkout -- file (discard uncommitted file changes — DESTRUCTIVE), git revert <sha> (new commit undoing an old one — SAFE on shared history), git reset --hard <sha> (obliterate — local-only history).',
+    '',
+    'Branches: main always shippable; experiments on a branch. Merge fast, delete branches — long-lived branches rot. For the agent: branch per risky refactor (refactoring-safety), merge on green.',
+    '',
+    'Reading history: git log --oneline for the map, git show <sha> for one change, git blame -L for "when did this line become this" — the three diagnosis commands (see debugging-methodology step 6: diff the last working version).',
+    '',
+    'Verify: every commit message describes WHY it exists; git status is clean before switching contexts; the log reads like a story of the build.'
+  ].join('\n');
+  bodies['refactoring-safety'] = [
+    'Refactoring = changing structure with ZERO behavior change. The discipline:',
+    '',
+    'Safety net first: characterize current behavior BEFORE touching anything — run the app, exercise the flow (interact), note the outputs. For logic: assert the current outputs in tests (even the weird ones — they are SPECIMENS until proven bugs). No net, no refactor.',
+    '',
+    'Small steps, each green: extract function → run → commit. Rename → run → commit. Move code → run → commit. The mega-refactor that "touches everything at once" is how weeks of work die — 15 green commits beat 1 red week.',
+    '',
+    'The extraction pattern (the workhorse): copy the block into a new named function, replace the block with a call, pass the variables it read/wrote as parameters/returns. Names emerge from usage — extract first, name honestly, inline it back if the abstraction fights.',
+    '',
+    'Seams: refactor at natural joints — pure logic away from DOM, data-shape away from rendering, IO at the edges. If extraction needs 8 parameters, the seam is wrong — split along a different axis (data-structures-js usually reveals the missing object).',
+    '',
+    'Strangler, not rewrite: new code grows AROUND the old (both paths live, a flag routes), traffic moves piece by piece, old code dies last. The big-bang rewrite loses the accumulated bug fixes you never knew were there.',
+    '',
+    'Verify: behavior identical (the net says so), the diff is structure-only (read it — if you see behavior edits mixed in, separate the commits), and the new shape is measurably simpler (fewer parameters, flatter nesting).'
+  ].join('\n');
+  bodies['security-essentials'] = [
+    'Security for the web apps you build — the five real risks:',
+    '',
+    '1. XSS: ANY string that traces to user/API input must never become HTML. Render with textContent; escape on insert (&lt; &amp; …); the harness\'s own markdown renderer runs html:false for exactly this reason. href/src are injection too: javascript: URLs from user input are XSS — allowlist http(s) and relative.',
+    '2. Injection: building SQL/HTML/shell by string-concat with user data = owned. Parameterized queries (sql), DOM APIs (not innerHTML), argv arrays (not shell strings). If a query string contains " + user + " — stop.',
+    '3. Secrets: API keys never in client code, never in git, never in localStorage for anything real. Client apps call YOUR backend which holds the key; static demos use user-entered keys (the harness BYOK pattern) with zero logging.',
+    '4. Trust boundaries: data crossing a boundary (fetch, postMessage, storage, URL params) is UNTRUSTED regardless of source — validate shape AND content at the door (schema-lite: typeof, ranges, allowlists). Same-origin postMessage with no origin check = any page can command your app.',
+    '5. CORS/cookies: Access-Control-Allow-Origin: * on a READ-ONLY public API is fine; credentials + wildcard is never fine. Do not invent crypto (Math.random is not a token — crypto.getRandomValues; hash with SHA-256 via crypto.subtle, never MD5-invented).',
+    '',
+    'Mindset: every input field is an attack field; you are building for the user AND the visitor who types \'<script>\'.',
+    '',
+    'Verify: inject \'<img src=x onerror=alert(1)>\' into every text field of the built app — it must render as TEXT everywhere; grep the build for hardcoded keys.'
+  ].join('\n');
+  bodies['naming-structure'] = [
+    'Structure is what makes a 3000-line project navigable at line 3000:',
+    '',
+    'Names do the heavy lifting: functions = VERBS (renderCart, validateEmail — the name IS the docstring); booleans read as predicates (isValid, hasItems, canEdit); collections plural (items), singles singular (item); no encodings (userData2, finalRealList). If a name needs a comment to explain, the name is the bug.',
+    '',
+    'File layout for the harness\'s typical builds (single-page apps):',
+    'index.html · style.css (or styles/ by component) · js/: api.js (all IO) · state.js (store + actions) · ui.js (render fns) · main.js (wiring + boot) · features/ (one file per feature when >500 lines). The RULE: IO at the edges, pure logic in the middle (testing-strategy depends on this).',
+    '',
+    'Module boundaries: a module owns its state and exports an API — others call, never reach in. Import direction flows one way (ui → state → api, never a cycle). If two files always change together, they are ONE module — merge them.',
+    '',
+    'Consistency beats cleverness: one naming convention (camelCase JS, kebab-case files, CSS kebab), one date format, one error shape — per the project. The odd one out is always the one you grep for and never find.',
+    '',
+    'Scale trigger: >400 lines in one file or >3 levels of nesting = extract (refactoring-safety). Do it at the SMELL, not at the catastrophe.',
+    '',
+    'Verify: a stranger (or you in 2 months) can name where any behavior lives in under 30 seconds — that is the test of structure.'
+  ].join('\n');
+  bodies['comments-docs'] = [
+    'Comments earn their place by explaining what code CANNOT say:',
+    '',
+    'Write WHY, not WHAT: "// clamp dt — a background tab returns with a 3s delta that teleports the player" is gold; "// set dt to max 0.1" is noise (the code already says that). Delete what-the comments on sight — they rot into lies.',
+    '',
+    'The comments that always pay: WARNINGS ("order matters here — groupify keeps tool results glued to their calls"); NON-OBVIOUS CONSTANTS (why exactly 0.82? what was measured?); WORKAROUNDS with the link/ticket ("Safari throws in private mode — see localstorage-state"); TODO with an owner-shaped action ("TODO: chunk this when levels exceed 200 tiles").',
+    '',
+    'Docstrings on public functions: one line of contract — params, return, the ONE surprising behavior ("returns leftover count that did NOT fit"). Internal helpers: the name should suffice; a comment where the name lies.',
+    '',
+    'README shape for built projects: what it is (1 line) · how to run (the exact command) · controls/usage · known limits (honesty compounds trust). Ten lines beats a wall of template nobody reads.',
+    '',
+    'Docs die by drift: when behavior changes, the NEARBY comment changes in the same commit (git-workflow: commits are units of intent — docs belong to their code). A wrong comment is worse than none — it actively misleads the next reader (including the agent in a future session).',
+    '',
+    'Verify: read only the comments + function names — the architecture story must be told; every warning cites its reason; zero what-the comments remain.'
+  ].join('\n');
+  bodies['scope-slicing'] = [
+    'Big projects die from build order. Slices keep them alive:',
+    '',
+    'Vertical > horizontal: each increment delivers ONE working path through ALL layers (UI → logic → data) — "add one item and see it saved" — NOT a whole layer ("build all the UI, then all the logic") which produces nothing runnable for days. The harness deep-fix itself: agents that write breadth-first stall at 30% complete with zero working features.',
+    '',
+    'Slice order = risk order: the RISKIEST unknown first (does the physics feel right? does the API return what we think?) — a working ugly version of the hard part beats a polished version of the easy part that gets thrown away. After risk: the CORE LOOP — the 10-second experience that makes the thing worth using; everything else is decoration until it exists.',
+    '',
+    'The MVP cut (write it in todo_write BEFORE building): must (the core loop — ship without = failure) / should (the obvious next thing) / later (the Wishlist). Feature asks during the build land in later — the list absorbs them so they do not absorb the run.',
+    '',
+    'Milestones = runnable checkpoints: v0.1 renders + one interaction; v0.2 persistence; v0.3 the second feature… Each gets a checkpoint (the tool) and a commit (git-workflow). Kill criteria: if a slice takes >3 rounds with no visible progress, the slice is too big — split it (refactoring-safety seams).',
+    '',
+    'The agent-specific rule: 150-line chunks per write_file with mode:"append" (the schema mandates it) IS scope-slicing at the file level — structure files so each append lands in a different feature area, and the build never blocks on one giant generation.',
+    '',
+    'Verify: at ANY commit the app boots and does its core loop; no slice is "half-wired" across three files (finish it or revert it).'
+  ].join('\n');
+  bodies['error-prevention'] = [
+    'Prevention beats handling — the defensive defaults that kill bug classes:',
+    '',
+    'Guard clauses first: function handle(item) { if (!item) return; … } — early returns flatten nesting AND document preconditions. The alternative (null checks at every use) is error-handling BY anxiety.',
+    '',
+    'Fail fast at boundaries: parse/validate input AT THE DOOR and throw loud — a crash at the malformed input beats a corrupted state three screens later. Invariant asserts in dev: console.assert(list.length === expected, "cart drifted", list) — silent drift is the worst bug class.',
+    '',
+    'Defaults that cannot be wrong: const opts = Object.assign({}, DEFAULTS, a || {}); every numeric gets a clamp (Math.max(0, Math.min(cap, v))); every parseInt gets isNaN fallback (parseInt || 0 is a trap — parseInt("") is NaN, use Number.isFinite checks).',
+    '',
+    'The null hole inventory: WHERE can null/undefined legally appear? (async results before load, empty lists, missing optional fields, DOM before render). For each: one guard at entry. Optional chaining reads well — a?.b?.c — but chains of 3+ mean the DATA SHAPE is wrong (fix the shape).',
+    '',
+    'Lint mindset while writing: the harness lint tool costs one call and catches unbalanced tags/braces and JS syntax — run it before run_check; cheap checks FIRST is the whole ladder (lint → run_check → interact).',
+    '',
+    'Verify: feed every handler garbage on purpose (empty, wrong type, huge) — it degrades honestly (error-handling-ux), never corrupts, never hangs.'
+  ].join('\n');
+  bodies['dependency-discipline'] = [
+    'Dependencies are leverage — with a contract. The rules:',
+    '',
+    'Adopt when: the problem is COMMODITY (parsers, protocols, formats — years of someone else\'s edge cases) AND the layer is stable AND it runs in your target (the harness runs web-tree-sitter, models.dev, ripgrep, highlight.js — all commodity). Build when: it is your MOAT (the product\'s actual differentiator) or a 20-line pure function (a dependency for debounce is a liability).',
+    '',
+    'The vendor contract (how the harness does it): pinned exact versions; vendored files committed with the license attributed (THIRD_PARTY_NOTICES); a committed script that re-vendors reproducibly; a test that runs the REAL vendored code (the tests require the actual vendor files — a vendored lib with no test is a black box you shipped).',
+    '',
+    'Size honesty: every dependency ships to the user\'s device. Budget per add: <50KB for utilities, <500KB with justification, engines (a 3D renderer) get their own ledger entry. Check license FIRST (MIT/Apache/ISC fine; GPL contaminates; "no license" = legally unusable — read-only inspiration at most).',
+    '',
+    'Health checks before adopting: maintained (commits < 1 year old), used-in-anger (stars lie, issues activity doesn\'t), API stability (no 0.x churnstorm for core infra), works offline/locally (the harness is local-first — a CDN-dependency defeats the point; vendor it).',
+    '',
+    'Pruning is part of the discipline: an unused dependency is attack surface + bundle weight — audit quarterly, delete fearlessly (git remembers).',
+    '',
+    'Verify: every dependency in the project has (1) a reason line, (2) a license, (3) a test or a demo proving it works in THIS app.'
+  ].join('\n');
+  bodies['audio-visualization'] = [
+    'Sound-reactive visuals — the AnalyserNode pipeline:',
+    '',
+    'Wire once: var ctx = ac(); var analyser = ctx.createAnalyser(); analyser.fftSize = 256; source.connect(analyser); analyser.connect(ctx.destination) — any source node (oscillator, mediaElementSource from an <audio>, microphone via getUserMedia). fftSize = frequency bins × 2; 256 gives 128 usable bars.',
+    '',
+    'Per frame: var data = new Uint8Array(analyser.frequencyBinCount) (allocate ONCE); analyser.getByteFrequencyData(data) — spectrum bars: height = data[i] / 255; waveform instead: getByteTimeDomainData → oscilloscope line. Draw on canvas (canvas-particles pool for the glow dots).',
+    '',
+    'Beat detection (the fun part): track the bass average (bins 0-8); beat = bass > 1.35 × rolling average AND > threshold AND > 250ms since last — on beat: kick the visuals (scale pulse, particle burst, camera shake — game-juice). Rolling average = avg = avg * 0.98 + bass * 0.02.',
+    '',
+    'Design: bars bottom-up with a log-ish frequency mapping (low bins dominate linear scales — bin = Math.floor(Math.pow(i / n, 2) * data.length) spreads highs honestly); color by magnitude (color-theory-ui ramp); cap glow — audio viz begs for blur, GPUs hate it.',
+    '',
+    'Autoplay law: the AudioContext starts suspended until a user gesture — the viz is blank until the first tap; show an honest "tap to start" state, resume() in the handler.',
+    '',
+    'Verify: run_check seconds:5 — bars move with the audio, beats visibly kick, no console errors (an early-created context = the classic silent failure).'
+  ].join('\n');
+  bodies['charts-canvas-impl'] = [
+    'A canvas chart engine from scratch — scales, axes, hover:',
+    '',
+    'Scales first (the whole engine): x(v) = padL + (v - dMin) / (dMax - dMin) * plotW; y is the same flipped (padT + plotH - …). Nice ticks: round the span to 1/2/5×10^n steps (data-viz has the honesty rules — start bar axes at ZERO).',
+    '',
+    'Render order: gridlines → series → axes → labels. Line: ctx.beginPath + lineTo per point (round joins); bars: fillRect with a 1px gap; area: line + closePath down to the baseline with alpha fill. devicePixelRatio scaling (canvas.width = cssWidth × dpr; ctx.scale(dpr, dpr)) or everything is blurry — the #1 canvas chart bug.',
+    '',
+    'Hover (the interactive part): store the screen-space points from the render pass; on pointermove find the NEAREST x (binary search on the sorted array — algorithms-toolkit), draw a highlight + position a tooltip DIV (HTML overlays canvas for text — crisp + selectable); clamp the tooltip inside the viewport.',
+    '',
+    'Multi-series: draw order = z-order; direct-label at line ends when ≤3 series (data-viz), legend for more. Empty/one-point data: an honest "(not enough data)" message — a blank chart reads as broken.',
+    '',
+    'Resize: observe the container (ResizeObserver), re-render — the chart is a pure function of (data, size) if you kept it that way.',
+    '',
+    'Verify: hover every region — tooltip follows, never clips; resize the pane — chart reflows; 5000 points — still 60fps (downsample: one pixel column per point past 2000).'
+  ].join('\n');
+  bodies['file-handling-browser'] = [
+    'Files in the browser — import, read, export:',
+    '',
+    'Import: <input type="file" multiple> (hidden, triggered by a styled button) or drag-drop — dropzone = dragover (preventDefault + highlight class) + drop (e.dataTransfer.files). Every picked file: {name, type, size, lastModified} — validate size (reject >N MB with an inline message) and extension BEFORE reading.',
+    '',
+    'Reading: file.text() for text (async, one line); file.arrayBuffer() for binary; FileReader is the legacy — promise wrappers only. Images: URL.createObjectURL(file) gives an instant preview URL (revokeObjectURL on teardown — leaks otherwise); EXIF orientation is handled by createImageBitmap(file, {imageOrientation: "from-image"}).',
+    '',
+    'Export/download: URL.createObjectURL(new Blob([data], {type: "text/plain"})) + an <a download="name.txt"> click — the zero-backend download. JSON export = Blob with type application/json. Large exports: stream via ReadableStream if >100MB (rare in practice).',
+    '',
+    'Directories: webkitdirectory on the input imports a FOLDER (relative paths via webkitRelativePath — the harness Library import uses exactly this); File System Access API (showDirectoryPicker) is desktop-Chrome — feature-detect, keep the input fallback.',
+    '',
+    'Pitfalls: reading 100 files = read lazily (on demand), not all at open; file.name is NOT a path (no folders in flat inputs); text files may not BE utf-8 (file.text() assumes it — decode manually with TextDecoder when imports break on encoding).',
+    '',
+    'Verify: import a 5MB file — progress shown, preview renders; export → the download lands with correct content; drag-drop works on touch (a tap fallback exists).'
+  ].join('\n');
+  bodies['clipboard-share'] = [
+    'Copy/share flows — the small UX that people use constantly:',
+    '',
+    'Clipboard (async, secure-context): navigator.clipboard.writeText(t).then(() => toast("Copied")) — HTTPS/localhost only; the file:// and http cases need the fallback: create a textarea, select(), document.execCommand("copy") (deprecated but the ONLY non-secure path), remove. One helper with both paths — a copy button that silently fails is a bug.',
+    '',
+    'Copy rich data: ClipboardItem with text/html for formatted paste (tables into sheets); images via blob. Paste: the paste event on a target (e.clipboardData.getData("text")) — intercepting document paste for import flows ("paste your JSON here") is a beloved pattern.',
+    '',
+    'Web Share (mobile-native): navigator.share({title, text, url}) — the OS share sheet; feature-detect (navigator.share ? share : clipboard fallback). Sharing the BUILD: the share payload is a URL — the url-state-routing skill makes app state shareable first.',
+    '',
+    'UX details: feedback within 100ms (toast, button swap to ✓ for 1.2s); long content copies the WHOLE thing (truncate the DISPLAY, never the clipboard); the copy button sits where the data ends (per-card, not one global).',
+    '',
+    'Permissions gotcha: clipboard-read prompts per-use in some browsers — do not read on page load (prompt-storm); read only from an explicit paste/import action.',
+    '',
+    'Verify: copy on the built app (insecure + secure contexts if reachable) — toast fires, clipboard holds the full payload; share on mobile opens the sheet.'
+  ].join('\n');
+  bodies['url-state-routing'] = [
+    'URL = shareable, restorable state. The single-page app\'s memory:',
+    '',
+    'Hash routing (the zero-server option — perfect for REVA\'s static builds): location.hash = "#/game/42"; parse in hashchange listener → render. Back/forward work free. Hashbangs are dead; plain #/path is the convention.',
+    '',
+    'History API (clean paths, needs a server rewrite for deep links): history.pushState({id}, "", "/game/42") + popstate listener — the state object rides free (no JSON-in-URL parsing). Deep links on a static host need a 404-to-index rewrite — hash avoids that entirely; choose hash unless you control the server.',
+    '',
+    'Query params for VIEW state (not navigation): URLSearchParams(location.search) — tab filters, search text, zoom — update with history.replaceState (no history spam per keystroke; pushState only on real navigation commits). The rule: navigation = push, view-tweaks = replace.',
+    '',
+    'Restore correctness: on boot, READ the URL FIRST and render that state (deep link = bookmark = someone\'s saved work — honor it); every state change either changes the URL or explicitly explains why not. Serializable state only (ids, not object refs — localstorage-state kin).',
+    '',
+    'Pitfalls: pushState does NOT fire popstate (call your render after push manually); encoded characters (encodeURIComponent on params — & and # destroy URLs); history length is not a "back to app" API (users leave the app mid-flow — handle popstate to any state gracefully).',
+    '',
+    'Verify: copy the URL mid-flow into a fresh tab — the app restores the same view; back button never breaks the app (lands somewhere sane).'
+  ].join('\n');
+  bodies['canvas-text-rendering'] = [
+    'Text on canvas — the details that separate crisp from janky:',
+    '',
+    'Metrics first: ctx.measureText(str).width is the only honest width (em-estimates lie); font set as a FULL string: ctx.font = "600 16px system-ui, sans-serif" (weight family size — same order every time); baseline: textBaseline = "top" makes y-coordinates sane (alphabetic default confuses every layout).',
+    '',
+    'Wrapping (the workhorse): split words; build lines greedily while measureText(line + word) <= maxWidth; render per line at lineHeight = fontSize * 1.4. Cache the wrapped layout per (text, width, font) — re-wrapping per frame burns the budget (memoize — js-core-patterns).',
+    '',
+    'Alignment: textAlign left/right/center relative to the x you pass — center it with x = boxX + boxW / 2. Vertical centering = top baseline + (boxH - lineCount * lineHeight) / 2. Ellipsis overflow: drop words until measureText(line + "…") fits (measure, do not guess by character count).',
+    '',
+    'Custom fonts: document.fonts.load("600 16px MyFont").then(draw) — canvas does NOT wait for webfonts; drawing before load silently falls back (the invisible classic). Redraw on fonts.ready.',
+    '',
+    'Crispness: draw text at integer coordinates when the size is small (subpixel text blurs); devicePixelRatio scaling (charts-canvas-impl) applies to text too — retina demands the ×dpr canvas.',
+    '',
+    'Verify: screenshot the canvas (run_check) — text is crisp at dpr 2, wraps without mid-word breaks, ellipsizes gracefully at the box edge.'
+  ].join('\n');
+  bodies['math-for-games'] = [
+    'The math that runs every game — 2D vector ops in ten lines:',
+    '',
+    'Vectors as plain {x, y}: add (a.x+b.x), scale (a.x*k), length (Math.hypot(a.x, a.y)), normalize (divide by length — guard zero), dot (a.x*b.x + a.y*b.y — THE projection tool: facing tests via dot(normalize(toTarget), facing) > 0), cross-scalar (a.x*b.y - a.y*b.x — the left/right turn test).',
+    '',
+    'Distance: compare SQUARED distances (d² < r²) in hot loops — skip every sqrt. Angle to target: Math.atan2(dy, dx) (note: y-down canvas makes angles clockwise — consistency matters more than convention).',
+    '',
+    'Reflection (ball off a surface): v\' = v - 2 * dot(v, n) * n with n the surface normal — the pool-break formula. Aim/deflection: reflect + restitution (game-physics-2d).',
+    '',
+    'Interpolation family: lerp(a, b, t) linear; smooth-damp (1 - Math.pow(k, dt)) framerate-independent (the ONLY lerp that survives variable dt — three-animations relies on it); easeInOut for tween polish; angle-lerp wraps via shortest path ((b - a + 540) % 360 - 180).',
+    '',
+    'Trig positioning: point on circle = (cx + r*cos(a), cy + r*sin(a)); aim a turret = rotate toward target by the shortest angular step, clamped by turn speed (dot/cross tell you the direction).',
+    '',
+    'Verify: the turret tracks smoothly (no spin-flip at ±180°), balls bounce at correct angles off 45° walls, everything survives a 0.03s and a 0.3s dt unchanged (damping, not per-frame lerp).'
+  ].join('\n');
+  bodies['state-machines-ui'] = [
+    'UI flows want EXPLICIT states — the enum that deletes boolean soup:',
+    '',
+    'The pattern: one state string + one transition function. state = "idle" (idle | loading | ready | error); function setState(next, payload) { if (!ALLOWED[from].includes(next)) return console.warn("bad transition", from, next); state = next; render(); } — impossible states become IMPOSSIBLE TO REACH (no more isLoading && !isLoaded && hasError thorn patches).',
+    '',
+    'Define the graph first (5 minutes on paper): which states exist, which edges are legal, what data each state carries. A wizard = states per step (a back button = an edge, not "remember where I was"); a network flow = idle/loading/ready/error with RETRY edges from error; a game = menu/playing/paused/gameover (game-architecture applies it to loops).',
+    '',
+    'Data per state: keep context in the machine — {state: "editing", draft: {...}} — so every transition carries what the new state needs; entering "error" captures the failure for the retry edge (error-handling-ux).',
+    '',
+    'Rendering: one render() switch over state — each branch FULLY describes its surface (loading branch renders the skeleton, not "the ready page minus data"); transitions trigger render once (a transition, not a property, is the event — async-ui-patterns pairs with this).',
+    '',
+    'When it is overkill: two booleans that never interact. When it is overdue: the third boolean, or any flow where you wrote "should not happen" in a comment — the machine makes it actually not happen.',
+    '',
+    'Verify: enumerate the graph — every state reachable, every edge intentional, no dead ends; force illegal transitions in console — the guard rejects them loudly.'
+  ].join('\n');
+  bodies['async-ui-patterns'] = [
+    'The four UI states every async surface owes the user:',
+    '',
+    'loading (skeleton, not spinner-where-content-will-be — skeletons set expectations of SHAPE), empty (what this space is FOR + the action that fills it — copywriting), error (what happened + retry — error-handling-ux), success (the data). ALL FOUR, every surface. A surface missing one = a blank screen on someone\'s device.',
+    '',
+    'Debounced freshness: stale-while-revalidate — render cached data INSTANTLY, fetch in background, swap when fresh (a "refreshing" shimmer, never a blank); generation guard against races: const gen = ++latestGen; fetch().then(r => { if (gen !== latestGen) return; render(r); }) — the search-box classic (async-patterns has the AbortController version).',
+    '',
+    'Optimistic updates for writes the user can SEE failing safely: apply locally + pending style → confirm on server ok → solidify; on failure ROLL BACK + honest toast. Only for idempotent-feeling actions (like, rename); never for payments. The rollback IS the feature — a silent failure is a lie.',
+    '',
+    'Loading etiquette: <300ms → show nothing (flash beats flicker); >300ms → skeleton; >8s → progress or cancel. Buttons disable + label the wait ("Saving…") — never double-fire; the harness\'s own send/stop button is the reference implementation.',
+    '',
+    'Sequencing: independent loads = Promise.all (one skeleton); dependent = chain with the previous result; a page of mixed widgets loads each independently (widget-level states, not one global spinner).',
+    '',
+    'Verify: throttle the network (or pull the wire) — every surface shows its skeleton, then either data, an honest error with a working retry, or the empty state. No spinner ever lives forever.'
+  ].join('\n');
+
   /* ---- batch 2 bodies ---- */
   bodies['three-animations'] = [
     'Making 3D scenes move — two tiers:',
