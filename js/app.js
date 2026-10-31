@@ -611,10 +611,12 @@
     var sig = n + ':' + bytes;
     if (s._mapSig === sig && s.repoMap) return Promise.resolve();
     var label = 'lib/' + String(proj.name).toLowerCase().split('\\').join('-').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '/';
+    /* the map's prompt budget scales with the ACTIVE model's context window */
+    var budget = window.REVAMAP && REVAMAP.budgetFor ? REVAMAP.budgetFor(ctxFor(db.settings.model)) : undefined;
     var job = REVAMAP.build(proj.files, function (p, content) {
       var ext = (p.split('.').pop() || '').toLowerCase();
       return window.REVATS ? REVATS.symbolsFor(ext, content) : Promise.resolve(null);
-    }, label).then(function (r) {
+    }, label, budget).then(function (r) {
       s.repoMap = r.text; s._mapSig = r.sig;
       return r.text;
     });

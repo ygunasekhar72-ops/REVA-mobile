@@ -14,8 +14,22 @@
 
   var FILE_CAP = 300 * 1024;   // skip monsters; they get their own reads
   var MAX_FILES = 400;
-  var DEFAULT_BUDGET = 1400;   // chars of prompt space
+  var DEFAULT_BUDGET = 1400;   // chars of prompt space (32K-context band)
   var MAX_SYMS_PER_FILE = 8;
+
+  /* L3 budget scaling: the map spends prompt space in proportion to the
+     model's context window (K tokens, as ctxFor reports). Tiny windows
+     protect task tokens; big windows get a genuinely navigable map. */
+  var BUDGET_BANDS = [
+    [8, 800], [16, 1100], [32, 1400], [64, 2100],
+    [128, 3000], [256, 4200], [Infinity, 5200]
+  ];
+  function budgetFor(ctxK) {
+    var k = Number(ctxK);
+    if (!k || k <= 0) return DEFAULT_BUDGET;
+    for (var i = 0; i < BUDGET_BANDS.length; i++) if (k <= BUDGET_BANDS[i][0]) return BUDGET_BANDS[i][1];
+    return BUDGET_BANDS[BUDGET_BANDS.length - 1][1];
+  }
 
   var KIND_W = { func: 3, method: 2, 'class': 4, 'interface': 3, struct: 3, 'enum': 3, trait: 3, 'module': 2, object: 2, type: 1 };
 
@@ -113,13 +127,23 @@
       var used = head.length;
       for (var i = 0; i < scored.length; i++) {
         var f = scored[i];
-        var syms = f.symbols.slice().sort(function (a, b) { return b.score - a.score; }).slice(0, MAX_SYMS_PER_FILE);
-        var line = '  ' + f.path + ' — ' + (syms.length ? syms.map(function (s) { return s.kind + ' ' + s.name + ' (L' + s.line + ')'; }).join(', ') : '(no named symbols)');
-        if (used + line.length > budget && i > 0) { lines.push('  … ' + (scored.length - i) + ' more files (use list_files / code_symbols)'); break; }
-        lines.push(line);
-        used += line.length + 1;
+        var syms = f.symbols.slice().sort(function (a, b) { return b.score - a.score; });
+        /* graceful degradation per file: full line → compact line →
+           path-only. A big context gets full outlines; a tight one still
+           shows every important PATH before giving up. */
+        var full = syms.slice(0, MAX_SYMS_PER_FILE);
+        var fullLine = '  ' + f.path + ' — ' + (full.length ? full.map(function (s) { return s.kind + ' ' + s.name + ' (L' + s.line + ')'; }).join(', ') : '(no named symbols)');
+        if (used + fullLine.length + 1 <= budget || i === 0) { lines.push(fullLine); used += fullLine.length + 1; continue; }
+        var compact = syms.slice(0, 3);
+        var compactLine = '  ' + f.path + ' — ' + (compact.length ? compact.map(function (s) { return s.name; }).join(', ') : '(no symbols)') + (syms.length > 3 ? ' +' + (syms.length - 3) : '');
+        if (used + compactLine.length + 1 <= budget) { lines.push(compactLine); used += compactLine.length + 1; continue; }
+        var pathLine = '  ' + f.path;
+        if (used + pathLine.length + 1 <= budget) { lines.push(pathLine); used += pathLine.length + 1; continue; }
+        lines.push('  … ' + (scored.length - i) + ' more files (use list_files / code_symbols)');
+        return { text: lines.join('\n'), sig: sig() };
       }
-      lines.push('(Navigate with code_symbols for full outlines; this map updates as you edit.)');
+      var foot = '(Navigate with code_symbols for full outlines; this map updates as you edit.)';
+      if (used + foot.length + 1 <= budget) lines.push(foot);
       return { text: lines.join('\n'), sig: sig() };
     }
 
@@ -130,5 +154,5 @@
     }
   }
 
-  return { build: build, extractFallback: extractFallback, tokenize: tokenize, DEFAULT_BUDGET: DEFAULT_BUDGET };
+  return { build: build, extractFallback: extractFallback, tokenize: tokenize, budgetFor: budgetFor, DEFAULT_BUDGET: DEFAULT_BUDGET };
 });
