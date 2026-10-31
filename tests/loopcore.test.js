@@ -192,6 +192,27 @@ const LoopCore = require('../js/loopcore.js');
   assert.ok(brief.indexOf('shell_exec npm test — FAILED (react to this)') >= 0, 'failed calls demand a reaction');
   assert.strictEqual(LoopCore.resumeBrief(null), '', 'no snapshot → empty brief');
 
-  console.log('loopcore: 9/9 scenarios PASS');
+  // 10. W5 state-of-the-world: the compaction continuation block
+  const sotw = LoopCore.buildSotW({
+    userText: 'Build a pomodoro timer with sounds and stats',
+    todos: [{ t: 'plan', done: true }, { t: 'index.html', done: true }, { t: 'wire timer', done: false }],
+    files: { 'src/app.js': 'l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8', 'index.html': 'x' },
+    toolRows: [{ t: 'write_file', p: 'index.html', ok: true }, { t: 'edit_file', p: 'src/app.js', ok: false }]
+  });
+  assert.ok(sotw.indexOf('STATE OF THE WORLD') === 0, 'header');
+  assert.ok(sotw.indexOf('pomodoro') > 0, 'task carried');
+  assert.ok(sotw.indexOf('2/3 done') > 0 && s0twCheck(sotw), 'todos with done marks');
+  assert.ok(sotw.indexOf('2 file(s)') > 0, 'file count');
+  assert.ok(sotw.indexOf('src/app.js (8 ln)') > 0, 'file with line count');
+  assert.ok(sotw.indexOf('edit_file src/app.js — FAILED') > 0, 'latest action with honest failure');
+  assert.ok(sotw.length <= 1400, 'bounded (' + sotw.length + ')');
+  /* recency: the LAST touched file leads the key-files list */
+  assert.ok(sotw.indexOf('key files: src/app.js') > 0, 'recency ordering from tool rows');
+  /* empty session → still a valid, small block */
+  const empty = LoopCore.buildSotW({});
+  assert.ok(empty.indexOf('STATE OF THE WORLD') === 0 && empty.length < 300, 'empty-safe');
+  function s0twCheck(s) { return s.indexOf('[ ] wire timer') > 0; }
+
+  console.log('loopcore: 10/10 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

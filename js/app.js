@@ -1151,7 +1151,7 @@
                       messages: [
                         { role: 'system', content: 'You compress agent-work transcripts. Reply with ONLY a dense summary (max 150 words): the task, key decisions, files created/changed, and the exact step in progress. No preamble.' },
                         { role: 'user', content: digest }
-                      ], maxTokens: 8
+                      ], maxTokens: 600
                     }),
                     new Promise(function (res) { setTimeout(function () { res(null); }, 30000); })
                   ]);
@@ -1159,7 +1159,30 @@
                 } catch (eSum) { }
               }
               apiMsgs = [apiMsgs[0]].concat(c.kept);
-              apiMsgs.push({ role: 'user', content: '[auto-compaction: ' + c.dropped + ' older messages were trimmed to fit the context window. ' + (summary ? 'Summary of the dropped work: ' + summary + ' ' : '') + 'Nothing was lost from the workspace — files, todos and mounted projects are intact. Continue the task exactly where it left off.]' });
+              /* W5 STATE-OF-THE-WORLD: the live session state (task, todos,
+                 workspace, latest actions) rides the continuation — rebuilt
+                 from real data, not the model's memory of dropped text */
+              var lastUser = '';
+              for (var ui = s.messages.length - 1; ui >= 0; ui--) {
+                if (s.messages[ui].role === 'user' && !s.messages[ui].hidden) { lastUser = String(s.messages[ui].content || ''); break; }
+              }
+              var lastRows = [];
+              var lastAi = null;
+              for (var ai = s.messages.length - 1; ai >= 0; ai--) {
+                if (s.messages[ai].role === 'assistant' && s.messages[ai].tools) { lastAi = s.messages[ai]; break; }
+              }
+              if (lastAi) {
+                (lastAi.tools || []).slice(-4).forEach(function (t) {
+                  lastRows.push({ t: t.name, p: t.args && (t.args.path || t.args.cmd || ''), ok: t.ok !== false });
+                });
+              }
+              var sotw = LoopCore.buildSotW({
+                userText: lastUser,
+                todos: s.todos || [],
+                files: s.vfsContent || {},
+                toolRows: lastRows
+              });
+              apiMsgs.push({ role: 'user', content: '[auto-compaction: ' + c.dropped + ' older messages were trimmed to fit the context window. ' + (summary ? 'Summary of the dropped work: ' + summary + ' ' : '') + '\n\n' + sotw + ']' });
               activity.push({ k: 'note', icon: 'shrink', text: 'Context window filled — auto-compacted ' + c.dropped + ' older messages' + (summary ? ' (model summary included)' : '') + ', continuing', meta: 'attempt ' + cTry + '/2' });
               H.toast('Context compacted — run continues');
               UI.renderHome();

@@ -323,5 +323,50 @@
     return 'Mid-round work already applied before the interruption (' + v.rows.length + ' tool calls):\n' + lines.join('\n');
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief };
+  /* ---- W5 STATE-OF-THE-WORLD: the compaction replacement block ----
+     When old messages are dropped, the run's LIVE state (task, todos,
+     workspace, recent actions) is rebuilt from real session data — not
+     model memory — so a 500-round run stays coherent. Pure + bounded. */
+  function buildSotW(st) {
+    st = st || {};
+    var out = ['STATE OF THE WORLD (rebuilt from live session data):'];
+    if (st.userText) out.push('- Task: ' + String(st.userText).replace(/\s+/g, ' ').slice(0, 160));
+    var todos = Array.isArray(st.todos) ? st.todos : [];
+    if (todos.length) {
+      var done = todos.filter(function (t) { return t && t.done; }).length;
+      var list = todos.slice(0, 8).map(function (t) {
+        return (t && t.done ? '[x] ' : '[ ] ') + String(t.t || t.title || '').replace(/\s+/g, ' ').slice(0, 44);
+      }).join('; ');
+      out.push('- Todos (' + done + '/' + todos.length + ' done): ' + list);
+    }
+    var files = st.files || {};
+    var paths = Object.keys(files);
+    if (paths.length) {
+      var bytes = 0;
+      paths.forEach(function (p) { bytes += String(files[p] || '').length; });
+      /* recency from tool rows first (they name what the agent touched),
+         largest-by-lines as the fallback ordering */
+      var touched = [];
+      (Array.isArray(st.toolRows) ? st.toolRows : []).slice().reverse().forEach(function (r) {
+        var p = String((r && (r.p || r.path)) || '');
+        if (p && files[p] !== undefined && touched.indexOf(p) < 0 && touched.length < 4) touched.push(p);
+      });
+      var byLines = paths.slice().sort(function (a, b) { return String(files[b]).split('\n').length - String(files[a]).split('\n').length; });
+      var recent = touched.concat(byLines.filter(function (p) { return touched.indexOf(p) < 0; })).slice(0, 5);
+      var sizeStr = bytes < 1024 ? bytes + ' B' : Math.round(bytes / 102.4) / 10 + ' KB';
+      out.push('- Workspace: ' + paths.length + ' file(s), ' + sizeStr + ' — key files: ' +
+        recent.map(function (p) { return p + ' (' + String(files[p]).split('\n').length + ' ln)'; }).join(', '));
+    }
+    var rows = Array.isArray(st.toolRows) ? st.toolRows.slice(-4) : [];
+    if (rows.length) {
+      out.push('- Latest actions: ' + rows.map(function (r) {
+        return String((r && (r.t || r.name)) || '?') + ' ' + String((r && (r.p || r.path)) || '') + (r && r.ok === false ? ' — FAILED' : '');
+      }).join('; ').slice(0, 280));
+    }
+    out.push('- Todos, files and mounted projects are intact — continue EXACTLY where the transcript stopped.');
+    var text = out.join('\n');
+    return text.length > 1400 ? text.slice(0, 1397) + '…' : text;
+  }
+
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief, buildSotW: buildSotW };
 });

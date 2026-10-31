@@ -73,11 +73,16 @@ async function agentLoop(model, userMsg) {
         msgs.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
       }
       /* context engine: a flood must compact, never overflow — mirrors the
-         harness auto-compaction rule (LoopCore.compactTranscript) */
+         harness auto-compaction rule (LoopCore.compactTranscript + the W5
+         state-of-the-world continuation) */
       const chars = msgs.reduce((n, m) => n + String(m.content || '').length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0);
       if (chars > 20000) {
         const c = LoopCore.compactTranscript(msgs, 12000);
-        if (c.dropped > 0) { msgs.length = 0; msgs.push.apply(msgs, c.kept); compactions++; }
+        if (c.dropped > 0) {
+          msgs.length = 0; msgs.push.apply(msgs, c.kept); compactions++;
+          const sotw = LoopCore.buildSotW({ userText: userMsg, todos: [], files: {}, toolRows: [] });
+          msgs.push({ role: 'user', content: '[auto-compaction: ' + c.dropped + ' older messages trimmed.\n\n' + sotw + ']' });
+        }
       }
       continue;
     }
@@ -206,11 +211,11 @@ async function main() {
       r.toolCalls === 2 && /Batch done — 2 tool results/.test(r.content), 'toolCalls=' + r.toolCalls, Date.now() - t0);
   }
 
-  // 13. transcript flood: tool output floods the context — compaction saves it
+  // 13. transcript flood: compaction + STATE-OF-THE-WORLD continuation
   {
     const t0 = Date.now();
     const r = await agentLoop('mock-flood', 'run the flood');
-    record('flood compaction: 54KB tool output compacted, run coherent',
+    record('flood compaction: 54KB output compacted + SotW continuation',
       r.compactions >= 1 && /flood handled/.test(r.content) && !r.failed, 'compactions=' + r.compactions, Date.now() - t0);
   }
 
