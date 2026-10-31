@@ -266,3 +266,19 @@
 #mono-harness .chip { background:var(--sur2); border:1px solid var(--line); box-shadow:none; }
 #mono-harness .msgcode, #mono-harness details.codecard { border-radius:12px; }
 #mono-harness .hero-orb, #mono-harness .orb { box-shadow:none; }
+
+/* ---------- v2 UX: the Thinking collapsible owns all operations ----------
+   The chat shows the summary line + the model's output. The machinery
+   (thoughts, tool rows, reads/writes) lives inside the collapsible. */
+#mono-harness details.think { border: 0; background: transparent; padding: 0; margin: 4px 0 6px; }
+#mono-harness details.think > summary { list-style: none; display: flex; align-items: center; gap: 7px; padding: 5px 2px; color: var(--tr-reasoning, #a78bfa); font-size: var(--text-ui-caption, 13px); font-weight: 500; cursor: default; }
+#mono-harness details.think > summary::-webkit-details-marker { display: none; }
+#mono-harness details.think .th-verb { color: var(--ink3); font-weight: 400; }
+#mono-harness details.think .act-zone { border-left: 2px solid var(--line); padding: 2px 0 2px 10px; margin: 4px 0; }
+#mono-harness details.think .activity { background: transparent; box-shadow: none; border: 0; padding: 0; }
+#mono-harness details.think .act-row { background: var(--sur2, var(--card)); border: 1px solid var(--line); border-radius: 8px; margin: 3px 0; }
+#mono-harness details.think .think-body { color: var(--ink2); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
+#mono-harness details.actwrap > summary { display: flex; align-items: center; gap: 7px; color: var(--tr-reasoning, #a78bfa); font-size: var(--text-ui-caption, 13px); font-weight: 500; padding: 5px 2px; }
+#mono-harness details.actwrap { border: 0; background: transparent; padding: 0; margin: 4px 0 6px; }
+#mono-harness details.actwrap .activity { background: transparent; box-shadow: none; padding: 0; border-left: 2px solid var(--line); padding-left: 10px; margin: 4px 0; }
+#mono-harness details.actwrap[open] .activity .act-row { background: var(--sur2, var(--card)); border: 1px solid var(--line); border-radius: 8px; }

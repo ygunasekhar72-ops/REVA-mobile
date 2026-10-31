@@ -340,8 +340,10 @@
             (a.meta && !a.fname ? '<span class="meta">' + H.esc(a.meta) + '</span>' : '');
           return '<div class="act-row' + (a.ok === false ? ' failed' : '') + '" data-open="' + H.esc(a.path || '') + '"><i data-lucide="' + (a.ok === false ? 'alert-circle' : a.icon) + '"></i>' + flat + '</div>';
         }).join('');
-        if (acts.length > 4) inner += '<details class="actwrap"><summary>' + acts.length + ' steps</summary><div class="activity">' + rows + '</div></details>';
-        else inner += '<div class="activity">' + rows + '</div>';
+        /* v2 UX (user ruling): ALL operational steps live under the collapsed
+           Thinking section — the chat shows the mind's summary + the output,
+           never a wall of mechanics. Expandable when inspection is wanted. */
+        inner += '<details class="actwrap"><summary><i data-lucide="brain"></i>Thought · ' + acts.length + ' step' + (acts.length === 1 ? '' : 's') + '</summary><div class="activity">' + rows + '</div></details>';
       }
       inner += '<div class="mdbody">' + H.mdLite(m.content) + '</div>';
       inner += '<div class="aacts"><button class="uact" data-copyai aria-label="Copy reply"><i data-lucide="copy" style="width:12px;height:12px"></i> Copy</button></div>';

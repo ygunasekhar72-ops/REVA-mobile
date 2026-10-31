@@ -658,8 +658,18 @@
     function ensureAct() {
       var b = ensureBubble();
       if (!actEl) {
+        /* v2 UX (user ruling): ALL operational rows — thoughts, tool calls,
+           reads/writes — live UNDER the Thinking collapsible. The chat shows
+           the mind's summary line + the output, never a wall of mechanics. */
         actEl = H.el('<div class="activity" data-live="1"></div>');
-        b.insertBefore(actEl, contentEl || null);
+        var think = b.querySelector(':scope > details.think');
+        if (think) {
+          var zone = think.querySelector('.act-zone');
+          if (!zone) { zone = H.el('<div class="act-zone"></div>'); think.appendChild(zone); }
+          zone.appendChild(actEl);
+        } else {
+          b.insertBefore(actEl, contentEl || null);
+        }
       }
       return actEl;
     }
@@ -741,6 +751,9 @@
       thoughtRow.querySelector('.meta').textContent = secs < 3 ? 'a few seconds' : secs + 's';
       activity.push({ k: 't', icon: 'brain', text: 'Thought', meta: secs < 3 ? 'a few seconds' : secs + 's' });
       thoughtRow = null;
+      /* the run's summary line falls back to the plain Thinking state */
+      var tv = thinkEl && thinkEl.querySelector('.th-verb');
+      if (tv) tv.textContent = '';
     }
     /* ZCode-style verb rows: the label states what is happening right now
        (Writing/Editing/Terminal…), and freezes to the past-tense form when
@@ -837,6 +850,10 @@
       if (spinRow && spinRow.parentNode === act) act.insertBefore(liveToolRow, spinRow);
       else act.appendChild(liveToolRow);
       H.icons();
+      /* the collapsed summary line shows the CURRENT operation — the user
+         sees progress without expanding the machinery */
+      var tv = thinkEl && thinkEl.querySelector('.th-verb');
+      if (tv) tv.textContent = ' · ' + v.live;
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
     function addToolRow(info, out) {
@@ -895,7 +912,10 @@
     function ensureThink() {
       var b = ensureBubble();
       if (!thinkEl) {
-        thinkEl = H.el('<details class="think" open><summary><i data-lucide="brain"></i>Thinking</summary><div class="think-body"></div></details>');
+        /* v2 UX: one collapsible owns the run — summary shows the live verb,
+           the body holds reasoning + every operational row (collapsed by
+           default after the run; open while streaming to watch) */
+        thinkEl = H.el('<details class="think" open><summary><i data-lucide="brain"></i><span class="th-sum">Thinking</span><span class="th-verb"></span></summary><div class="think-body"></div></details>');
         b.insertBefore(thinkEl, b.firstChild);
         H.icons();
       }
