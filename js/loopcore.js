@@ -181,5 +181,32 @@
     });
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS };
+  /* ---- gen3d daily quota (scarce resource: 6 generations/day) ----
+     Pure: state is the persisted record {date:'YYYY-MM-DD', used:n}. */
+  function gen3dQuota(state, today, limit) {
+    limit = limit || 6;
+    var used = state && state.date === today ? (state.used || 0) : 0;
+    return {
+      allowed: used < limit,
+      used: used,
+      remaining: Math.max(0, limit - used),
+      limit: limit,
+      today: today
+    };
+  }
+
+  /* extract a GLB payload from a TRELLIS-style JSON response:
+     an https URL ending in .glb, or an inline base64 model block */
+  function extractGlb(responseText) {
+    var s = String(responseText || '');
+    var url = s.match(/https:\/\/[^"'\s\\]+\.glb(?:\?[^"'\s\\]+)?/i);
+    if (url) return { kind: 'url', value: url[0] };
+    var b64 = s.match(/"(?:glb|model|asset|object)[^"]*"\s*:\s*"(data:[^"]{100,})"/i);
+    if (b64) return { kind: 'dataurl', value: b64[1] };
+    var raw = s.match(/data:(?:application\/octet-stream|model\/gltf-binary)[^"']{500,}/i);
+    if (raw) return { kind: 'dataurl', value: raw[0] };
+    return null;
+  }
+
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, gen3dQuota: gen3dQuota, extractGlb: extractGlb };
 });

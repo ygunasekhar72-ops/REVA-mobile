@@ -762,6 +762,71 @@
         '\n' + (errors.length ? 'FIX the errors above, then run_check again — report done only when the console is clean.' : 'Console is clean. Check the screenshot stats match what the user asked for.') + saved;
       return out;
     },
+    /* ---- gen3d: AI 3D generation (Microsoft TRELLIS via NVIDIA BYOK) ----
+       text-to-3d or image-to-3d → a real GLB saved into the project.
+       SCARCE RESOURCE: 6 generations/day, enforced before the API call.
+       CORS note: ai.api.nvidia.com must allow the WebView origin (the APK
+       talks direct; desktop browsers may need the local proxy). */
+    gen3d: async function (a) {
+      if (!window.LoopCore) return 'Error: loopcore unavailable';
+      var today = new Date().toISOString().slice(0, 10);
+      var dbq = (Store.db.settings.gen3d = Store.db.settings.gen3d || { date: today, used: 0 });
+      var q = LoopCore.gen3dQuota(dbq, today, 6);
+      if (!q.allowed) return 'Error: the daily 3D-generation quota is used up (' + q.limit + '/' + q.limit + ' today). It resets at midnight — tell the user, and do NOT attempt again today. Reuse or modify the existing assets instead.';
+      var nv = (Store.db.providers || []).find(function (p) { return /nvidia/i.test(p.name) && p.key; });
+      if (!nv) return 'Error: no NVIDIA provider with an API key — gen3d needs one (Settings → Providers).';
+      var key = (nv.key.match(/nvapi-[A-Za-z0-9_-]+/) || [nv.key])[0];
+
+      var body = { slat_cfg_scale: 3, ss_cfg_scale: 7.5, slat_sampling_steps: 25, ss_sampling_steps: 25, seed: Math.floor(Math.random() * 100000) };
+      var mode;
+      if (a.image_path) {
+        var img = Store.active().vfsContent[String(a.image_path)];
+        if (img === undefined) return notFound(String(a.image_path));
+        if (String(img).indexOf('data:image') !== 0) return 'Error: image_path must be an image (png/jpg) in the workspace or project';
+        body.image = String(img).slice(0, 8 * 1024 * 1024);
+        mode = 'image';
+      } else if (a.prompt) {
+        body.prompt = String(a.prompt).slice(0, 1000);
+        mode = 'text';
+      } else return 'Error: provide a prompt (text-to-3d) or image_path (image-to-3d)';
+
+      setStatus('Generating 3D asset…');
+      var res;
+      try {
+        res = await fetch('https://ai.api.nvidia.com/v1/genai/microsoft/trellis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': 'Bearer ' + key },
+          body: JSON.stringify(body)
+        });
+      } catch (e) { return 'Error: 3D generation request failed — ' + (e && e.message || e) + ' (network or CORS; on desktop browsers the local proxy may be needed)'; }
+      if (!res.ok) {
+        var et = await res.text().catch(function () { return ''; });
+        return 'Error: 3D generation failed (HTTP ' + res.status + ') — ' + et.slice(0, 300);
+      }
+      var text = await res.text().catch(function () { return ''; });
+
+      var glb = LoopCore.extractGlb(text);
+      if (!glb) return 'Error: could not locate a GLB in the generation response — raw response (truncated): ' + text.slice(0, 600);
+      var dataUrl = glb.value;
+      if (glb.kind === 'url') {
+        var dl = await fetch(glb.value).catch(function () { return null; });
+        if (!dl || !dl.ok) return 'Error: the generated model URL could not be downloaded: ' + glb.value;
+        var blob = await dl.blob().catch(function () { return null; });
+        if (!blob) return 'Error: model download failed';
+        dataUrl = await new Promise(function (r) { var fr = new FileReader(); fr.onload = function () { r(fr.result); }; fr.readAsDataURL(blob); });
+      }
+      if (dataUrl.length > 30 * 1024 * 1024) return 'Error: the generated asset exceeds 30MB — too large for the project storage';
+
+      var path = String(a.project_path || ('assets/models/gen-' + Date.now().toString(36) + '.glb'));
+      var s = Store.active();
+      s.vfsContent[normPath(path)] = dataUrl;
+      dbq.used = (dbq.date === today ? (dbq.used || 0) : 0) + 1;
+      dbq.date = today;
+      Store.save();
+      var left = Math.max(0, 6 - dbq.used);
+      return 'Generated 3D model (' + mode + '-to-3d): ' + normPath(path) + ' — ' + Math.round(dataUrl.length * 0.75 / 1024) + 'KB.\n' +
+        'Load it in the scene with GLTFLoader using this exact path. Quota: ' + dbq.used + ' of 6 generations used today (' + left + ' left — spend them wisely, reuse assets, never regenerate for trivial changes).';
+    },
     screenshot: async function (a) {
       /* capture the live built-in browser if it has canvases; otherwise render args.path hidden */
       var f = document.getElementById('wbFrame');
@@ -1177,6 +1242,7 @@
     if (name === 'image_gen') return { label: 'Imagining ' + String(args.prompt || '').slice(0, 36), meta: 'FLUX', ok: ok, target: args.path || 'images/' };
     if (name === 'run_check') return { label: 'Verify · ' + String(args.path || '').split('/').pop(), meta: 'console + visual', ok: ok };
     if (name === 'screenshot') return { label: 'Screenshot', meta: 'visual check', ok: ok };
+    if (name === 'gen3d') return { label: 'Generating 3D asset', meta: 'AI · TRELLIS', ok: ok };
     if (name === 'fetch_asset') return { label: 'Asset · ' + String(args.path || '').split('/').pop(), meta: 'download', ok: ok };
     if (name === 'checkpoint') return { label: 'Checkpoint · ' + String(args.label || '').slice(0, 26), meta: 'saved', ok: ok };
     if (name === 'rollback') return { label: 'Rollback · ' + String(args.label || '').slice(0, 26), meta: 'restored', ok: ok };
@@ -1215,6 +1281,7 @@
     { type: 'function', function: { name: 'browser_read', description: 'Read a web page as clean markdown AND open it in the built-in browser so the user can see it. Best way to show a page to the user while studying it.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     { type: 'function', function: { name: 'run_check', description: 'Build-quality verification: renders an HTML entry (workspace or lib/ path) in a hidden frame, captures its console errors/warnings and a screenshot analysis (canvas size, non-blank %, dominant colors), and saves the screenshot into workspace/screenshots/. ALWAYS run this after building or changing anything visual/interactive; fix every error and run again until the console is clean before reporting done.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'HTML entry: workspace path or lib/<slug>/index.html' }, seconds: { type: 'number', description: 'seconds to let it run before capture (default 3)' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'screenshot', description: 'Capture what the built-in browser is currently showing (or render a given HTML path) — returns canvas size, non-blank % and dominant colors, and saves a PNG to workspace/screenshots/. Use to SEE the current state of a visual build.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'optional HTML path to render and capture (defaults to the current browser page)' } } } } },
+    { type: 'function', function: { name: 'gen3d', description: 'Generate a REAL 3D model (GLB) with AI from a text description or an image — saved into the project and loadable with GLTFLoader. SCARCE: limited to 6 generations per day — craft the prompt carefully, describe the asset fully in one prompt, reuse the result, and never regenerate for trivial changes. Use for original assets; use fetch_asset for existing known models.', parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'text-to-3d: full description of the asset (shape, style, materials, detail level)' }, image_path: { type: 'string', description: 'image-to-3d: workspace path of a png/jpg to convert into a 3D model' }, project_path: { type: 'string', description: 'where to save the GLB (default assets/models/gen-<id>.glb)' } } } } },
     { type: 'function', function: { name: 'fetch_asset', description: 'Download a real asset (3D model .glb/.gltf, texture, image, audio) from a public CORS-enabled URL into the workspace — real assets beat geometric primitives. Cap 8 MB. Use for games/3D: fetch models and textures from github raw / jsdelivr / unpkg.', parameters: { type: 'object', properties: { url: { type: 'string' }, path: { type: 'string', description: 'workspace path to save to, e.g. assets/models/ship.glb' } }, required: ['url', 'path'] } } },
     { type: 'function', function: { name: 'checkpoint', description: 'Snapshot the whole workspace before a risky experiment or a big refactor. Roll back with rollback{label} if it goes wrong.', parameters: { type: 'object', properties: { label: { type: 'string', description: 'short name, e.g. "before physics refactor"' } }, required: ['label'] } } },
     { type: 'function', function: { name: 'rollback', description: 'Restore the workspace to a saved checkpoint (latest one, or by label). Use when an experiment made things worse.', parameters: { type: 'object', properties: { label: { type: 'string' } } } } },

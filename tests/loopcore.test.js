@@ -104,6 +104,24 @@ const LoopCore = require('../js/loopcore.js');
   assert.ok(ok3.ok && ok3.value === 'back', 'after cooldown the tool runs and resets the counter');
   delete LoopCore.DEFAULT_BUDGETS['test_tool'];
 
-  console.log('loopcore: 8/8 scenarios PASS');
+  // 8. gen3d daily quota: fresh day, mid-day, exhausted, reset
+  const q1 = LoopCore.gen3dQuota({ date: '2026-10-31', used: 0 }, '2026-10-31', 6);
+  assert.ok(q1.allowed && q1.remaining === 6, 'fresh day allows 6');
+  const q2 = LoopCore.gen3dQuota({ date: '2026-10-31', used: 4 }, '2026-10-31', 6);
+  assert.ok(q2.allowed && q2.remaining === 2, 'mid-day: 2 left');
+  const q3 = LoopCore.gen3dQuota({ date: '2026-10-31', used: 6 }, '2026-10-31', 6);
+  assert.ok(!q3.allowed && q3.remaining === 0, 'exhausted: refuses');
+  const q4 = LoopCore.gen3dQuota({ date: '2026-10-30', used: 6 }, '2026-10-31', 6);
+  assert.ok(q4.allowed && q4.used === 0, 'new day resets the counter');
+
+  // 9. GLB extraction from a TRELLIS-style response
+  const urlResp = '{"assets":{"glb":"https://assets.nvidia.com/xyz/model.glb?sig=abc"}}';
+  assert.deepStrictEqual(LoopCore.extractGlb(urlResp).kind, 'url', 'GLB url found');
+  assert.ok(LoopCore.extractGlb(urlResp).value.indexOf('model.glb') > 0, 'url value');
+  const b64Resp = '{"glb":"data:model/gltf-binary;base64,' + 'A'.repeat(600) + '"}';
+  assert.strictEqual(LoopCore.extractGlb(b64Resp).kind, 'dataurl', 'inline data url found');
+  assert.strictEqual(LoopCore.extractGlb('{"no":"model here"}'), null, 'no GLB → null (honest fallback)');
+
+  console.log('loopcore: 10/10 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
