@@ -170,6 +170,28 @@ const LoopCore = require('../js/loopcore.js');
   // 8e. nothing anywhere → honest null (caller keeps its error path)
   assert.strictEqual(LoopCore.editLadder('totally different text', 'xyz block here', 'new'), null, 'no match → honest null');
 
-  console.log('loopcore: 8/8 scenarios PASS');
+  // 9. L6 RunState: mid-run snapshot survives process death
+  const many = [];
+  for (let i = 0; i < 50; i++) many.push({ name: 'write_file', args: { path: 'f' + i + '.js' }, ok: true, out: 'ok' });
+  const snap = LoopCore.snapshotRun(many);
+  assert.strictEqual(snap.v, 1, 'envelope version');
+  assert.strictEqual(snap.rows.length, 40, 'snapshot capped at 40 rows');
+  assert.strictEqual(snap.rows[39].p, 'f49.js', 'capped keeps the MOST RECENT rows');
+  const big = LoopCore.snapshotRun([{ name: 'write_file', args: { path: 'x'.repeat(300) }, ok: false, out: 'z'.repeat(500) }]);
+  assert.ok(big.rows[0].p.length <= 120 && big.rows[0].o.length <= 160, 'rows compacted');
+  assert.strictEqual(big.rows[0].ok, false, 'failure recorded honestly');
+
+  assert.strictEqual(LoopCore.validRunState(null), null, 'null rejected');
+  assert.strictEqual(LoopCore.validRunState({ v: 2, rows: [] }), null, 'wrong version rejected');
+  assert.strictEqual(LoopCore.validRunState({ v: 1, rows: 'nope' }), null, 'non-array rows rejected');
+  assert.strictEqual(LoopCore.validRunState({ v: 1, rows: [null, 5, {}] }), null, 'all-junk rows rejected');
+  const okSt = LoopCore.validRunState({ v: 1, at: 123, rows: [{ t: 'edit_file', p: 'a.js', ok: true }, { junk: 1 }] });
+  assert.ok(okSt && okSt.rows.length === 1 && okSt.rows[0].t === 'edit_file', 'junk rows dropped, good rows kept');
+  const brief = LoopCore.resumeBrief({ v: 1, at: 1, rows: [{ t: 'write_file', p: 'app.js', ok: true }, { t: 'shell_exec', p: 'npm test', ok: false }] });
+  assert.ok(brief.indexOf('write_file app.js — ok') >= 0, 'brief lists applied work');
+  assert.ok(brief.indexOf('shell_exec npm test — FAILED (react to this)') >= 0, 'failed calls demand a reaction');
+  assert.strictEqual(LoopCore.resumeBrief(null), '', 'no snapshot → empty brief');
+
+  console.log('loopcore: 9/9 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

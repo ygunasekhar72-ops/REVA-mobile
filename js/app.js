@@ -470,13 +470,17 @@
     H.toast('Chat created in "' + p.name + '" — the agent works on its files');
   };
   /* Resume chip action: continue a stopped/errored/interrupted task from its
-     todo list — the model picks up where it stopped instead of restarting */
+     todo list — the model picks up where it stopped instead of restarting.
+     When a mid-run snapshot exists (process death), the prompt carries the
+     honest brief of the tool work that already landed. */
   App.resumeTask = function () {
     var s = Store.active();
     if (!s || state.streaming) return;
     s.resumeHint = false;
+    var brief = window.LoopCore ? LoopCore.resumeBrief(s.runSnap) : '';
+    s.runSnap = null;
     Store.save(); UI.renderChat(s);
-    send('Continue your task — pick up EXACTLY where you stopped (check your todo list and the files you already wrote). Do not restart or repeat completed work.', true);
+    send('Continue your task — pick up EXACTLY where you stopped (check your todo list and the files you already wrote). Do not restart or repeat completed work.' + (brief ? '\n\n' + brief : ''), true);
   };
 
   function setSendStop(on) {
@@ -1353,6 +1357,9 @@
           info._oldC = oldContent;
           toolResults.push(info);
           addToolRow(info, result);
+          /* L6 RunState: persist the applied round incrementally — a kill
+             mid-run resumes with an honest brief instead of amnesia */
+          if (window.LoopCore) { s.runSnap = LoopCore.snapshotRun(toolResults); Store.save(); }
           var toolResultCount2 = apiMsgs.filter(function (m) { return m.role === 'tool'; }).length;
           apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(result).slice(0, toolResultCount2 > 5 ? 600 : 4000) });
           /* L2a VISION TOOL-RESULTS: after run_check/screenshot, a vision-capable
@@ -1433,20 +1440,25 @@
       typing.remove();
       activity.push({ k: 'note', icon: 'pause', text: 'Quota exhausted — run paused, work saved', meta: iters + ' rounds' });
       s.resumeHint = true;
+      s.runSnap = null; // the paused rounds' rows ride the transcript below
       s.messages.push({ role: 'assistant', content: '⏸ Quota exhausted — the run paused after ' + iters + ' rounds. Your todos and files are saved.\n\nTap "Continue the task" when your quota resets — or paste more API keys (comma-separated) for this provider in Settings → Model, and the run will rotate them automatically.', tools: toolResults.length ? toolResults : undefined, activity: activity.length ? activity : undefined, ts: Date.now() });
     } else if (failed) {
       typing.remove();
       s.resumeHint = true;
+      /* runSnap KEPT: the failed round's tool rows never reached the
+         transcript — the resume brief is the only honest record of them */
       s.messages.push({ role: 'assistant', err: true, content: AI.friendlyError(failed), ts: Date.now() });
     } else if (stopped) {
       typing.remove();
       s.resumeHint = true;
+      s.runSnap = null; // the stopped round's rows ride the transcript below
       if (acc || toolResults.length) s.messages.push({ role: 'assistant', content: (acc ? acc + '\n\n*(stopped)*' : '*(stopped mid-task — see tool activity above)*'), reasoning: accRe || undefined, tools: toolResults.length ? toolResults : undefined, activity: activity.length ? activity : undefined, ts: Date.now() });
       else H.toast('Generation stopped');
     } else {
       ensureBubble();
       /* a safety-cap pause keeps its resume offer; a natural finish clears it */
       s.resumeHint = !!capPaused;
+      s.runSnap = null; // completed rounds ride the transcript below
       var finalText = acc || (res && res.content) || '';
       /* FIX (never again): '(empty reply)' is FORBIDDEN when work happened.
          If the model burned the turn on tools and never wrote the summary,

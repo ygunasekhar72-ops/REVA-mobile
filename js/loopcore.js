@@ -280,5 +280,48 @@
     return null;
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest };
+  /* ---- L6 RunState: mid-run snapshot that survives process death ----
+     A kill mid-round loses the tool rows that were already APPLIED (files
+     written, edits landed) but never reached the transcript. The snapshot
+     keeps those rows so the resume prompt tells the model exactly what
+     landed — no repeated work, no ghost state. Pure + unit-tested. */
+  var SNAPSHOT_CAP = 40;
+
+  function snapshotRow(info) {
+    var a = (info && info.args) || {};
+    var where = a.path || a.cmd || a.query || a.title || '';
+    return {
+      t: String((info && info.name) || '?').slice(0, 40),
+      p: String(where).slice(0, 120),
+      ok: !!(info && info.ok),
+      o: String((info && info.out) || '').slice(0, 160)
+    };
+  }
+  function snapshotRun(toolResults) {
+    return {
+      v: 1,
+      at: Date.now(),
+      rows: (toolResults || []).slice(-SNAPSHOT_CAP).map(snapshotRow)
+    };
+  }
+  function validRunState(st) {
+    if (!st || st.v !== 1 || !Array.isArray(st.rows)) return null;
+    var rows = st.rows.filter(function (r) {
+      return r && typeof r.t === 'string';
+    }).map(function (r) {
+      return { t: String(r.t).slice(0, 40), p: String(r.p || '').slice(0, 120), ok: !!r.ok, o: String(r.o || '').slice(0, 160) };
+    });
+    return rows.length ? { v: 1, at: Number(st.at) || 0, rows: rows } : null;
+  }
+  /* the resume prompt's honest brief of what the dead round already did */
+  function resumeBrief(st) {
+    var v = validRunState(st);
+    if (!v) return '';
+    var lines = v.rows.map(function (r) {
+      return '- ' + r.t + ' ' + r.p + (r.ok ? ' — ok' : ' — FAILED (react to this)');
+    });
+    return 'Mid-round work already applied before the interruption (' + v.rows.length + ' tool calls):\n' + lines.join('\n');
+  }
+
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief };
 });
