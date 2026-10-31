@@ -47,12 +47,21 @@
       var be = $('#termBackend');
       if (be) be.textContent = backend === 'android' ? 'device shell · pty' : 'harness console';
       if (backend === 'android') {
-        window.__revaTermOut = function (chunk) { term.write(chunk); };
+        window.__revaTermOut = function (chunk) { window.__termGotOutput = true; term.write(chunk); };
         // header BEFORE start(): the session's own banner (REVA Linux / host
         // shell) then lands under it, in order, as it does on the device
         term.writeln('\x1b[1mREVA shell\x1b[0m — real pty · REVA Linux (Alpine via proot) + busybox (~300 cmds) + ripgrep');
         term.writeln('\x1b[2mtry: apk add git · pkg install curl · lx · rg pattern\x1b[0m\r');
         REVAShell.start();
+        /* FIX-5 visibility: if the pty produces NOTHING in 8s, the user sees
+           why instead of a silent dead screen (missing busybox, blocked
+           exec, rootfs extraction still running) — with the restart hint */
+        setTimeout(function () {
+          if (backend === 'android' && !window.__termGotOutput) {
+            term.writeln('\x1b[33m[no shell output yet — the Linux rootfs may still be extracting on first run, or exec was blocked]\x1b[0m');
+            term.writeln('\x1b[2mTap the restart button (↻) after ~30s, or check Android storage permissions.\x1b[0m');
+          }
+        }, 8000);
         /* one-shot pty sizing at session start (guaranteed shell prompt);
            the Fit key re-sends it on demand — user-invoked, so safe */
         setTimeout(function () { sendStty(); }, 700);

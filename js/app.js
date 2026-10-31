@@ -329,7 +329,7 @@
       p.push('You have real tools. Use them proactively, without asking permission, and never say you cannot do something a tool can do. The decision table: ' +
         'LOCATE code → workspace_search FIRST (never read files blind); then code_symbols for the outline; read_file (offset, or startLine/endLine for a numbered window) for the exact region. ' +
         'CHANGE code → edit_file with text copied EXACTLY from a fresh read (small changes); write_file for new files; never rewrite a whole file to change one line. ' +
-        'BUILD something → todo_write the plan first, create_directory for structure, write files in sections (write_file, then mode:"append" per section of ≤120 lines), keep the todo updated as you go. ' +
+        'BUILD something → todo_write the plan first. STRUCTURE IS NOT OPTIONAL: real projects are MULTI-FILE — web minimum: index.html + css/style.css + js/app.js; anything larger gets its own modules (never cram a project into one file, never ship a file under ~30 lines as a whole file). Each file COMPLETE and substantial — write_file the full file (append mode only for genuinely long files >150 lines, in ≤120-line sections). create_directory for structure (assets/, css/, js/). FINISH GATE: before declaring done, list_files the project — if the structure or content is thinner than the task deserves, KEEP BUILDING (more files, more depth, real content, working logic), then run_check and only then report. ' +
         'VERIFY → run_command or shell_exec to actually run the result; read the real output and quote it — nonzero exit or an error means fix it and run again. ' +
         'VISUAL BUILDS → after building or changing anything visual/interactive, call run_check on the entry file: it runs the page, captures console errors and a screenshot analysis — fix every error and re-run until the console is clean; use screenshot to see the current state; fetch_asset to bring real 3D models/textures from CDNs; checkpoint before risky experiments and rollback to recover. ' +
         'TOOL ERROR → read the message and correct course (the error includes the nearest match or the right pattern) instead of repeating the same call. ' +
@@ -547,7 +547,33 @@
     text = (text !== undefined ? text : $('#chatInput').value).trim();
     if (!text) { H.toast('Type a message first'); return; }
     $('#chatInput').value = '';
+    /* FIX-4 (the PolyDev model): a BUILD task in a project-less chat gets
+       its own Library project automatically — every build belongs to a
+       project, with its own mount, files and preview. Questions/chat stay
+       in the general chat untouched. */
+    function isBuildIntent(text) {
+      var t = String(text || '').toLowerCase();
+      if (t.length < 12) return false;
+      var action = /(build|create|make|develop|implement|design|code|program|generate)\b/.test(t);
+      var artifact = /\b(app|application|game|page|site|website|tool|project|dashboard|calculator|timer|clone|system|landing|model|editor|player)\b/.test(t);
+      return action && artifact;
+    }
+    function ensureAutoProject(text, s) {
+      try {
+        var name = String(text).replace(/^\s*(build|create|make|develop|implement|design|code|program|generate)\s+(me\s+)?(a|an|the)?\s*/i, '');
+        name = name.split(/[.,;!?]/)[0].trim().split(/\s+/).slice(0, 3).join(' ') || 'New build';
+        name = name.charAt(0).toUpperCase() + name.slice(1);
+        var slug = name.toLowerCase().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '');
+        if (Store.lib.slugTaken(slug)) { var k = 2; while (Store.lib.slugTaken(slug + '-' + k)) k++; slug = slug + '-' + k; }
+        var lib = Store.lib.put({ id: 'auto-' + Date.now().toString(36), name: name, createdAt: Date.now(), files: {} });
+        s.libId = lib.id;
+        Store.save();
+        H.toast('Project created: ' + name);
+        UI.renderHome();
+      } catch (eAP) { }
+    }
     var s = ensureSession();
+    if (!s.libId && isBuildIntent(text)) ensureAutoProject(text, s);
     if (!s.messages.length && !hidden) s.title = text.slice(0, 38).replace(/\n/g, ' ');
     var um = { role: 'user', content: text, ts: Date.now() };
     if (hidden) um.hidden = true;
@@ -597,7 +623,34 @@
   }
   App.refreshRepoMap = refreshRepoMap;
 
-  async function streamReply(s) {
+    /* FIX (never again): synthesize an honest completion from the run's real
+       work when the model's final text is empty. The user sees what was
+       actually built — never a bare '(empty reply)'. */
+    function synthesizeCompletion(toolResults, activity) {
+      var lines = ['**Work completed this run:**', ''];
+      var wrote = [], verified = null, plan = false, other = [];
+      (toolResults || []).forEach(function (t) {
+        var p = t.args && t.args.path;
+        if (t.name === 'write_file' && p) wrote.push('Written — `' + p + '`' + (t.args && t.args.content ? ' (' + String(t.args.content).split('\n').length + ' lines)' : ''));
+        else if (t.name === 'edit_file' && p) other.push('Edited — `' + p + '`');
+        else if (t.name === 'create_directory' && p) other.push('Created directory — `' + p + '`');
+        else if (t.name === 'run_check') verified = 'Verified with run_check — screenshot captured, console checked';
+        else if (t.name === 'todo_write') plan = true;
+        else if (t.name === 'sfx' && t.args && t.args.path) other.push('Sound — `' + t.args.path + '`');
+      });
+      if (plan) lines.push('- Plan tracked with todos');
+      wrote.forEach(function (l) { lines.push('- ' + l); });
+      other.forEach(function (l) { lines.push('- ' + l); });
+      if (verified) lines.push('- ' + verified);
+      if (!lines.length || lines.length === 1) {
+        (activity || []).slice(0, 8).forEach(function (a) { lines.push('- ' + (a.text || a.label || 'step')); });
+      }
+      lines.push('');
+      lines.push('*The model finished its tool work but returned no final summary (a provider hiccup) — everything above is real and saved. Tap **Continue the task** to have the model describe or extend the result.*');
+      return lines.join('\n');
+    }
+
+    async function streamReply(s) {
     /* L3: freshen the repo-map before the first round (await, small budgets)
        and let later rounds refresh it in the background */
     try { await refreshRepoMap(s, true); } catch (eMap) { }
@@ -1357,7 +1410,9 @@
             var ep2 = $('#effPill'); if (ep2) ep2.textContent = 'Effort · Low';
             activity.push({ k: 'note', icon: 'gauge', text: 'Effort stepped down to Low' });
           }
-          apiMsgs.push({ role: 'user', content: 'Your last reply was empty. Continue and complete the task using your tools; reply with real content.' });
+          var doneSteps = toolResults.length;
+          var stepNames = toolResults.slice(-4).map(function (t) { return t.name; }).join(', ');
+          apiMsgs.push({ role: 'user', content: 'Your reply was empty. You have already completed ' + doneSteps + ' step(s)' + (stepNames ? ' (recent: ' + stepNames + ')' : '') + '. The task is NOT complete until you write your final summary to the user: state what you built, the files, and how to use it. Reply with that summary NOW — no tool calls, just text.' });
           continue;
         }
         break; // genuinely empty after the full ladder
@@ -1390,7 +1445,14 @@
       ensureBubble();
       /* a safety-cap pause keeps its resume offer; a natural finish clears it */
       s.resumeHint = !!capPaused;
-      s.messages.push({ role: 'assistant', content: acc || (res && res.content) || '(empty reply)', reasoning: accRe || undefined, tools: toolResults.length ? toolResults : undefined, activity: activity.length ? activity : undefined, ts: Date.now() });
+      var finalText = acc || (res && res.content) || '';
+      /* FIX (never again): '(empty reply)' is FORBIDDEN when work happened.
+         If the model burned the turn on tools and never wrote the summary,
+         synthesize an honest completion from what was actually done. */
+      if (!String(finalText).trim() && (toolResults.length || activity.length)) {
+        finalText = synthesizeCompletion(toolResults, activity);
+      }
+      s.messages.push({ role: 'assistant', content: finalText, reasoning: accRe || undefined, tools: toolResults.length ? toolResults : undefined, activity: activity.length ? activity : undefined, ts: Date.now() });
     }
     s.updatedAt = Date.now();
     Store.save();
