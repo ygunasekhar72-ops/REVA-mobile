@@ -9,9 +9,9 @@ const P = require('../js/skillpack.js');
 (async () => {
   const EXISTING = ['ui-design-system', 'animation-motion', 'canvas-2d-games', 'shaders-glsl', 'data-viz', 'forms-validation', 'api-integration', 'pwa-offline', 'copywriting', 'three-js-3d', 'webgl-performance', 'game-architecture', 'procedural-worlds', 'mobile-optimization', 'asset-pipeline', 'linux-toolchain'];
 
-  // 1. batch size + shape
+  // 1. batch size + shape (batches 1+2)
   const names = P.names;
-  assert.strictEqual(names.length, 20, 'batch 1 = 20 skills, got ' + names.length);
+  assert.strictEqual(names.length, 40, 'batches 1+2 = 40 skills, got ' + names.length);
   assert.strictEqual(new Set(names).size, names.length, 'slugs unique');
   names.forEach(n => {
     assert.ok(P.descs[n], 'desc present for ' + n);
