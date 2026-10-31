@@ -70,7 +70,7 @@
      stateful, shell-backed, hook-UI-bound or special-cased in the dispatch
      loop stays on the ordered sequential path. A batch qualifies only when
      EVERY call is safe and there is more than one call. */
-  var PARALLEL_SAFE = /^(read_file|list_files|workspace_search|code_symbols|memory_search|lint|test_data)$/;
+  var PARALLEL_SAFE = /^(read_file|list_files|workspace_search|code_symbols|memory_search|lint|test_data|todo_scan|word_count|math_eval|encode_decode|diff_texts|hash_text|json_query|csv_parse|uuid_key)$/;
   function isParallelSafe(names) {
     if (!names || names.length < 2) return false;
     for (var i = 0; i < names.length; i++) if (!PARALLEL_SAFE.test(String(names[i]))) return false;
@@ -129,7 +129,7 @@
   var DEFAULT_BUDGETS = {
     web_search: 45000, web_read: 45000, browser_open: 30000, browser_read: 45000,
     fetch_asset: 60000, image_gen: 120000, run_check: 90000, screenshot: 45000,
-    interact: 90000
+    interact: 90000, http_request: 45000
   };
   var WEDGE_COOLDOWN_MS = 120000;
 

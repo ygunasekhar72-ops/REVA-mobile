@@ -149,6 +149,51 @@
     var keys = Object.keys(project.files || {}).filter(function (k) { return k.indexOf(rel) >= 0 || rel.indexOf(k) >= 0; }).slice(0, 4);
     return keys.length ? ' — did you mean: ' + keys.join(', ') + '?' : '';
   }
+  /* readLike: one reader for file-arg utility tools — Library mounts first,
+     then the chat workspace. Returns {src, label} or {err}. */
+  function readLike(path) {
+    var L = libCtx(path);
+    if (L) {
+      if (L.missing) return { err: 'Error: ' + L.missing };
+      if (L.rel === '' || L.project.files[L.rel] === undefined) return { err: 'Error: no such file: ' + L.full + libSuggest(L.project, L.rel) };
+      return { src: String(L.project.files[L.rel]), label: L.full };
+    }
+    var s = WS();
+    var p = normPath(path || '');
+    if (s.vfsContent[p] === undefined) return { err: 'Error: no such file: ' + p + libSuggest({ files: s.vfsContent }, p) };
+    return { src: String(s.vfsContent[p]), label: p };
+  }
+  /* initTemplates: real starter files per project kind — every scaffold is a
+     working entry point, not lorem ipsum (the agent builds out from these). */
+  function initTemplates() {
+    return {
+      static: function (name) {
+        return {
+          'index.html': '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>' + name + '</title>\n<link rel="stylesheet" href="style.css">\n</head>\n<body>\n<main>\n  <h1>' + name + '</h1>\n  <p>Scaffolded by REVA — build from here.</p>\n</main>\n<script src="app.js"></script>\n</body>\n</html>',
+          'style.css': ':root { color-scheme: dark; }\nbody { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0d0d10; color: #e9e9f0; font-family: system-ui, sans-serif; }\nmain { text-align: center; padding: 2rem; }',
+          'app.js': "document.querySelector('h1').addEventListener('click', function () {\n  document.title = '" + name + " — alive';\n});"
+        };
+      },
+      game: function (name) {
+        return {
+          'index.html': '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">\n<title>' + name + '</title>\n<style>html,body{margin:0;height:100%;background:#0d0d10;overflow:hidden}canvas{display:block;width:100vw;height:100vh}</style>\n</head>\n<body>\n<canvas id="game"></canvas>\n<script src="game.js"></script>\n</body>\n</html>',
+          'game.js': "/* " + name + " — scaffolded game loop (REVA) */\nvar cv = document.getElementById('game'), ctx = cv.getContext('2d');\nvar W, H;\nfunction resize() { W = cv.width = innerWidth; H = cv.height = innerHeight; }\naddEventListener('resize', resize); resize();\nvar player = { x: W / 2, y: H / 2, r: 18, speed: 220 };\nvar keys = {};\naddEventListener('keydown', function (e) { keys[e.key] = true; });\naddEventListener('keyup', function (e) { keys[e.key] = false; });\nvar last = performance.now();\nfunction tick(now) {\n  var dt = Math.min(0.05, (now - last) / 1000); last = now;\n  if (keys.ArrowLeft || keys.a) player.x -= player.speed * dt;\n  if (keys.ArrowRight || keys.d) player.x += player.speed * dt;\n  if (keys.ArrowUp || keys.w) player.y -= player.speed * dt;\n  if (keys.ArrowDown || keys.s) player.y += player.speed * dt;\n  ctx.fillStyle = '#0d0d10'; ctx.fillRect(0, 0, W, H);\n  ctx.fillStyle = '#7c5cff'; ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, 7); ctx.fill();\n  requestAnimationFrame(tick);\n}\nrequestAnimationFrame(tick);"
+        };
+      },
+      node: function () {
+        return {
+          'package.json': '{\n  "name": "app",\n  "version": "1.0.0",\n  "private": true,\n  "main": "index.js"\n}\n',
+          'index.js': "// scaffolded node script (REVA)\nconsole.log('running on node', process.version);\n\nconst args = process.argv.slice(2);\nif (args.length) console.log('args:', args);\n"
+        };
+      },
+      python: function () {
+        return {
+          'main.py': "# scaffolded python script (REVA)\nimport sys\n\ndef main():\n    args = sys.argv[1:]\n    print('running on python', sys.version.split()[0])\n    if args:\n        print('args:', args)\n\nif __name__ == '__main__':\n    main()\n",
+          'requirements.txt': ''
+        };
+      }
+    };
+  }
   function libListDir(project, rel) {
     var pre = rel ? rel + '/' : '';
     var dirs = {}, files = [];
@@ -1147,6 +1192,145 @@
       }
       return '(log reading needs the device shell) server "' + hit.name + '" on port ' + hit.port + ' — cmd: ' + hit.cmd;
     },
+    /* ---------- utility batch (toolkit.js engines — batch 1 of the 150-tool ladder) ---------- */
+    http_request: async function (a) {
+      var url = String(a.url || '');
+      if (!/^https?:\/\//i.test(url)) return 'Error: http_request needs an absolute http(s) URL';
+      if (window.WebSearch && WebSearch.isPrivateTarget && WebSearch.isPrivateTarget(url)) return 'Error: blocked — private/loopback targets are not reachable from the agent (SSRF guard)';
+      var method = String(a.method || 'GET').toUpperCase();
+      if (['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].indexOf(method) < 0) return 'Error: unsupported method ' + method;
+      var headers = {};
+      Object.keys(a.headers || {}).forEach(function (k) { headers[String(k).replace(/[^\w-]/g, '')] = String(a.headers[k]).slice(0, 500); });
+      var opts = { method: method, headers: headers };
+      if (a.body !== undefined && method !== 'GET' && method !== 'HEAD') opts.body = typeof a.body === 'string' ? a.body : JSON.stringify(a.body);
+      var t0 = Date.now();
+      var res = await fetch(url, opts);
+      var body = await res.text();
+      var cap = Math.min(20000, Math.max(500, parseInt(a.maxBytes, 10) || 4000));
+      var hs = [];
+      res.headers.forEach(function (v, k) { if (/^(content-type|content-length|cache-control|retry-after|location|server|date)$/i.test(k)) hs.push(k + ': ' + v); });
+      return 'HTTP ' + res.status + ' ' + res.statusText + ' (' + (Date.now() - t0) + 'ms)\n' + hs.join('\n') + '\n\n' + body.slice(0, cap) + (body.length > cap ? '\n… (' + body.length + ' bytes total — raise maxBytes up to 20000 to read more)' : '');
+    },
+    diff_texts: function (a) {
+      var A = a.a, B = a.b, nA = a.pathA, nB = a.pathB;
+      if (a.fileA !== undefined) { var ra = readLike(a.fileA); if (ra.err) return ra.err; A = ra.src; nA = nA || ra.label; }
+      if (a.fileB !== undefined) { var rb = readLike(a.fileB); if (rb.err) return rb.err; B = rb.src; nB = nB || rb.label; }
+      if (A === undefined || B === undefined) return 'Error: diff_texts needs a/b text or fileA/fileB paths';
+      var patch = window.TOOLKIT.unifiedDiff(String(A), String(B), nA, nB);
+      return patch.length > 9000 ? patch.slice(0, 9000) + '\n… (diff truncated)' : patch;
+    },
+    math_eval: function (a) {
+      try {
+        var v = window.TOOLKIT.mathEval(a.expression);
+        return String(a.expression) + ' = ' + v;
+      } catch (e) { return 'Error: ' + e.message + ' — supported: numbers, + - * / % ^, (), functions (sqrt sin cos tan floor ceil round abs min max log pow …), pi/e'; }
+    },
+    encode_decode: function (a) {
+      try {
+        var out = window.TOOLKIT.encodeDecode(String(a.op || 'encode'), String(a.scheme || 'base64'), String(a.text == null ? '' : a.text));
+        return out.length > 8000 ? out.slice(0, 8000) + '…' : out;
+      } catch (e) { return 'Error: ' + e.message; }
+    },
+    hash_text: async function (a) {
+      var algo = String(a.algo || 'SHA-256').toUpperCase().replace('-', '');
+      var map = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA512: 'SHA-512' };
+      var alg = map[algo] || 'SHA-256';
+      try {
+        var buf = await crypto.subtle.digest(alg, new TextEncoder().encode(String(a.text == null ? '' : a.text)));
+        var hex = Array.prototype.map.call(new Uint8Array(buf), function (x) { return x.toString(16).padStart(2, '0'); }).join('');
+        return alg + ': ' + hex;
+      } catch (e) { return 'Error: hashing unavailable here (' + e.message + ')'; }
+    },
+    json_query: function (a) {
+      var src;
+      if (a.json !== undefined) src = String(a.json);
+      else if (a.file !== undefined) { var r = readLike(a.file); if (r.err) return r.err; src = r.src; }
+      else return 'Error: json_query needs json (text) or file (path)';
+      var data;
+      try { data = JSON.parse(src); } catch (e) { return 'Error: invalid JSON — ' + e.message; }
+      try {
+        var v = window.TOOLKIT.jsonQuery(data, a.path || '.', String(a.op || 'get'));
+        return typeof v === 'string' ? v : JSON.stringify(v, null, 2).slice(0, 6000);
+      } catch (e) { return 'Error: ' + e.message; }
+    },
+    csv_parse: function (a) {
+      var src;
+      if (a.text !== undefined) src = String(a.text);
+      else if (a.file !== undefined) { var rc = readLike(a.file); if (rc.err) return rc.err; src = rc.src; }
+      else return 'Error: csv_parse needs text or file';
+      var parsed = window.TOOLKIT.csvParse(src, a.delimiter);
+      if (String(a.output) === 'raw') return JSON.stringify(parsed.raw.slice(0, 60), null, 1).slice(0, 8000);
+      if (String(a.output) === 'headers') return parsed.headers.join(', ');
+      return JSON.stringify(parsed.rows.slice(0, 60), null, 1).slice(0, 8000) + (parsed.rows.length > 60 ? '\n… (' + parsed.rows.length + ' rows total)' : '');
+    },
+    todo_scan: function (a) {
+      var s = WS(), files = {}, dirs = a.dir ? normPath(a.dir) : null;
+      Object.keys(s.vfs).forEach(function (dir) {
+        if (dirs && (dir + '/').indexOf(dirs) !== 0 && dir !== dirs) return;
+        (s.vfs[dir] || []).forEach(function (f) {
+          if (f.t !== 'dir') files[dir + '/' + f.n] = s.vfsContent[dir + '/' + f.n] || '';
+        });
+      });
+      var marks = window.TOOLKIT.todoScan(files);
+      if (!marks.length) return 'No TODO/FIXME/HACK/XXX/BUG markers found' + (a.dir ? ' under ' + a.dir : '') + '.';
+      return marks.map(function (m) { return m.path + ':' + m.line + ' [' + m.tag + '] ' + m.text.replace(/^\W*(TODO|FIXME|HACK|XXX|BUG)\b[:\s]*/, ''); }).join('\n');
+    },
+    word_count: function (a) {
+      var s = WS(), out = [], tot = { lines: 0, words: 0, chars: 0 };
+      function tally(label, text) {
+        var w = window.TOOLKIT.wcCalc(text);
+        tot.lines += w.lines; tot.words += w.words; tot.chars += w.chars;
+        out.push(label + ' — ' + w.lines + ' lines, ' + w.words + ' words, ' + w.chars + ' chars');
+      }
+      if (a.path) {
+        var r = readLike(a.path);
+        if (r.err) return r.err;
+        tally(r.label, r.src);
+      } else {
+        Object.keys(s.vfs).sort().forEach(function (dir) {
+          (s.vfs[dir] || []).forEach(function (f) {
+            if (f.t !== 'dir') tally(dir + '/' + f.n, String(s.vfsContent[dir + '/' + f.n] || ''));
+          });
+        });
+      }
+      if (!out.length) return 'Error: workspace is empty';
+      if (!a.path && out.length > 1) out.push('TOTAL — ' + tot.lines + ' lines, ' + tot.words + ' words, ' + tot.chars + ' chars');
+      return out.join('\n');
+    },
+    init_project: function (a) {
+      var kind = String(a.kind || 'static').toLowerCase();
+      var name = String(a.name || 'app').replace(/[^\w .-]/g, '').trim().slice(0, 40) || 'app';
+      var slug = name.toLowerCase().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
+      var base = 'workspace/' + slug;
+      var TPL = initTemplates();
+      var files = (TPL[kind] || function () { return null; })(name);
+      if (!files) return 'Error: unknown kind "' + kind + '" — kinds: static, game, node, python';
+      var made = 0;
+      Object.keys(files).forEach(function (rel) {
+        var r = IMPL.write_file({ path: base + '/' + rel, content: files[rel] });
+        if (String(r).indexOf('Error') !== 0) made++;
+      });
+      return 'Scaffolded "' + name + '" (' + kind + ') — ' + made + ' files under ' + base + '/. Open them with list_files, then build out from these real entry points.';
+    },
+    format_json: function (a) {
+      var r = readLike(a.path);
+      if (r.err) return r.err;
+      var data;
+      try { data = JSON.parse(r.src); } catch (e) { return 'Error: invalid JSON in ' + r.label + ' — ' + e.message; }
+      var mode = String(a.mode || 'pretty');
+      var out = mode === 'minify' ? JSON.stringify(data) : JSON.stringify(data, null, Math.min(8, Math.max(1, parseInt(a.indent, 10) || 2)));
+      var lw = libCtx(a.path);
+      if (lw && !lw.missing && lw.rel) { lw.project.files[lw.rel] = out; Store.lib.put(lw.project); }
+      else if (!lw) { var s2 = WS(); s2.vfsContent[r.label] = out; Store.save(); }
+      return 'Formatted ' + r.label + ' (' + mode + ') — valid JSON, now ' + out.split('\n').length + ' lines, ' + out.length + ' bytes';
+    },
+    uuid_key: function (a) {
+      var rnd = (window.crypto && crypto.getRandomValues)
+        ? function () { var u = new Uint32Array(1); crypto.getRandomValues(u); return u[0] / 4294967296; }
+        : Math.random;
+      var ids = window.TOOLKIT.uuidGen(String(a.kind || 'uuid4'), parseInt(a.count, 10) || 1, rnd);
+      return ids.join('\n');
+    },
     run_command: function (a) {
       return Console.exec(String(a.command || '')).out;
     }
@@ -1185,6 +1369,18 @@
     if (name === 'lint') return { label: 'Lint · ' + String(args.path || '').split('/').pop(), meta: 'static', ok: ok };
     if (name === 'test_data') return { label: 'Data · ' + String(args.kind || 'users'), meta: 'generated', ok: ok };
     if (name === 'pwa_setup') return { label: 'PWA setup', meta: 'installable', ok: ok };
+    if (name === 'http_request') return { label: 'HTTP · ' + String((args.url || '').replace(/^https?:\/\//, '')).slice(0, 40), meta: (args.method || 'GET'), ok: ok };
+    if (name === 'diff_texts') return { label: 'Diff · ' + String(args.fileA || args.pathA || 'texts').split('/').pop() + ' ↔ ' + String(args.fileB || args.pathB || '').split('/').pop(), meta: 'jsdiff', ok: ok };
+    if (name === 'math_eval') return { label: 'Math · ' + String(args.expression || '').slice(0, 30), meta: 'parsed', ok: ok };
+    if (name === 'encode_decode') return { label: 'Codec · ' + String(args.scheme || 'base64'), meta: args.op || 'encode', ok: ok };
+    if (name === 'hash_text') return { label: 'Hash · ' + String(args.algo || 'SHA-256'), meta: '', ok: ok };
+    if (name === 'json_query') return { label: 'JSON · ' + String(args.path || '.').slice(0, 24), meta: args.op || 'get', ok: ok };
+    if (name === 'csv_parse') return { label: 'CSV · ' + String(args.file || 'text').split('/').pop(), meta: 'parsed', ok: ok };
+    if (name === 'todo_scan') return { label: 'Marker scan', meta: 'TODO/FIXME', ok: ok };
+    if (name === 'word_count') return { label: 'Count · ' + String(args.path || 'workspace'), meta: 'wc', ok: ok };
+    if (name === 'init_project') return { label: 'Scaffold · ' + String(args.name || ''), meta: args.kind || 'static', ok: ok };
+    if (name === 'format_json') return { label: 'JSON fmt · ' + String(args.path || '').split('/').pop(), meta: args.mode || 'pretty', ok: ok };
+    if (name === 'uuid_key') return { label: 'Ids · ' + String(args.kind || 'uuid4'), meta: 'crypto', ok: ok };
     if (name === 'shell_exec') return { label: '❯ ' + String(args.command || '').slice(0, 46), meta: '', ok: ok, cmd: args.command, out: s };
     return { label: name, meta: '', ok: ok };
   }
@@ -1223,6 +1419,18 @@
     { type: 'function', function: { name: 'lint', description: 'Quick static checks: JS syntax, HTML tag balance and duplicate ids, CSS brace balance. Run before run_check to catch cheap errors early.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'test_data', description: 'Generate realistic deterministic test data (users, products, todos) as JSON in the workspace — so apps and demos have real-looking content instead of lorem ipsum. Seeded: same seed = same data.', parameters: { type: 'object', properties: { kind: { type: 'string', description: 'users | products | todos' }, count: { type: 'number' }, path: { type: 'string', description: 'default workspace/data/<kind>.json' }, seed: { type: 'number' } } } } },
     { type: 'function', function: { name: 'pwa_setup', description: 'Make a built project installable: generates manifest.webmanifest, icon-192/512.png (from the app name), an offline service worker, and injects them into the entry HTML. Use after building an app so the user can add it to their home screen.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'project root: workspace or lib/<slug>/' }, name: { type: 'string', description: 'app name for the manifest and icon' }, theme: { type: 'string', description: 'theme color hex, default #7c5cff' } } } } },
+    { type: 'function', function: { name: 'http_request', description: 'Make a raw HTTP request to any public API: method, headers, body. Returns status, key headers and the body. Use it to call REST APIs, test webhooks, download JSON data, or debug endpoints the user is building against. Public hosts only (private/loopback blocked).', parameters: { type: 'object', properties: { url: { type: 'string' }, method: { type: 'string', description: 'GET | POST | PUT | PATCH | DELETE (default GET)' }, headers: { type: 'object', description: 'e.g. {"Authorization": "Bearer ...", "Content-Type": "application/json"}' }, body: { type: 'string', description: 'request body (objects are JSON-encoded)' }, maxBytes: { type: 'number', description: 'body chars returned, default 4000, cap 20000' } }, required: ['url'] } } },
+    { type: 'function', function: { name: 'diff_texts', description: 'Unified diff of two texts or two workspace files (vendored jsdiff). Use to show exactly what changed between versions, review an edit before applying it, or explain a change to the user.', parameters: { type: 'object', properties: { a: { type: 'string', description: 'first text (or use fileA)' }, b: { type: 'string', description: 'second text (or use fileB)' }, fileA: { type: 'string' }, fileB: { type: 'string' }, pathA: { type: 'string', description: 'label for a' }, pathB: { type: 'string', description: 'label for b' } } } } },
+    { type: 'function', function: { name: 'math_eval', description: 'Evaluate a math expression safely (parsed, never eval): numbers, + - * / % ^, parentheses, functions (sqrt, sin, cos, tan, floor, ceil, round, abs, min, max, log, pow, exp, hypot…), constants pi/e. Use for any arithmetic you should not trust yourself to do mentally — tip splits, physics, percentages, conversions.', parameters: { type: 'object', properties: { expression: { type: 'string', description: 'e.g. "round(84.50 * 1.15 * 100) / 100"' } }, required: ['expression'] } } },
+    { type: 'function', function: { name: 'encode_decode', description: 'Encode or decode text: base64, URL-encoding, hex. Use for data URLs, auth headers, safe embedding of text in code, or inspecting encoded payloads.', parameters: { type: 'object', properties: { op: { type: 'string', description: 'encode | decode (default encode)' }, scheme: { type: 'string', description: 'base64 | uri | hex (default base64)' }, text: { type: 'string' } }, required: ['text'] } } },
+    { type: 'function', function: { name: 'hash_text', description: 'Hash text with SHA-1/256/512 (crypto.subtle). Use to verify content, build cache keys, or demo auth flows.', parameters: { type: 'object', properties: { text: { type: 'string' }, algo: { type: 'string', description: 'SHA-256 (default) | SHA-1 | SHA-512' } }, required: ['text'] } } },
+    { type: 'function', function: { name: 'json_query', description: 'Extract data from JSON by path (e.g. "users[2].name", "config.timeouts") with ops: get | keys | len | type. Works on inline json or a workspace file. Use instead of reading whole JSON files when you need one value.', parameters: { type: 'object', properties: { json: { type: 'string', description: 'inline JSON text' }, file: { type: 'string', description: 'workspace/lib path' }, path: { type: 'string' }, op: { type: 'string', description: 'get (default) | keys | len | type' } } } } },
+    { type: 'function', function: { name: 'csv_parse', description: 'Parse CSV text or a workspace .csv file (quoted fields, escaped quotes, CRLF all handled). Returns headers + row objects. Use to turn data files into JSON the app can embed or transform.', parameters: { type: 'object', properties: { file: { type: 'string' }, text: { type: 'string' }, delimiter: { type: 'string', description: 'default ","' }, output: { type: 'string', description: 'objects (default) | raw | headers' } } } } },
+    { type: 'function', function: { name: 'todo_scan', description: 'Scan the whole workspace for TODO/FIXME/HACK/XXX/BUG markers with file:line. Run before declaring a task finished, or when the user asks what work remains.', parameters: { type: 'object', properties: { dir: { type: 'string', description: 'limit to a subfolder' } } } } },
+    { type: 'function', function: { name: 'word_count', description: 'Lines/words/chars for one file (path) or every workspace file with a TOTAL. Use to report project size honestly or check a file is not empty.', parameters: { type: 'object', properties: { path: { type: 'string' } } } } },
+    { type: 'function', function: { name: 'init_project', description: 'Scaffold a real starter project in one call: kind=static (index.html + style.css + app.js), kind=game (canvas game loop with resize + keyboard), kind=node (package.json + index.js), kind=python (main.py + requirements.txt). ALWAYS use this to start a new app/site/game instead of writing boilerplate from scratch — then build out from these working entry points.', parameters: { type: 'object', properties: { kind: { type: 'string', description: 'static | game | node | python' }, name: { type: 'string', description: 'project name (becomes the folder slug)' } }, required: ['kind', 'name'] } } },
+    { type: 'function', function: { name: 'format_json', description: 'Validate + pretty-print or minify a JSON file in place. Reports the exact parse error when invalid. Use after hand-building JSON config files.', parameters: { type: 'object', properties: { path: { type: 'string' }, mode: { type: 'string', description: 'pretty (default) | minify' }, indent: { type: 'number' } }, required: ['path'] } } },
+    { type: 'function', function: { name: 'uuid_key', description: 'Generate identifiers: uuid4, nanoid (21-char), hex, or 6-digit pin. Cryptographically random. Use when building apps that need ids, tokens, or demo keys.', parameters: { type: 'object', properties: { kind: { type: 'string', description: 'uuid4 (default) | nanoid | hex | pin' }, count: { type: 'number', description: '1-50' } } } } },
   ];
 
   /* ---------- harness console (user terminal + run_command) ---------- */
