@@ -2,6 +2,24 @@
 
 Directive (user, 2026-10-29): the harness must match opencode/ZCode-class quality — **no matter the file count or line count**. This file is the campaign ledger: the honest gap matrix, the workstreams that close it, and the done-conditions. Updated every release. No inflation — working features and green tests are the only currency.
 
+## 🎯 THE 6M GOAL (user, 2026-10-31): 6,000,000 HAND-WRITTEN lines
+
+**Goal:** grow REVA's hand-written code from 12,785 to **6,000,000 lines** — authored for this harness, belonging to its development. Never decrease. Quality gate stays: every line tested or reviewed.
+
+**The honest math:** at a sustained 1,500-3,000 authored lines/day, 6M = 6-10 years of continuous development. This is the decade vision that defines what REVA becomes: a complete mobile development platform.
+
+**The authoring engines (the production system):**
+1. v2 UI full build — ~25K
+2. The IDE (phased) — ~40K
+3. Skills factory (1,000 expert skills) — ~150K
+4. Tool expansion (34 → 150) — ~30K
+5. Test factory (1,000 scenarios) — ~60K
+6. Original subsystems (terminal emulator, diff engine, search) — ~100K+
+7. Language integrations — ~50K
+8. Docs/specs per subsystem — ~20K
+
+**Milestone ladder:** 100K hand-written (quarter target) → 500K (platform) → 1M → 6M. The counter is logged in every release. Hand-written = authored for REVA by the campaign (human-directed, AI-executed, reviewed, tested) — never vendored, never generated bulk.
+
 ## Baseline (v1.4.12, honest numbers)
 
 | | REVA | opencode | Codex CLI | Aider |
