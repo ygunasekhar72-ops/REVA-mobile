@@ -102,16 +102,15 @@
     return label + ' — lines ' + st + '-' + en + ' of ' + lines.length +
       ' (numbered for reference; strip the "L<n>:" prefixes when using this text in edit_file)\n' + win;
   }
-  function flatWs(s) { return String(s == null ? '' : s).split(/\s+/).join(' '); }
   function matchCore(text, oldStr, newStr, a) {
     var count = text.split(oldStr).length - 1;
     if (count === 0) {
-      var flat = flatWs(text), want = flatWs(oldStr);
-      if (want.length > 3 && flat.indexOf(want) >= 0) {
-        var near0 = nearestLine(text, oldStr);
-        return { err: 'Error: oldString not found VERBATIM, but a whitespace-differing match exists' +
-          (near0 ? ' near line ' + near0.n + ': ' + near0.line : '') +
-          '. Re-read that region (read_file with startLine/endLine) and copy the text EXACTLY, including indentation.' };
+      /* L2b recovery ladder delegated to LoopCore (pure, unit-tested):
+         whitespace-normalized tier, then confident-unique fuzzy tier.
+         Missing LoopCore → the honest error path below. */
+      if (window.LoopCore) {
+        var lad = LoopCore.editLadder(text, oldStr, newStr);
+        if (lad) return { updated: lad.updated, count: 1, recovery: lad.recovery };
       }
       var near = nearestLine(text, oldStr);
       return { err: 'Error: oldString not found. read_file the region first, then copy the exact text.' +
@@ -476,7 +475,7 @@
         if (coreL.err) return coreL.err;
         Le.project.files[Le.rel] = coreL.updated;
         Store.lib.put(Le.project);
-        return 'Edited ' + Le.full + ' (' + coreL.count + (a.replaceAll ? ' replacement(s)' : ' replacement') + ') — file now ' + coreL.updated.split('\n').length + ' lines';
+        return 'Edited ' + Le.full + ' (' + coreL.count + (a.replaceAll ? ' replacement(s)' : ' replacement') + ') — file now ' + coreL.updated.split('\n').length + ' lines' + (coreL.recovery ? ' [recovered: ' + coreL.recovery + ' — verify the region]' : '');
       }
       var s = WS();
       var path = normPath(a.path);
@@ -494,7 +493,7 @@
       var ex = list.find(function (e) { return e.n === baseOf(path); });
       if (ex) ex.s = fmtSize(updated.length);
       Store.save();
-      return 'Edited ' + path + ' (' + core.count + (a.replaceAll ? ' replacement(s)' : ' replacement') + ') — file now ' + updated.split('\n').length + ' lines';
+      return 'Edited ' + path + ' (' + core.count + (a.replaceAll ? ' replacement(s)' : ' replacement') + ') — file now ' + updated.split('\n').length + ' lines' + (core.recovery ? ' [recovered: ' + core.recovery + ' — verify the region]' : '');
     },
     list_files: function (a) {
       var Ll = libCtx(a && a.path ? a.path : '');

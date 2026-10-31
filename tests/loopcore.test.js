@@ -104,6 +104,72 @@ const LoopCore = require('../js/loopcore.js');
   assert.ok(ok3.ok && ok3.value === 'back', 'after cooldown the tool runs and resets the counter');
   delete LoopCore.DEFAULT_BUDGETS['test_tool'];
 
-  console.log('loopcore: 7/7 scenarios PASS');
+  // 8. L2b edit ladder: whitespace recovery, fuzzy recovery, honest rejection
+  // 8a. tier 1 — model sends a DEDENTED block; the file keeps its real indent
+  const fileA = [
+    'function a() {',
+    '  if (x) {',
+    '    doWork(x);',
+    '    return true;',
+    '  }',
+    '}'
+  ].join('\n');
+  const oldA = ['if (x) {', '  doWork(x);', '  return true;', '}'].join('\n');
+  const newA = ['if (x) {', '  check(x);', '  doWork(x);', '  return true;', '}'].join('\n');
+  const t1 = LoopCore.editLadder(fileA, oldA, newA);
+  assert.ok(t1 && t1.recovery === 'whitespace-normalized', 'tier 1 fires on indentation drift');
+  assert.ok(t1.updated.indexOf('\n  if (x) {') >= 0, 'first line keeps the file indent');
+  assert.ok(t1.updated.indexOf('\n    check(x);') >= 0, 'inserted line re-indented to file level');
+  assert.ok(t1.updated.indexOf('\n    doWork(x);') >= 0, 'kept line re-indented too');
+  assert.ok(t1.updated.indexOf('\n}') >= 0, 'closing brace back at column 0');
+
+  // 8b. tier 1 — model COPIES the real indents (offset 0): clean swap, no double-indent
+  const oldB = ['  if (x) {', '    doWork(x);', '    return true;', '  }'].join('\n');
+  const newB = ['  if (x) {', '    doWork(x);', '    return !!x;', '  }'].join('\n');
+  const t2 = LoopCore.editLadder(fileA, oldB, newB);
+  assert.ok(t2 && t2.recovery === 'whitespace-normalized', 'tier 1 fires with drifted old, clean new');
+  assert.strictEqual(t2.updated, fileA.split('    return true;').join('    return !!x;'), 'offset-0 edit is an exact swap');
+
+  // 8c. tier 2 — model re-typed the block with drift the normalizer can't fix
+  const fileC = [
+    'function total(items) {',
+    '  var sum = 0;',
+    '  for (var i = 0; i < items.length; i++) sum += items[i].cost;',
+    '  return sum;',
+    '}',
+    'module.exports = { total: total };'
+  ].join('\n');
+  const oldC = [
+    'function total(items) {',
+    '  var sum = 0;',
+    '  for (var i = 0; i < items.length; i++) sum += items[i].price;',
+    '  return sum;',
+    '}'
+  ].join('\n');
+  const newC = [
+    'function total(items) {',
+    '  let sum = 0;',
+    '  for (const it of items) sum += it.cost;',
+    '  return sum;',
+    '}'
+  ].join('\n');
+  const t3 = LoopCore.editLadder(fileC, oldC, newC);
+  assert.ok(t3 && /^fuzzy \d+%$/.test(t3.recovery), 'tier 2 fires on a re-typed block: ' + (t3 && t3.recovery));
+  assert.ok(t3.updated.indexOf('for (const it of items)') >= 0, 'fuzzy replacement landed');
+  assert.ok(t3.updated.indexOf('module.exports') >= 0, 'rest of the file intact');
+
+  // 8d. tier 2 runner-up rejection — two equally similar regions → refuse
+  const fileD = [
+    'function a(p) { return p.price; }',
+    'function b(p) { return p.cost; }',
+    'function c(p) { return p.price; }'
+  ].join('\n');
+  const oldD = 'function x(p) { return p.price; }';
+  assert.strictEqual(LoopCore.editLadder(fileD, oldD, 'REPLACED'), null, 'ambiguous fuzzy match is rejected');
+
+  // 8e. nothing anywhere → honest null (caller keeps its error path)
+  assert.strictEqual(LoopCore.editLadder('totally different text', 'xyz block here', 'new'), null, 'no match → honest null');
+
+  console.log('loopcore: 8/8 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

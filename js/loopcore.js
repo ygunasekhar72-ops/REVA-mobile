@@ -181,5 +181,104 @@
     });
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS };
+  /* ---- L2b edit recovery: the fuzzy edit ladder (aider-class) ----
+     Tier 0: verbatim. Tier 1: whitespace-normalized (indentation drift).
+     Tier 2: best-effort fuzzy match, applied only when confidently unique
+     (score >= 0.7, no close runner-up). Otherwise: honest error with the
+     nearest line. Models fail at exact text; the harness recovers. */
+  function flatWs(s) {
+    /* whitespace-normalized form: per-line trim + collapsed interior runs.
+       (trim() first — split keeps a leading '' for indented lines, which
+       would silently preserve indentation and kill the tier-1 match.) */
+    return String(s == null ? '' : s).split('\n').map(function (l) { return l.trim().split(/\s+/).join(' '); }).join(' ');
+  }
+  function nearestLine(text, needle) {
+    var toks = (needle.toLowerCase().match(/[a-z0-9_$]{3,}/g) || []).filter(function (w, i, a) { return a.indexOf(w) === i; });
+    if (!toks.length) return null;
+    var best = null;
+    String(text).split('\n').forEach(function (line, i) {
+      var low = line.toLowerCase(), sc = 0;
+      toks.forEach(function (w) { if (low.indexOf(w) >= 0) sc++; });
+      if (sc && (!best || sc > best.sc)) best = { n: i + 1, sc: sc, line: line.trim().slice(0, 120) };
+    });
+    return best;
+  }
+  function simScore(a, b) {
+    /* character-trigram Jaccard on DISTINCT trigrams (raw counts would let
+       repeated code tokens inflate the denominator and sink real matches) */
+    function grams(s) { var set = {}, n = 0; s = s.toLowerCase().replace(/\s+/g, ' '); for (var i = 0; i < s.length - 2; i++) { var g = s.slice(i, i + 3); if (!set[g]) { set[g] = 1; n++; } } return { set: set, n: n }; }
+    var A = grams(a), B = grams(b);
+    var inter = 0;
+    for (var g in A.set) if (B.set[g]) inter++;
+    return inter / Math.max(1, A.n + B.n - inter);
+  }
+  function fuzzyBest(text, oldStr) {
+    /* score = 0.6 × positional line overlap + 0.4 × trigram similarity.
+       Models re-type blocks at LINE granularity (renamed symbol, tweaked
+       expression), so line overlap is the strong signal; trigrams catch
+       reflowed lines. One drifted line in five must still score high:
+       trigram-only collapses to 0.61 on exactly that case. */
+    var lines = text.split('\n');
+    var oLines = oldStr.split('\n');
+    var win = oLines.length;
+    if (win < 1 || win > lines.length) return null;
+    var oFlat = oLines.map(flatWs);
+    var want = oldStr.toLowerCase().replace(/\s+/g, ' ').trim();
+    var best = null, second = 0;
+    for (var s0 = 0; s0 + win <= lines.length; s0++) {
+      var seg = lines.slice(s0, s0 + win);
+      var matched = 0;
+      for (var w = 0; w < win; w++) if (flatWs(seg[w]) === oFlat[w]) matched++;
+      var region = seg.join('\n');
+      var sc = 0.6 * (matched / win) + 0.4 * simScore(region, want);
+      if (!best || sc > best.score) { second = best ? best.score : 0; best = { score: sc, index: text.indexOf(lines[s0]), region: region }; }
+      else if (sc > second) second = sc;
+    }
+    if (best && best.score >= 0.5) return { score: best.score, runnerUp: second, index: best.index, region: best.region };
+    return null;
+  }
+  /* ---- editLadder: the recovery tiers called when verbatim fails ----
+     Tier 1: whitespace-normalized window match (indentation drift — the
+     file's real indentation is preserved, the new content is re-indented).
+     Tier 2: fuzzy window match, applied only when confidently unique
+     (score >= 0.7 with no close runner-up). Returns {updated, recovery}
+     or null (caller keeps its honest error). */
+  function editLadder(text, oldStr, newStr) {
+    var flat = flatWs(text), want = flatWs(oldStr);
+    if (want.length > 3 && flat.indexOf(want) >= 0) {
+      var linesT = text.split('\n');
+      var wLines = oldStr.split('\n');
+      for (var s0 = 0; s0 < linesT.length; s0++) {
+        if (flatWs(linesT[s0]) !== flatWs(wLines[0])) continue;
+        var win = linesT.slice(s0, s0 + wLines.length);
+        if (win.length !== wLines.length) continue;
+        var ok = true;
+        for (var w = 0; w < wLines.length; w++) {
+          if (flatWs(win[w]) !== flatWs(wLines[w])) { ok = false; break; }
+        }
+        if (ok) {
+          /* re-indent by the offset between the window's and the model's
+             first-line indent — relative structure survives either way the
+             model writes it (dedented block OR copied real indents) */
+          var nLines = newStr.split('\n');
+          var nLead0 = (nLines[0].match(/^\s*/) || [''])[0];
+          var off = ((win[0].match(/^\s*/) || [''])[0]).length - nLead0.length;
+          var indented = nLines.map(function (l) {
+            if (!l.trim()) return '';
+            return off >= 0 ? new Array(off + 1).join(' ') + l : l.slice(-off);
+          });
+          var out = linesT.slice(0, s0).concat(indented, linesT.slice(s0 + wLines.length)).join('\n');
+          return { updated: out, recovery: 'whitespace-normalized' };
+        }
+      }
+    }
+    var fz = fuzzyBest(text, oldStr);
+    if (fz && fz.score >= 0.7 && (!fz.runnerUp || fz.score - fz.runnerUp >= 0.1)) {
+      var before = text.slice(0, fz.index), after = text.slice(fz.index + fz.region.length);
+      return { updated: before + newStr + after, recovery: 'fuzzy ' + Math.round(fz.score * 100) + '%' };
+    }
+    return null;
+  }
+
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest };
 });
