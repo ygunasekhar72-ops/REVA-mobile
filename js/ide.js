@@ -196,7 +196,7 @@
     $('#ideEditor').value = text;
     savedText = text;
     dirty = false;
-    $('#idePath').textContent = path;
+    renderBreadcrumb(path);
     hideAc(); hideFind();
     refreshHl(); refreshTabs(); refreshTree(); refreshOutline(); refreshStatus(); refreshGutter();
     if (/\.html?$/.test(path)) showPreview(path);
@@ -575,7 +575,24 @@
     print('Replaced ' + r.count + ' occurrence' + (r.count > 1 ? 's' : '') + ' in ' + curPath, 'dim');
   }
 
-  /* ---------- command palette (Phase B): files + symbols + commands ---------- */
+  /* ---------- command palette (Phase C): files + symbols + workspace @symbols ---------- */
+  function workspaceSymbols(query) {
+    /* '@name' in the palette searches EVERY file's symbols (REVAMAP) */
+    var q = query.replace(/^@/, '').toLowerCase();
+    var out = [];
+    allFiles().forEach(function (p) {
+      if (out.length >= 40) return;
+      var src = contentOf(p);
+      if (!src) return;
+      var syms = window.REVAMAP ? REVAMAP.extractFallback(extOf(p), String(src)) : [];
+      syms.forEach(function (s) {
+        if (out.length >= 40) return;
+        var sc = IDECORE.paletteScore(q, s.name);
+        if (sc > 0 || !q) out.push({ kind: 'sym', label: '≡ ' + s.name + '  (' + p + ':' + s.line + ')', run: function () { loadFile(p); jumpTo(s.line); } });
+      });
+    });
+    return out;
+  }
   function paletteItems() {
     var items = [];
     allFiles().forEach(function (p) { items.push({ kind: 'file', label: 'Open ' + p, run: function () { loadFile(p); } }); });
@@ -591,7 +608,10 @@
       { kind: 'cmd', label: 'New file…', run: function () { newFile(); } },
       { kind: 'cmd', label: 'Search across files (Ctrl+Shift+F)', run: function () { toggleSearch(true); } },
       { kind: 'cmd', label: 'Find in file (Ctrl+F)', run: function () { openFind(); } },
+      { kind: 'cmd', label: 'Local history — checkpoints (restore points)', run: function () { toggleHistory(true); } },
       { kind: 'cmd', label: (autoSave ? '✓ Auto-save is ON — turn off' : 'Auto-save is OFF — turn on'), run: function () { toggleAutoSave(); } },
+      { kind: 'cmd', label: (wrapOn ? '✓ Word wrap is ON — turn off' : 'Word wrap is OFF — turn on'), run: function () { toggleWrap(); } },
+      { kind: 'cmd', label: 'Keyboard shortcuts', run: function () { showShortcuts(); } },
       { kind: 'cmd', label: 'Preview this file', run: function () { if (curPath) showPreview(curPath); } }
     );
     return items;
@@ -612,6 +632,19 @@
   }
   function renderPal(q) {
     var pal = $('#idePal');
+    if (/^@/.test(q)) {
+      /* workspace symbol mode — every file's outline, name-ranked */
+      palItems = workspaceSymbols(q).slice(0, 12);
+      palIdx = palItems.length ? 0 : -1;
+      $('#idePalOut').innerHTML = palItems.length ? palItems.map(function (it, i) {
+        return '<button class="ide-pal-i' + (i === palIdx ? ' on' : '') + '" data-idepal="' + i + '"><i data-lucide="lambda"></i>' + esc(it.label) + '</button>';
+      }).join('') : '<p class="ide-empty" style="padding:10px">no symbols match</p>';
+      H.icons();
+      pal.querySelectorAll('[data-idepal]').forEach(function (b) {
+        b.addEventListener('click', function () { execPal(parseInt(b.getAttribute('data-idepal'), 10)); });
+      });
+      return;
+    }
     if (!pal) return;
     palItems = paletteItems()
       .map(function (it) { return { it: it, sc: IDECORE.paletteScore(q, it.label) }; })
@@ -659,6 +692,162 @@
   function renderPaletteIfOpen() {
     var pal = $('#idePal');
     if (pal && pal.style.display === 'grid') renderPal($('#idePalIn').value);
+  }
+
+  /* breadcrumb: clickable path segments — a click opens the palette
+     pre-filtered to that folder (sibling quick-switch) */
+  function renderBreadcrumb(path) {
+    var el = $('#idePath');
+    if (!el) return;
+    if (!path) { el.textContent = '—'; return; }
+    var parts = path.split('/');
+    var html = '';
+    parts.forEach(function (p, i) {
+      if (i) html += '<span class="ide-crumbsep">/</span>';
+      var prefix = parts.slice(0, i + 1).join('/');
+      var last = i === parts.length - 1;
+      html += last
+        ? '<b>' + esc(p) + '</b>'
+        : '<span class="ide-crumb" data-ideseg="' + esc(prefix) + '">' + esc(p) + '</span>';
+    });
+    el.innerHTML = html;
+  }
+
+  /* ---------- local history (Phase C): checkpoints as restore points ---------- */
+  function toggleHistory(on) {
+    var p = $('#ideHist');
+    if (!p) return;
+    var show = on === undefined ? p.style.display !== 'grid' : !!on;
+    p.style.display = show ? 'grid' : 'none';
+    if (show) renderHistory();
+  }
+  function renderHistory() {
+    var out = $('#ideHistOut');
+    if (!out) return;
+    var sid = (Store.active() || {}).id;
+    /* list(sessionId) filters server-side — passing none yields nothing */
+    Store.checkpoints.list(sid).then(function (mine) {
+      mine = (mine || []).sort(function (a, b) { return b.ts - a.ts; }).slice(0, 25);
+      if (!mine.length) {
+        out.innerHTML = '<p class="ide-empty" style="padding:12px">No checkpoints yet — the agent creates them automatically before risky work, or use the checkpoint tool.</p>';
+        return;
+      }
+      out.innerHTML = mine.map(function (r) {
+        var when = new Date(r.ts);
+        var hh = ('0' + when.getHours()).slice(-2) + ':' + ('0' + when.getMinutes()).slice(-2);
+        var dd = when.toLocaleDateString();
+        return '<div class="ide-histrow"><div class="ide-histinfo"><b>' + esc(r.label || 'checkpoint') + '</b>' +
+          '<span>' + dd + ' ' + hh + ' · ' + r.fileCount + ' files</span></div>' +
+          '<button class="ide-btn" data-idehistdiff="' + esc(r.id) + '">Diff</button>' +
+          '<button class="ide-btn" data-idehistrestore="' + esc(r.id) + '">Restore</button></div>';
+      }).join('') + '<div id="ideHistDiff"></div>';
+      out.querySelectorAll('[data-idehistdiff]').forEach(function (b) {
+        b.addEventListener('click', function () { historyDiff(b.getAttribute('data-idehistdiff')); });
+      });
+      out.querySelectorAll('[data-idehistrestore]').forEach(function (b) {
+        b.addEventListener('click', function () { historyRestore(b.getAttribute('data-idehistrestore')); });
+      });
+    }).catch(function () {
+      out.innerHTML = '<p class="ide-empty" style="padding:12px">History storage not ready yet.</p>';
+    });
+  }
+  function historyDiff(id) {
+    Store.checkpoints.get(id).then(function (rec) {
+      var box = $('#ideHistDiff');
+      if (!box || !rec) return;
+      /* checkpoint keys are store-prefixed ('workspace/x') — compare against
+         the RAW vfsContent, not filesObj() whose keys are display-relative */
+      var now = (Store.active() || {}).vfsContent || {};
+      var changed = [], added = [];
+      Object.keys(rec.files).forEach(function (p) {
+        if (now[p] === undefined) { added.push(p); return; }
+        if (now[p] !== rec.files[p]) changed.push(p);
+      });
+      var removed = Object.keys(now).filter(function (p) { return rec.files[p] === undefined; });
+      var head = '<b>vs checkpoint "' + esc(rec.label) + '":</b> ' + changed.length + ' changed, ' + added.length + ' added since, ' + removed.length + ' removed since';
+      var first = (changed.concat(added))[0] || removed[0];
+      var patch = '';
+      if (first) {
+        var before = rec.files[first];
+        var after = now[first];
+        patch = window.Diff && Diff.createTwoFilesPatch
+          ? Diff.createTwoFilesPatch(first + ' (checkpoint)', first + ' (now)', before === undefined ? '' : String(before), after === undefined ? '' : String(after), '', '', { context: 2 })
+          : '(diff needs the jsdiff engine)';
+      }
+      box.innerHTML = '<div class="ide-histdiff">' + head + (patch ? '<pre class="ide-histpatch">' + esc(patch.slice(0, 4000)) + '</pre>' : '') +
+        (changed.concat(added, removed).length ? '<span class="ide-st-dim">files: ' + esc(changed.concat(added, removed).slice(0, 8).join(', ')) + '</span>' : '') + '</div>';
+    });
+  }
+  function historyRestore(id) {
+    Store.checkpoints.get(id).then(function (rec) {
+      if (!rec) { H.toast('Checkpoint not found'); return; }
+      if (!confirm('Restore "' + (rec.label || 'checkpoint') + '"? Current files are checkpointed first, then ' + rec.fileCount + ' file(s) are written back.')) return;
+      /* safety net: the CURRENT state becomes a checkpoint before the restore */
+      Store.checkpoints.save((Store.active() || {}).id, 'before restore · ' + new Date().toLocaleTimeString(), filesObj());
+      var m = mode();
+      var count = 0;
+      Object.keys(rec.files).forEach(function (p) {
+        if (m.kind === 'lib') { m.proj.files[p] = rec.files[p]; }
+        else Tools.run('write_file', { path: p, content: String(rec.files[p]) });
+        count++;
+      });
+      if (m.kind === 'lib') Store.lib.put(m.proj);
+      refreshTree(); refreshOutline(); refreshTabs();
+      if (curPath) loadFile(curPath);
+      renderHistory();
+      print('Restored ' + count + ' file(s) from "' + (rec.label || 'checkpoint') + '" — the pre-restore state was checkpointed first.', 'dim');
+      H.toast('Restored ' + count + ' files');
+    });
+  }
+
+  /* ---------- cross-file replace (Phase C) ---------- */
+  function replaceAcrossFiles() {
+    var q = $('#ideSearchIn').value;
+    var rep = $('#ideSearchRep').value;
+    if (!q.trim()) { H.toast('Type what to find first'); return; }
+    var opts = { caseSensitive: $('#ideSearchCase').classList.contains('on'), regex: $('#ideSearchRe').classList.contains('on'), wholeWord: $('#ideSearchWord') ? $('#ideSearchWord').classList.contains('on') : false };
+    /* safety net: checkpoint BEFORE mass edit */
+    var m0 = mode();
+    var before = m0.kind === 'lib' ? Object.assign({}, m0.proj.files) : filesObj();
+    Store.checkpoints.save((Store.active() || {}).id, 'before IDE replace-all', before);
+    var files = allFiles(), touched = 0, total = 0, badRe = false;
+    files.forEach(function (p) {
+      var src = contentOf(p);
+      if (src === undefined || src === null) return;
+      var r = IDECORE.replaceAll(String(src), q, rep, opts);
+      if (r === null) { badRe = true; return; }
+      if (r.count) {
+        total += r.count;
+        touched++;
+        if (m0.kind === 'lib') m0.proj.files[p] = r.text;
+        else Tools.run('write_file', { path: p, content: r.text });
+      }
+    });
+    if (m0.kind === 'lib') Store.lib.put(m0.proj);
+    refreshTree(); refreshOutline();
+    if (curPath && files.indexOf(curPath) >= 0) loadFile(curPath);
+    var msg = badRe ? 'Bad regex — nothing replaced.' : 'Replaced ' + total + ' occurrence(s) across ' + touched + ' file(s)' + (total ? ' — checkpointed first; local history can undo this.' : '.');
+    print(msg, 'dim');
+    H.toast(msg.slice(0, 60));
+  }
+
+  /* ---------- word wrap + shortcuts (Phase C) ---------- */
+  var wrapOn = localStorage.getItem('reva.ideWrap') === '1';
+  function toggleWrap() {
+    wrapOn = !wrapOn;
+    localStorage.setItem('reva.ideWrap', wrapOn ? '1' : '0');
+    applyWrap();
+    H.toast('Word wrap ' + (wrapOn ? 'ON' : 'OFF'));
+  }
+  function applyWrap() {
+    var ta = $('#ideEditor'), hl = $('#ideHl');
+    if (!ta) return;
+    ta.style.whiteSpace = wrapOn ? 'pre-wrap' : 'pre';
+    ta.style.wordBreak = wrapOn ? 'break-word' : 'normal';
+    if (hl) { hl.style.whiteSpace = wrapOn ? 'pre-wrap' : 'pre'; hl.style.wordBreak = wrapOn ? 'break-word' : 'normal'; }
+  }
+  function showShortcuts() {
+    H.openSheet('sheet-idekeys');
   }
 
   /* ---------- console ---------- */
@@ -725,6 +914,28 @@
         if (histPos < cmdHistory.length) { histPos++; $('#ideCmd').value = cmdHistory[histPos] || ''; }
       }
     });
+    /* cross-file replace + search toggles */
+    var srAll = $('#ideSearchRepAll');
+    if (srAll) srAll.addEventListener('click', replaceAcrossFiles);
+    ['ideSearchCase', 'ideSearchRe'].forEach(function (id) {
+      var b = document.getElementById(id);
+      if (b) b.addEventListener('click', function () { b.classList.toggle('on'); runSearch(); });
+    });
+    /* history panel */
+    var hb = $('#ideHistBtn');
+    if (hb) hb.addEventListener('click', function () { toggleHistory(); });
+    var hx = $('#ideHistX');
+    if (hx) hx.addEventListener('click', function () { toggleHistory(false); });
+    /* breadcrumb: segment click → palette filtered to that folder */
+    var pathEl = $('#idePath');
+    if (pathEl) pathEl.addEventListener('click', function (e) {
+      var seg = e.target.getAttribute && e.target.getAttribute('data-ideseg');
+      if (!seg) return;
+      openPalette();
+      $('#idePalIn').value = seg;
+      renderPal(seg);
+    });
+    applyWrap();
     /* find bar wiring */
     $('#ideFindIn').addEventListener('input', runFind);
     $('#ideFindIn').addEventListener('keydown', function (e) {
@@ -771,6 +982,10 @@
     openFind: openFind, hideFind: hideFind, runFind: runFind, findNext: findNext,
     doReplace: doReplace, doReplaceAll: doReplaceAll,
     openPalette: openPalette, hidePalette: hidePalette, renderPal: renderPal,
-    toggleAutoSave: toggleAutoSave
+    toggleAutoSave: toggleAutoSave,
+    toggleHistory: toggleHistory, renderHistory: renderHistory,
+    historyDiff: historyDiff, historyRestore: historyRestore,
+    replaceAcrossFiles: replaceAcrossFiles,
+    toggleWrap: toggleWrap, showShortcuts: showShortcuts, workspaceSymbols: workspaceSymbols
   };
 })();

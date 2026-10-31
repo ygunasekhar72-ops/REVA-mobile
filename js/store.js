@@ -370,9 +370,16 @@
      agent can experiment during long builds and roll back cleanly.
      ============================================================ */
   var cpDb = null;
-  var cpReady = openVfsDb().then(function (database) { cpDb = database; });
+  var cpReady = openVfsDb().then(function (database) { cpDb = database; flushCpQueue(); });
+  /* checkpoints queued before the db opens flush on ready — a checkpoint
+     dropped silently is data loss for the restore feature */
+  var cpQueue = [];
+  function flushCpQueue() {
+    var q = cpQueue.splice(0, cpQueue.length);
+    q.forEach(function (rec) { cpPut(rec); });
+  }
   function cpPut(rec) {
-    if (!cpDb) return;
+    if (!cpDb) { if (cpQueue.length < 6) cpQueue.push(rec); return; }
     try { cpDb.transaction('checkpoints', 'readwrite').objectStore('checkpoints').put(JSON.stringify(rec), rec.id); } catch (e) { }
   }
   function cpAll(sessionId) {

@@ -543,6 +543,22 @@
     <div id="tplList"></div>
   </div>
 
+  <div class="sheet" id="sheet-idekeys" aria-label="IDE shortcuts">
+    <div class="grab"></div><h3><i data-lucide="keyboard" style="width:17px;height:17px"></i>IDE shortcuts</h3>
+    <div class="ide-keys">
+      <div><kbd>Ctrl</kbd>+<kbd>S</kbd><span>save the current file</span></div>
+      <div><kbd>Ctrl</kbd>+<kbd>K</kbd><span>command palette — files · symbols · commands</span></div>
+      <div><kbd>@</kbd><span>in the palette: search symbols across EVERY file</span></div>
+      <div><kbd>Ctrl</kbd>+<kbd>F</kbd><span>find / replace in this file</span></div>
+      <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd><span>search + replace across all files</span></div>
+      <div><kbd>Ctrl</kbd>+<kbd>P</kbd><span>quick-open a file by name</span></div>
+      <div><kbd>Ctrl</kbd>+<kbd>G</kbd><span>jump to line</span></div>
+      <div><kbd>Enter</kbd>/<kbd>Shift</kbd>+<kbd>Enter</kbd><span>next / previous match (find bars)</span></div>
+      <div><kbd>Esc</kbd><span>close the overlay / dismiss autocomplete</span></div>
+    </div>
+    <p style="font-size:11.5px;color:var(--ink3);margin:10px 4px 0">Local history: the History button lists checkpoints — Diff against now, or Restore (the current state is checkpointed first).</p>
+  </div>
+
   <div class="sheet" id="sheet-git" aria-label="Git">
     <div class="grab"></div><h3><i data-lucide="git-branch" style="width:17px;height:17px"></i>Git</h3>
     <div class="fld"><label>Repository folder (device shell path)</label><input class="inp kbd" id="gitDir" placeholder="." value="."/></div>
@@ -597,6 +613,7 @@
       <span class="ide-path kbd" id="idePath">—</span>
       <span style="flex:1"></span>
       <button class="ide-btn" id="idePalBtn"><i data-lucide="command"></i>⌘K</button>
+      <button class="ide-btn" id="ideHistBtn"><i data-lucide="history"></i>History</button>
       <button class="ide-btn" id="ideSearchBtn"><i data-lucide="search"></i>Search</button>
       <button class="ide-btn" id="ideNewFile"><i data-lucide="file-plus-2"></i>New</button>
       <button class="ide-btn" id="ideRename"><i data-lucide="pencil"></i></button>
@@ -649,9 +666,23 @@
         <div class="ide-searchbar">
           <i data-lucide="search"></i>
           <input id="ideSearchIn" placeholder="search across every file — text or tokens" autocomplete="off" spellcheck="false"/>
+          <button class="ide-btn ide-tgl" id="ideSearchCase" title="match case">Aa</button>
+          <button class="ide-btn ide-tgl" id="ideSearchRe" title="regex">.*</button>
           <button class="ide-btn" id="ideSearchX"><i data-lucide="x"></i></button>
         </div>
+        <div class="ide-searchbar">
+          <input id="ideSearchRep" placeholder="replace with…" autocomplete="off" spellcheck="false"/>
+          <button class="ide-btn" id="ideSearchRepAll">Replace all files</button>
+        </div>
         <div class="ide-searchout" id="ideSearchOut"></div>
+      </div>
+      <div class="ide-search" id="ideHist" style="display:none">
+        <div class="ide-searchbar">
+          <i data-lucide="history"></i><b style="font-size:12px;color:#c9c9d2">Local history — checkpoints</b>
+          <span style="flex:1"></span>
+          <button class="ide-btn" id="ideHistX"><i data-lucide="x"></i></button>
+        </div>
+        <div class="ide-searchout" id="ideHistOut"></div>
       </div>
     </div>
     <div class="ide-term">
