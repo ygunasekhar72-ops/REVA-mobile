@@ -360,6 +360,34 @@
 #ide .ide-status{display:flex;align-items:center;gap:14px;padding:4px 12px;background:#0c0c0f;border-top:1px solid #1d1d22;font-size:10.5px;color:#a4a4b0;min-height:24px}
 #ide .ide-st-dim{color:#68686f}
 #ide .ide-st-dirty{color:#e8c56f}
+#ide .ide-st-tgl{background:none;border:1px solid #26262e;border-radius:20px;color:#5a5a63;font:inherit;font-size:9.5px;padding:2px 8px;cursor:pointer}
+#ide .ide-st-tgl.on{color:#4fd08a;border-color:#1f4d38}
+
+/* ---- IDE Phase B: gutter markers, find bar, palette ---- */
+#ide .gl{min-height:20px;text-align:right;padding-right:10px;position:relative;color:#4a4a52;font-size:11px}
+#ide .gl.add{color:#4fd08a}
+#ide .gl.add::before{content:'';position:absolute;left:2px;top:3px;bottom:3px;width:2px;background:#4fd08a;border-radius:2px}
+#ide .gl.mod{color:#e8c56f}
+#ide .gl.mod::before{content:'';position:absolute;left:2px;top:3px;bottom:3px;width:2px;background:#e8c56f;border-radius:2px}
+#ide .gl.del{color:#f2777a}
+#ide .gl.del::before{content:'';position:absolute;left:2px;top:3px;bottom:3px;width:2px;background:#f2777a;border-radius:2px}
+#ide .gl.cur{color:#e9e9f0;background:#16161c}
+#ide .ide-find{position:absolute;top:6px;right:12px;width:min(430px,70%);background:#14141aee;border:1px solid #26262e;border-radius:12px;z-index:7;padding:7px;display:grid;gap:6px;box-shadow:0 10px 28px #000a;backdrop-filter:blur(6px)}
+#ide .ide-findrow{display:flex;align-items:center;gap:6px}
+#ide .ide-findrow input{flex:1;min-width:60px;background:#0a0a0c;border:1px solid #232329;border-radius:8px;outline:none;color:#f4f4f6;font:inherit;font-size:12px;padding:5px 9px}
+#ide .ide-findrow input:focus{border-color:#2e4568}
+#ide .ide-findcnt{font-size:10.5px;color:#68686f;min-width:34px;text-align:center}
+#ide .ide-tgl{font-size:10.5px;padding:4px 7px;color:#68686f}
+#ide .ide-tgl.on{color:#82aaff;border-color:#2e4568;background:#1a2233}
+#ide .ide-pal{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:min(520px,84%);max-height:70%;background:#101014f5;border:1px solid #26262e;border-radius:14px;z-index:8;display:grid;grid-template-rows:auto 1fr;overflow:hidden;box-shadow:0 16px 44px #000c;backdrop-filter:blur(8px)}
+#ide .ide-palbar{display:flex;align-items:center;gap:9px;padding:10px 13px;border-bottom:1px solid #1d1d22}
+#ide .ide-palbar svg{width:14px;height:14px;color:#68686f}
+#ide .ide-palbar input{flex:1;background:transparent;border:0;outline:none;color:#f4f4f6;font:inherit;font-size:13px}
+#ide .ide-pal-o{overflow-y:auto;padding:5px}
+#idePalOut{overflow-y:auto;padding:5px}
+#ide .ide-pal-i{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:none;border:0;padding:7px 10px;border-radius:9px;color:#c9c9d2;font:inherit;font-size:12px;cursor:pointer}
+#ide .ide-pal-i svg{width:13px;height:13px;color:#68686f;flex:none}
+#ide .ide-pal-i.on,#ide .ide-pal-i:hover{background:#1e1e28;color:#f4f4f6}
 
 /* ---------- NATIVE MODE (real phones: no mockup hardware) ---------- */
 #mono-harness.native{padding:0;height:100vh;overflow:hidden}

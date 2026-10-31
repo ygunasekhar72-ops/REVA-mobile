@@ -89,7 +89,43 @@ const KW = require('../js/ide-keywords.js');
   });
   assert.strictEqual(KW.forExt('unknown-ext'), KW.MAP.js, 'unknown → js tables (safe default)');
 
-  console.log('idecore: 8/8 scenarios PASS (' + langs.length + ' languages, ' +
+  // 9. Phase B: find/replace, bracket match, change markers, palette score
+  const hay = 'const a = 1;\nconst b = const a;\nconst A = 3;';
+  const fm = C.findMatches(hay, 'const a');
+  assert.strictEqual(fm.length, 3, 'case-insensitive default (incl. const A): ' + fm.length);
+  assert.ok(fm[0].line === 1 && fm[1].line === 2, 'line numbers right');
+  assert.strictEqual(C.findMatches(hay, 'const a', { caseSensitive: true }).length, 2, 'case-sensitive');
+  assert.strictEqual(C.findMatches(hay, 'a', { wholeWord: true }).length, 3, 'whole-word a/A: 3');
+  assert.strictEqual(C.findMatches(hay, 'const a(', { regex: true }), null, 'bad regex → honest null');
+  const rx = C.findMatches(hay, 'const \\w+ = \\d;', { regex: true, caseSensitive: true });
+  assert.strictEqual(rx.length, 2, 'regex mode');
+  const rep = C.replaceAll(hay, 'const a', 'let x', { caseSensitive: true });
+  assert.strictEqual(rep.count, 2, 'case-sensitive replace count');
+  assert.ok(rep.text.indexOf('let x = 1;') === 0, 'replaced back-to-front, text intact');
+  assert.ok(C.replaceAll(hay, 'zzz', 'q').count === 0, 'no-match replace is a no-op');
+
+  const code = 'function f() {\n  if (x) {\n    work();\n  }\n}';
+  const bm = C.bracketMatch(code, code.indexOf('work')); // caret inside inner block
+  assert.strictEqual(bm, null, 'not beside a bracket → null');
+  const bm2 = C.bracketMatch(code, code.indexOf('{', code.indexOf('if')) + 1);
+  assert.ok(bm2 && code[bm2.a] === '{' && code[bm2.b] === '}', 'inner { pairs with its }');
+  const bm3 = C.bracketMatch(code, code.length); // just past final }
+  assert.ok(bm3 && bm3.a === code.indexOf('{'), 'outer brace pairs');
+
+  const saved = 'one\ntwo\nthree\nfour';
+  const edited = 'one\nTWO\nthree\nfour\nfive';
+  const mk = C.changeMarkers(saved, edited);
+  assert.strictEqual(mk['2'], 'mod', 'changed line marked');
+  assert.strictEqual(mk['5'], 'add', 'added line marked');
+  assert.ok(!mk['1'] && !mk['3'], 'untouched lines unmarked');
+  assert.deepStrictEqual(C.changeMarkers('same', 'same'), {}, 'identical → no marks');
+
+  assert.ok(C.paletteScore('refo', 'refreshOutline') >= 20, 'subsequence with contiguity bonus');
+  assert.ok(C.paletteScore('refo', 'refreshOutline') > C.paletteScore('ro', 'refreshOutline'), 'streaks beat gappy matches');
+  assert.strictEqual(C.paletteScore('xyz', 'save'), 0, 'no match → 0');
+  assert.ok(C.paletteScore('save', 'save') > C.paletteScore('save', 'save_memory'), 'prefix beats substring');
+
+  console.log('idecore: 9/9 scenarios PASS (' + langs.length + ' languages, ' +
     langs.reduce((n, l) => n + KW.MAP[l].keywords.length + KW.MAP[l].builtins.length, 0) + ' completion tokens)');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

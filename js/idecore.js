@@ -187,6 +187,144 @@
     return { line: line, col: col };
   }
 
+  /* ---- Phase B: find/replace ----
+     findMatches: case/regex/whole-word toggles, ordered, capped at 500.
+     Invalid regex → null (caller keeps its honest error).
+     compileUserRegex: the ONLY place user text becomes a RegExp. The pattern
+     is the user's own find-query against their own file (a ReDoS concern at
+     worst — capped at 500 matches), never a host/command surface. */
+  var FIND_CAP = 500;
+  function compileUserRegex(pattern, flags) {
+    if (!pattern || pattern.length > 300 || pattern.indexOf('\0') >= 0) return null;
+    try { return new RegExp(pattern, flags); } catch (e) { return null; }
+  }
+  /* regex-escape via function replacer — every metachar gets an explicit
+     backslash, no interpolation tokens involved */
+  function reEsc(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, function (c) { return '\\' + c; });
+  }
+  function findMatches(text, query, opts) {
+    text = String(text == null ? '' : text);
+    var q = String(query == null ? '' : query);
+    if (!q) return [];
+    opts = opts || {};
+    var re;
+    if (opts.regex) {
+      re = compileUserRegex(q, opts.caseSensitive ? 'g' : 'gi');
+      if (!re) return null;
+    } else {
+      var esc = reEsc(q);
+      if (opts.wholeWord) esc = '\\b(?:' + esc + ')\\b';
+      re = compileUserRegex(esc, opts.caseSensitive ? 'g' : 'gi');
+      if (!re) return null;
+    }
+    var out = [], m, lineStarts = null;
+    while ((m = re.exec(text))) {
+      if (m[0].length === 0) { re.lastIndex++; continue; } // guard a? zero-length
+      if (!lineStarts) {
+        lineStarts = [0];
+        for (var i = 0; i < text.length; i++) if (text[i] === '\n') lineStarts.push(i + 1);
+      }
+      var lo = 0, hi = lineStarts.length - 1, ln = 1;
+      while (lo <= hi) { var mid = (lo + hi) >> 1; if (lineStarts[mid] <= m.index) { ln = mid + 1; lo = mid + 1; } else hi = mid - 1; }
+      out.push({ start: m.index, end: m.index + m[0].length, line: ln });
+      if (out.length >= FIND_CAP) break;
+    }
+    return out;
+  }
+  /* replaceAll built on the same matcher — ranges applied back-to-front */
+  function replaceAll(text, query, replacement, opts) {
+    var ms = findMatches(text, query, opts);
+    if (ms === null) return null;
+    if (!ms.length) return { text: String(text), count: 0 };
+    var s = String(text);
+    for (var i = ms.length - 1; i >= 0; i--) s = s.slice(0, ms[i].start) + String(replacement == null ? '' : replacement) + s.slice(ms[i].end);
+    return { text: s, count: ms.length };
+  }
+
+  /* ---- Phase B: bracket matching ----
+     From the caret: if beside a bracket, find its partner with depth
+     counting. Limitation (documented): not string/comment aware. */
+  var BR_OPEN = '([{', BR_CLOSE = ')]}';
+  function bracketMatch(text, pos) {
+    text = String(text == null ? '' : text);
+    var before = text[pos - 1], after = text[pos];
+    var ch, dir, start;
+    if (before && BR_OPEN.indexOf(before) >= 0) { ch = before; dir = 1; start = pos - 1; }
+    else if (after && BR_CLOSE.indexOf(after) >= 0) { ch = after; dir = -1; start = pos; }
+    else if (before && BR_CLOSE.indexOf(before) >= 0) { ch = before; dir = -1; start = pos - 1; }
+    else if (after && BR_OPEN.indexOf(after) >= 0) { ch = after; dir = 1; start = pos; }
+    else return null;
+    var want = dir === 1 ? BR_CLOSE[BR_OPEN.indexOf(ch)] : BR_OPEN[BR_CLOSE.indexOf(ch)];
+    var depth = 0;
+    for (var i = start; i >= 0 && i < text.length; i += dir) {
+      var c = text[i];
+      if (c === ch) depth++;
+      else if (c === want && --depth === 0) return { a: Math.min(start, i), b: Math.max(start, i) };
+    }
+    return null;
+  }
+
+  /* ---- Phase B: change markers (gutter) — saved vs edited ----
+     Vendored jsdiff line hunks, walked into per-line statuses:
+     add | del | mod. Fallback: any line differing from saved → mod. */
+  function changeMarkers(saved, current) {
+    var S = String(saved == null ? '' : saved), C = String(current == null ? '' : current);
+    var marks = {};
+    if (S === C) return marks;
+    var D = null;
+    if (typeof window !== 'undefined' && window.Diff) D = window.Diff;
+    else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {
+      try { D = require('../js/vendor/diff/jsdiff.js'); } catch (e) { }
+    }
+    if (!D || !D.diffLines) {
+      var a = S.split('\n'), b = C.split('\n');
+      for (var j = 0; j < b.length; j++) if (a[j] !== b[j]) marks[j + 1] = 'mod';
+      return marks;
+    }
+    var hunks = D.diffLines(S, C);
+    var oldLn = 0, newLn = 0;
+    for (var h = 0; h < hunks.length; h++) {
+      var hk = hunks[h];
+      var cnt = hk.count || String(hk.value).split('\n').length - 1;
+      if (hk.removed) {
+        for (var r = 0; r < cnt; r++) marks[++oldLn] = 'del';
+      } else if (hk.added) {
+        /* a removed+added pair = modified for the positional overlap
+           (min of the two counts), genuinely added for the remainder */
+        var prev = h > 0 && hunks[h - 1].removed ? hunks[h - 1] : null;
+        var prevCnt = prev ? (prev.count || String(prev.value).split('\n').length - 1) : 0;
+        var K = prev ? Math.min(prevCnt, cnt) : 0;
+        for (var ad = 0; ad < cnt; ad++) marks[++newLn] = ad < K ? 'mod' : 'add';
+      } else {
+        oldLn += cnt; newLn += cnt;
+      }
+    }
+    return marks;
+  }
+
+  /* ---- Phase B: command palette fuzzy score ----
+     Prefix >> contiguous substring >> in-order subsequence; 0 = no match. */
+  function paletteScore(query, label) {
+    var q = String(query || '').toLowerCase().trim();
+    var l = String(label || '').toLowerCase();
+    if (!q) return 1;
+    if (l.indexOf(q) === 0) return 100 - l.length * 0.01;
+    var idx = l.indexOf(q);
+    if (idx > 0) return 60 - idx - l.length * 0.01;
+    /* subsequence with contiguity bonus */
+    var li = 0, streak = 0, best = 0, score = 0;
+    for (var i = 0; i < q.length; i++) {
+      var found = l.indexOf(q[i], li);
+      if (found < 0) return 0;
+      streak = found === li ? streak + 1 : 1;
+      best = Math.max(best, streak);
+      score += 2 + streak;
+      li = found + 1;
+    }
+    return Math.min(50, score + best * 2);
+  }
+
   return {
     buildTree: buildTree,
     flattenTree: flattenTree,
@@ -195,6 +333,11 @@
     wordAt: wordAt,
     autoIndent: autoIndent,
     bracketAuto: bracketAuto,
-    lineCol: lineCol
+    lineCol: lineCol,
+    findMatches: findMatches,
+    replaceAll: replaceAll,
+    bracketMatch: bracketMatch,
+    changeMarkers: changeMarkers,
+    paletteScore: paletteScore
   };
 });

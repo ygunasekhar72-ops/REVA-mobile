@@ -596,6 +596,7 @@
       <b>REVA IDE</b>
       <span class="ide-path kbd" id="idePath">—</span>
       <span style="flex:1"></span>
+      <button class="ide-btn" id="idePalBtn"><i data-lucide="command"></i>⌘K</button>
       <button class="ide-btn" id="ideSearchBtn"><i data-lucide="search"></i>Search</button>
       <button class="ide-btn" id="ideNewFile"><i data-lucide="file-plus-2"></i>New</button>
       <button class="ide-btn" id="ideRename"><i data-lucide="pencil"></i></button>
@@ -614,8 +615,29 @@
         <div class="ide-editwrap">
           <pre id="ideGutter" aria-hidden="true"></pre>
           <pre id="ideHl" class="tokhl" aria-hidden="true"></pre>
-          <textarea id="ideEditor" spellcheck="false" placeholder="Select a file from the tree — or ask the model to write one. Ctrl+S saves · Ctrl+P quick-open · Ctrl+Shift+F search · Ctrl+G jump to line."></textarea>
+          <textarea id="ideEditor" spellcheck="false" placeholder="Select a file from the tree — or ask the model to write one. Ctrl+S saves · Ctrl+K palette · Ctrl+F find · Ctrl+Shift+F search · Ctrl+G jump to line."></textarea>
           <div id="ideAc" class="ide-ac" style="display:none"></div>
+          <div class="ide-find" id="ideFind" style="display:none">
+            <div class="ide-findrow">
+              <input id="ideFindIn" placeholder="find" autocomplete="off" spellcheck="false"/>
+              <span id="ideFindCount" class="ide-findcnt">0</span>
+              <button class="ide-btn" id="ideFindPrev"><i data-lucide="chevron-up"></i></button>
+              <button class="ide-btn" id="ideFindNext"><i data-lucide="chevron-down"></i></button>
+              <button class="ide-btn ide-tgl" id="ideFindCase" title="match case">Aa</button>
+              <button class="ide-btn ide-tgl" id="ideFindRe" title="regex">.*</button>
+              <button class="ide-btn ide-tgl" id="ideFindWord" title="whole word">ab</button>
+              <button class="ide-btn" id="ideFindX"><i data-lucide="x"></i></button>
+            </div>
+            <div class="ide-findrow">
+              <input id="ideFindRep" placeholder="replace with…" autocomplete="off" spellcheck="false"/>
+              <button class="ide-btn" id="ideFindRepBtn">Replace</button>
+              <button class="ide-btn" id="ideFindAllBtn">All</button>
+            </div>
+          </div>
+          <div class="ide-pal" id="idePal" style="display:none">
+            <div class="ide-palbar"><i data-lucide="command"></i><input id="idePalIn" placeholder="files, symbols, commands…" autocomplete="off" spellcheck="false"/></div>
+            <div id="idePalOut"></div>
+          </div>
         </div>
         <div class="ide-status" id="ideStatus"></div>
       </div>

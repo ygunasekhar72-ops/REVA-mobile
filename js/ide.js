@@ -13,6 +13,11 @@
   var tabs = []; // open file paths — VS Code-style editor tabs
   var collapsed = {}; // tree collapse state, keyed dir:depth
   var acItems = [], acIdx = -1, acOpen = false;
+  var savedText = ''; // last-saved content — the diff base for gutter markers
+  var find = { matches: [], idx: -1, opts: { caseSensitive: false, regex: false, wholeWord: false } };
+  var autoSave = localStorage.getItem('reva.ideAutosave') === '1';
+  var asTimer = null;
+  var palItems = [], palIdx = -1;
   var ICONS = { dir: 'folder', file: 'file-code', html: 'code-2', md: 'file-text' };
 
   /* ---------- workspace resolution: chat VFS or mounted Library project ---------- */
@@ -187,10 +192,12 @@
     curPath = path;
     if (tabs.indexOf(path) === -1) tabs.push(path);
     var c = contentOf(path);
-    $('#ideEditor').value = c === undefined || c === null ? '' : String(c);
+    var text = c === undefined || c === null ? '' : String(c);
+    $('#ideEditor').value = text;
+    savedText = text;
     dirty = false;
     $('#idePath').textContent = path;
-    hideAc();
+    hideAc(); hideFind();
     refreshHl(); refreshTabs(); refreshTree(); refreshOutline(); refreshStatus(); refreshGutter();
     if (/\.html?$/.test(path)) showPreview(path);
     else showPreview(null);
@@ -207,9 +214,10 @@
       var r = Tools.run('write_file', { path: curPath, content: content });
       if (r.indexOf('Error') === 0) { print(r); return; }
     }
+    savedText = content;
     dirty = false;
     print('saved ' + curPath, 'dim');
-    refreshTree(); refreshTabs(); refreshOutline(); refreshStatus();
+    refreshTree(); refreshTabs(); refreshOutline(); refreshStatus(); refreshGutter();
     if (/\.html?$/.test(curPath)) showPreview(curPath);
   }
 
@@ -265,14 +273,19 @@
     refreshTree(); refreshTabs(); refreshOutline(); refreshHl(); refreshStatus(); showPreview(null);
   }
 
-  /* ---------- gutter + highlighting ---------- */
+  /* ---------- gutter + highlighting (Phase B: change markers, current line) ---------- */
   function refreshGutter() {
     var g = $('#ideGutter'), ta = $('#ideEditor');
     if (!g || !ta) return;
     var n = ta.value.split('\n').length;
+    var marks = IDECORE.changeMarkers(savedText, ta.value);
+    var cur = IDECORE.lineCol(ta.value, ta.selectionStart || 0).line;
     var out = '';
-    for (var i = 1; i <= Math.max(n, 1); i++) out += i + '\n';
-    g.textContent = out;
+    for (var i = 1; i <= Math.max(n, 1); i++) {
+      var cls = marks[i] || (i === cur ? 'cur' : '');
+      out += '<div class="gl ' + cls + '">' + i + '</div>';
+    }
+    g.innerHTML = out;
     g.scrollTop = ta.scrollTop;
   }
 
@@ -300,16 +313,22 @@
     var el = $('#ideStatus');
     var ta = $('#ideEditor');
     if (!el || !ta) return;
-    var lc = IDECORE.lineCol(ta.value, ta.selectionStart || 0);
+    var caret = ta.selectionStart || 0;
+    var lc = IDECORE.lineCol(ta.value, caret);
     var lang = curPath ? (H.extLang(curPath) || 'text') : '—';
     var m = mode();
     var where = m.kind === 'lib' ? 'project' : 'workspace';
+    var bm = IDECORE.bracketMatch(ta.value, caret);
     el.innerHTML = '<span>' + esc(curPath ? curPath.split('/').pop() : '—') + '</span>' +
       '<span class="ide-st-dim">' + esc(lang) + '</span>' +
       '<span class="ide-st-dim">Ln ' + lc.line + ', Col ' + lc.col + '</span>' +
+      (bm ? '<span class="ide-st-dim">match Ln ' + IDECORE.lineCol(ta.value, bm.a).line + '</span>' : '') +
       '<span class="ide-st-dim">' + (ta.value.length ? H.fmtK(ta.value.length) : '0') + '</span>' +
       '<span style="flex:1"></span>' +
-      (dirty ? '<span class="ide-st-dirty">● unsaved</span>' : '<span class="ide-st-dim">' + where + '</span>');
+      (dirty ? '<span class="ide-st-dirty">● unsaved</span>' : '<span class="ide-st-dim">' + where + '</span>') +
+      '<button class="ide-st-tgl' + (autoSave ? ' on' : '') + '" id="ideStAutosave" title="toggle auto-save">auto-save</button>';
+    var asBtn = $('#ideStAutosave');
+    if (asBtn) asBtn.addEventListener('click', toggleAutoSave);
   }
 
   /* ---------- autocomplete ---------- */
@@ -394,6 +413,8 @@
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleSearch(true); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !e.shiftKey) { e.preventDefault(); openFind(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
       e.preventDefault();
       var ln = parseInt(prompt('Jump to line:'), 10);
@@ -458,6 +479,14 @@
   function afterEdit() {
     dirty = true;
     refreshHl(); refreshGutter(); refreshTabs(); refreshStatus(); maybeAc();
+    scheduleAutoSave();
+    if (find.matches.length || $('#ideFind').style.display === 'grid') {
+      var keep = $('#ideFindIn').value;
+      var ms = IDECORE.findMatches($('#ideEditor').value, keep, findOpts());
+      find.matches = ms || [];
+      find.idx = -1;
+      $('#ideFindCount').textContent = ms === null ? 'bad regex' : String(find.matches.length);
+    }
   }
 
   /* ---------- preview ---------- */
@@ -473,6 +502,163 @@
       $('#idePrevLabel').textContent = 'preview';
       holder.style.display = '';
     }
+  }
+
+  /* ---------- find / replace bar (Phase B) ---------- */
+  function openFind() {
+    var bar = $('#ideFind');
+    if (!bar) return;
+    bar.style.display = 'grid';
+    $('#ideFindIn').focus();
+    $('#ideFindIn').select();
+    runFind();
+  }
+  function hideFind() {
+    var bar = $('#ideFind');
+    if (bar) bar.style.display = 'none';
+    find.matches = []; find.idx = -1;
+  }
+  function findOpts() {
+    return {
+      caseSensitive: $('#ideFindCase').classList.contains('on'),
+      regex: $('#ideFindRe').classList.contains('on'),
+      wholeWord: $('#ideFindWord').classList.contains('on')
+    };
+  }
+  function runFind() {
+    var ta = $('#ideEditor');
+    var q = $('#ideFindIn').value;
+    var ms = IDECORE.findMatches(ta.value, q, findOpts());
+    find.matches = ms || [];
+    find.idx = -1;
+    var cnt = $('#ideFindCount');
+    if (ms === null) { cnt.textContent = 'bad regex'; return; }
+    cnt.textContent = ms.length ? (ms.length + (ms.length >= 500 ? '+' : '')) : '0';
+    if (ms.length) findNext(1, true);
+  }
+  function findNext(dir, fromCaret) {
+    if (!find.matches.length) return;
+    var ta = $('#ideEditor');
+    var caret = ta.selectionStart || 0;
+    var i = -1;
+    if (fromCaret !== true) find.idx = (find.idx + (dir > 0 ? 1 : -1) + find.matches.length) % find.matches.length;
+    else {
+      for (var k = 0; k < find.matches.length; k++) { if (find.matches[k].start >= caret) { i = k; break; } }
+      find.idx = i >= 0 ? i : 0;
+    }
+    var m = find.matches[find.idx];
+    ta.focus();
+    ta.setSelectionRange(m.start, m.end);
+    var lc = IDECORE.lineCol(ta.value, m.start);
+    ta.scrollTop = Math.max(0, (lc.line - 4) * 20);
+    $('#ideFindCount').textContent = (find.idx + 1) + '/' + find.matches.length;
+    refreshHl(); refreshGutter(); refreshStatus();
+  }
+  function doReplace() {
+    var ta = $('#ideEditor');
+    if (find.idx >= 0 && find.matches[find.idx]) {
+      var m = find.matches[find.idx];
+      insert(ta, $('#ideFindRep').value, m.start, m.end);
+      runFind();
+    }
+  }
+  function doReplaceAll() {
+    var ta = $('#ideEditor');
+    var r = IDECORE.replaceAll(ta.value, $('#ideFindIn').value, $('#ideFindRep').value, findOpts());
+    if (r === null) { $('#ideFindCount').textContent = 'bad regex'; return; }
+    if (!r.count) { $('#ideFindCount').textContent = '0'; return; }
+    var pos = ta.selectionStart;
+    ta.value = r.text;
+    ta.selectionStart = ta.selectionEnd = Math.min(pos, r.text.length);
+    afterEdit();
+    runFind();
+    print('Replaced ' + r.count + ' occurrence' + (r.count > 1 ? 's' : '') + ' in ' + curPath, 'dim');
+  }
+
+  /* ---------- command palette (Phase B): files + symbols + commands ---------- */
+  function paletteItems() {
+    var items = [];
+    allFiles().forEach(function (p) { items.push({ kind: 'file', label: 'Open ' + p, run: function () { loadFile(p); } }); });
+    if (curPath) {
+      var src = contentOf(curPath);
+      var syms = (window.REVAMAP && src) ? REVAMAP.extractFallback(extOf(curPath), String(src)) : [];
+      syms.forEach(function (s) {
+        items.push({ kind: 'sym', label: '≡ ' + s.name + '  (' + s.line + ')', run: function () { jumpTo(s.line); } });
+      });
+    }
+    items.push(
+      { kind: 'cmd', label: 'Save file (Ctrl+S)', run: function () { save(); } },
+      { kind: 'cmd', label: 'New file…', run: function () { newFile(); } },
+      { kind: 'cmd', label: 'Search across files (Ctrl+Shift+F)', run: function () { toggleSearch(true); } },
+      { kind: 'cmd', label: 'Find in file (Ctrl+F)', run: function () { openFind(); } },
+      { kind: 'cmd', label: (autoSave ? '✓ Auto-save is ON — turn off' : 'Auto-save is OFF — turn on'), run: function () { toggleAutoSave(); } },
+      { kind: 'cmd', label: 'Preview this file', run: function () { if (curPath) showPreview(curPath); } }
+    );
+    return items;
+  }
+  function openPalette() {
+    var pal = $('#idePal');
+    if (!pal) return;
+    pal.style.display = 'grid';
+    $('#idePalIn').value = '';
+    palIdx = -1;
+    renderPal('');
+    $('#idePalIn').focus();
+  }
+  function hidePalette() {
+    var pal = $('#idePal');
+    if (pal) pal.style.display = 'none';
+    palItems = []; palIdx = -1;
+  }
+  function renderPal(q) {
+    var pal = $('#idePal');
+    if (!pal) return;
+    palItems = paletteItems()
+      .map(function (it) { return { it: it, sc: IDECORE.paletteScore(q, it.label) }; })
+      .filter(function (x) { return x.sc > 0; })
+      .sort(function (a, b) { return b.sc - a.sc; })
+      .slice(0, 12)
+      .map(function (x) { return x.it; });
+    palIdx = palItems.length ? 0 : -1;
+    $('#idePalOut').innerHTML = palItems.length ? palItems.map(function (it, i) {
+      var k = it.kind === 'file' ? 'file-code' : it.kind === 'sym' ? 'lambda' : 'zap';
+      return '<button class="ide-pal-i' + (i === palIdx ? ' on' : '') + '" data-idepal="' + i + '"><i data-lucide="' + k + '"></i>' + esc(it.label) + '</button>';
+    }).join('') : '<p class="ide-empty" style="padding:10px">nothing matches</p>';
+    H.icons();
+    pal.querySelectorAll('[data-idepal]').forEach(function (b) {
+      b.addEventListener('click', function () { execPal(parseInt(b.getAttribute('data-idepal'), 10)); });
+    });
+  }
+  function execPal(i) {
+    var it = palItems[i];
+    hidePalette();
+    if (it && it.run) { taFocus(); it.run(); }
+  }
+  function palMove(d) {
+    if (!palItems.length) return;
+    palIdx = (palIdx + d + palItems.length) % palItems.length;
+    renderPal($('#idePalIn').value);
+    var on = document.querySelector('#idePalOut .ide-pal-i.on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  }
+
+  /* ---------- auto-save (Phase B) ---------- */
+  function toggleAutoSave() {
+    autoSave = !autoSave;
+    localStorage.setItem('reva.ideAutosave', autoSave ? '1' : '0');
+    H.toast('Auto-save ' + (autoSave ? 'ON — edits save ~1.5s after typing stops' : 'OFF'));
+    refreshStatus();
+  }
+  function scheduleAutoSave() {
+    if (!autoSave) return;
+    clearTimeout(asTimer);
+    asTimer = setTimeout(function () {
+      if (dirty && curPath) { save(); renderPaletteIfOpen(); }
+    }, 1500);
+  }
+  function renderPaletteIfOpen() {
+    var pal = $('#idePal');
+    if (pal && pal.style.display === 'grid') renderPal($('#idePalIn').value);
   }
 
   /* ---------- console ---------- */
@@ -514,7 +700,8 @@
     var ta = $('#ideEditor');
     ta.addEventListener('input', afterEdit);
     ta.addEventListener('keydown', onKey);
-    ta.addEventListener('click', function () { refreshStatus(); hideAc(); });
+    ta.addEventListener('click', function () { refreshStatus(); hideAc(); refreshGutter(); });
+    ta.addEventListener('keyup', function () { refreshGutter(); refreshStatus(); });
     ta.addEventListener('scroll', function () {
       var pre = $('#ideHl');
       pre.scrollTop = ta.scrollTop;
@@ -538,6 +725,37 @@
         if (histPos < cmdHistory.length) { histPos++; $('#ideCmd').value = cmdHistory[histPos] || ''; }
       }
     });
+    /* find bar wiring */
+    $('#ideFindIn').addEventListener('input', runFind);
+    $('#ideFindIn').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); findNext(e.shiftKey ? -1 : 1); }
+      if (e.key === 'Escape') { hideFind(); taFocus(); }
+    });
+    $('#ideFindRep').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); doReplace(); }
+      if (e.key === 'Escape') { hideFind(); taFocus(); }
+    });
+    $('#ideFindPrev').addEventListener('click', function () { findNext(-1); });
+    $('#ideFindNext').addEventListener('click', function () { findNext(1); });
+    $('#ideFindRepBtn').addEventListener('click', doReplace);
+    $('#ideFindAllBtn').addEventListener('click', doReplaceAll);
+    $('#ideFindX').addEventListener('click', function () { hideFind(); taFocus(); });
+    ['ideFindCase', 'ideFindRe', 'ideFindWord'].forEach(function (id) {
+      var b = document.getElementById(id);
+      if (b) b.addEventListener('click', function () { b.classList.toggle('on'); runFind(); });
+    });
+    /* command palette wiring */
+    $('#idePalBtn').addEventListener('click', openPalette);
+    $('#idePalIn').addEventListener('input', function () { renderPal($('#idePalIn').value); });
+    $('#idePalIn').addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); palMove(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); palMove(-1); }
+      else if (e.key === 'Enter') { e.preventDefault(); execPal(palIdx >= 0 ? palIdx : 0); }
+      else if (e.key === 'Escape') { hidePalette(); taFocus(); }
+    });
+    /* status-bar auto-save toggle */
+    var asBtn = $('#ideStAutosave');
+    if (asBtn) asBtn.addEventListener('click', toggleAutoSave);
     $('#ideGit').addEventListener('click', function () {
       H.openSheet('sheet-git');
       if (window.App && App.gitRun) App.gitRun('status', true);
@@ -549,6 +767,10 @@
     showPreview: showPreview, save: save, print: print, clearOut: clearOut, wire: wire,
     refreshTabs: refreshTabs, refreshGutter: refreshGutter, refreshOutline: refreshOutline,
     refreshStatus: refreshStatus, toggleSearch: toggleSearch, jumpTo: jumpTo,
-    newFile: newFile, renameFile: renameFile, deleteFile: deleteFile
+    newFile: newFile, renameFile: renameFile, deleteFile: deleteFile,
+    openFind: openFind, hideFind: hideFind, runFind: runFind, findNext: findNext,
+    doReplace: doReplace, doReplaceAll: doReplaceAll,
+    openPalette: openPalette, hidePalette: hidePalette, renderPal: renderPal,
+    toggleAutoSave: toggleAutoSave
   };
 })();
