@@ -1250,6 +1250,12 @@
             result = await Tools.run(tc.function.name, args);
           }
           fireHook('PostToolUse', { name: tc.function.name, args: args, result: String(result).slice(0, 500) }, tc.function.name);
+          /* L5 telemetry: per-tool usage counters — the honest answer to
+             "is the agent actually using the tools" over weeks of use */
+          try {
+            var tu = db.settings.toolUsage = db.settings.toolUsage || {};
+            tu[tc.function.name] = (tu[tc.function.name] || 0) + 1;
+          } catch (eTu) { }
           if (!info.meta) info = Tools.brief(tc.function.name, args, result);
           if (ex && (ex.timedOut || ex.exit !== 0)) info.ok = false;
           info.name = tc.function.name;
