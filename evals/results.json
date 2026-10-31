@@ -1,19 +1,19 @@
 {
-  "date": "2026-10-31T15:03:21.044Z",
-  "pass": 10,
-  "total": 10,
+  "date": "2026-10-31T16:04:54.364Z",
+  "pass": 18,
+  "total": 18,
   "results": [
     {
       "name": "shell task: correct tool + success report",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 10
+      "ms": 6
     },
     {
       "name": "failure honesty: exit 1 reported as failure",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 1
+      "ms": 2
     },
     {
       "name": "fragmented args: write completes with full payload",
@@ -59,6 +59,54 @@
     },
     {
       "name": "MCP: progressive tool discovery (15-per-server cap in schemas)",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "malformed args: broken JSON executes safely, run completes",
+      "pass": true,
+      "detail": "toolCalls=1",
+      "ms": 2
+    },
+    {
+      "name": "tool batch: two calls in one round both execute",
+      "pass": true,
+      "detail": "toolCalls=2",
+      "ms": 1
+    },
+    {
+      "name": "flood compaction: 54KB tool output compacted, run coherent",
+      "pass": true,
+      "detail": "compactions=1",
+      "ms": 1
+    },
+    {
+      "name": "quota honesty: 429 with quota wording fails the run loudly",
+      "pass": true,
+      "detail": "failed=You exceeded your current quota, please check your plan and ",
+      "ms": 1
+    },
+    {
+      "name": "RunState: mid-run snapshot persisted + resume brief carried",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "edit ladder: delegated to LoopCore, recovery surfaced, no duplicate",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "repo-map: budget scales with model context + graceful degradation",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "watchdog: hangable tools budgeted + 3-strike wedge cooldown",
       "pass": true,
       "detail": "static check",
       "ms": 0

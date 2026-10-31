@@ -6,6 +6,7 @@
    Run:  node evals/agent-eval.js
    Needs the mock server:  node evals/mock-server.js  (port 8123)          */
 const http = require('http');
+const LoopCore = require('../js/loopcore.js');
 
 const BASE = 'http://127.0.0.1:8123/v1';
 const results = [];
@@ -30,7 +31,7 @@ function parseToolCalls(text) {
 
 /* mock tool implementations mirroring the harness behavior */
 const TOOLS = {
-  shell_exec: a => a.command === 'uname -a' ? 'Linux reva x86_64 [exit 0]' : (a.command === 'false' ? '[exit 1]' : '[exit 0]'),
+  shell_exec: a => a.command === 'uname -a' ? 'Linux reva x86_64 [exit 0]' : (a.command === 'false' ? '[exit 1]' : (a.command === 'flood' ? ('x'.repeat(60) + '\n').repeat(900) : '[exit 0]')),
   write_file: a => 'Wrote ' + (a.path || '') + ' (' + String(a.content || '').length + ' chars)',
   read_file: a => 'file content'
 };
@@ -40,18 +41,26 @@ const TOOLS = {
 async function agentLoop(model, userMsg) {
   const msgs = [{ role: 'user', content: userMsg }];
   const t0 = Date.now();
-  let toolCalls = 0, iters = 0, nsTried = false, streamRetries = 0, nudges = 0, res = null, pendingRes = null, failed = null;
+  let toolCalls = 0, iters = 0, nsTried = false, streamRetries = 0, nudges = 0, res = null, pendingRes = null, failed = null, compactions = 0;
   const MAX_ITERS = 14;
   while (true) {
     iters++;
     if (iters > MAX_ITERS) { failed = 'max iters'; break; }
     if (pendingRes) { res = pendingRes; pendingRes = null; }
     else {
-      try {
-        const r = await chat({ model, stream: false, max_tokens: 500, messages: msgs });
-        const m = parseToolCalls(r.body);
-        res = { content: m.content || '', tool_calls: Array.isArray(m.tool_calls) ? m.tool_calls : null, raw: r.body.slice(0, 200) };
-      } catch (e) { failed = String(e.message || e); break; }
+    try {
+      const r = await chat({ model, stream: false, max_tokens: 500, messages: msgs });
+      /* failure honesty: an HTTP error (quota, bad key, 500) is a FAILED run,
+         never a silent empty completion — mirrors AI.friendlyError's rule */
+      if (r.status >= 400) {
+        let msg = 'HTTP ' + r.status;
+        try { msg = JSON.parse(r.body).error.message || msg; } catch (e) { }
+        failed = msg;
+        break;
+      }
+      const m = parseToolCalls(r.body);
+      res = { content: m.content || '', tool_calls: Array.isArray(m.tool_calls) ? m.tool_calls : null, raw: r.body.slice(0, 200) };
+    } catch (e) { failed = String(e.message || e); break; }
     }
     if (res.tool_calls && res.tool_calls.length) {
       msgs.push({ role: 'assistant', content: res.content || '', tool_calls: res.tool_calls });
@@ -63,6 +72,13 @@ async function agentLoop(model, userMsg) {
         toolCalls++;
         msgs.push({ role: 'tool', tool_call_id: tc.id, content: String(out) });
       }
+      /* context engine: a flood must compact, never overflow — mirrors the
+         harness auto-compaction rule (LoopCore.compactTranscript) */
+      const chars = msgs.reduce((n, m) => n + String(m.content || '').length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0);
+      if (chars > 20000) {
+        const c = LoopCore.compactTranscript(msgs, 12000);
+        if (c.dropped > 0) { msgs.length = 0; msgs.push.apply(msgs, c.kept); compactions++; }
+      }
       continue;
     }
     if (!(res.content || '').trim()) {
@@ -73,7 +89,7 @@ async function agentLoop(model, userMsg) {
     }
     break;
   }
-  return { iters, toolCalls, ms: Date.now() - t0, content: (res && res.content) || '', failed };
+  return { iters, toolCalls, ms: Date.now() - t0, content: (res && res.content) || '', failed, compactions };
 }
 
 function record(name, pass, detail, ms) {
@@ -172,6 +188,79 @@ async function main() {
     const app = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
     record('MCP: progressive tool discovery (15-per-server cap in schemas)',
       app.indexOf('sorted.slice(0, 15)') >= 0, 'static check', 0);
+  }
+
+  // 11. malformed tool arguments: no crash, run continues to completion
+  {
+    const t0 = Date.now();
+    const r = await agentLoop('mock-broken-args', 'write it');
+    record('malformed args: broken JSON executes safely, run completes',
+      r.toolCalls === 1 && /Recovered from malformed arguments/.test(r.content), 'toolCalls=' + r.toolCalls, Date.now() - t0);
+  }
+
+  // 12. multi-tool batch: both calls execute, both results reach the model
+  {
+    const t0 = Date.now();
+    const r = await agentLoop('mock-batch', 'write both files');
+    record('tool batch: two calls in one round both execute',
+      r.toolCalls === 2 && /Batch done — 2 tool results/.test(r.content), 'toolCalls=' + r.toolCalls, Date.now() - t0);
+  }
+
+  // 13. transcript flood: tool output floods the context — compaction saves it
+  {
+    const t0 = Date.now();
+    const r = await agentLoop('mock-flood', 'run the flood');
+    record('flood compaction: 54KB tool output compacted, run coherent',
+      r.compactions >= 1 && /flood handled/.test(r.content) && !r.failed, 'compactions=' + r.compactions, Date.now() - t0);
+  }
+
+  // 14. hard quota: the run reports the provider's quota error honestly
+  {
+    const t0 = Date.now();
+    const r = await agentLoop('mock-quota', 'anything');
+    record('quota honesty: 429 with quota wording fails the run loudly',
+      !!r.failed && /quota/i.test(r.failed), 'failed=' + (r.failed || '').slice(0, 60), Date.now() - t0);
+  }
+
+  // 15. RunState (L6): snapshot persists per tool + resume brief armed
+  {
+    const fs = require('fs');
+    const app = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
+    const core = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'loopcore.js'), 'utf8');
+    record('RunState: mid-run snapshot persisted + resume brief carried',
+      app.indexOf('LoopCore.snapshotRun(toolResults)') >= 0 &&
+      app.indexOf('LoopCore.resumeBrief(s.runSnap)') >= 0 &&
+      core.indexOf('function resumeBrief') >= 0, 'static check', 0);
+  }
+
+  // 16. edit ladder (L2b): single implementation, recovery surfaced to the model
+  {
+    const fs = require('fs');
+    const tools = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'tools.js'), 'utf8');
+    const core = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'loopcore.js'), 'utf8');
+    const localLadder = tools.indexOf('function simScore') >= 0; // must be delegated, not duplicated
+    record('edit ladder: delegated to LoopCore, recovery surfaced, no duplicate',
+      tools.indexOf('LoopCore.editLadder(text, oldStr, newStr)') >= 0 &&
+      tools.indexOf('[recovered:') >= 0 && core.indexOf('function editLadder') >= 0 && !localLadder, 'static check', 0);
+  }
+
+  // 17. repo-map budget (L3): context-scaled budget + degradation renderer
+  {
+    const fs = require('fs');
+    const app = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
+    const map = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'repomap.js'), 'utf8');
+    record('repo-map: budget scales with model context + graceful degradation',
+      app.indexOf('REVAMAP.budgetFor(ctxFor(') >= 0 &&
+      map.indexOf('function budgetFor') >= 0 && map.indexOf('more files') >= 0, 'static check', 0);
+  }
+
+  // 18. watchdog (L1): every hangable tool has a budget + wedge cooldown
+  {
+    const fs = require('fs');
+    const core = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'loopcore.js'), 'utf8');
+    const budgeted = ['web_search', 'web_read', 'run_check', 'fetch_asset', 'image_gen'].every(t => core.indexOf(t + ':') >= 0);
+    record('watchdog: hangable tools budgeted + 3-strike wedge cooldown',
+      budgeted && core.indexOf('WEDGE_COOLDOWN_MS') >= 0 && core.indexOf('unresponsive') >= 0, 'static check', 0);
   }
 
   const pass = results.filter(r => r.pass).length;

@@ -41,7 +41,7 @@ const server = http.createServer(async (req, res) => {
 
   // ---- OpenAI-compatible ----
   if (url.pathname === '/v1/models') {
-    return json(res, 200, { data: [{ id: MODEL_ID }, { id: 'mock-pro' }, { id: 'mock-agent' }, { id: 'mock-shell' }, { id: 'mock-linux' }] });
+    return json(res, 200, { data: [{ id: MODEL_ID }, { id: 'mock-pro' }, { id: 'mock-agent' }, { id: 'mock-shell' }, { id: 'mock-linux' }, { id: 'mock-broken-args' }, { id: 'mock-batch' }, { id: 'mock-flood' }, { id: 'mock-quota' }] });
   }
   if (url.pathname === '/v1/chat/completions' && req.method === 'POST') {
     const body = await readBody(req);
@@ -142,6 +142,41 @@ const server = http.createServer(async (req, res) => {
         return res.end('data: [DONE]\n\n');
       }
       return json(res, 200, empty);
+    }
+    // malformed-arguments simulator: round 1 emits a tool call whose JSON is
+    // broken (truncated string) — the loop must not crash, execute with {}
+    // and continue; the round after the tool result confirms recovery
+    if (body.model === 'mock-broken-args') {
+      const hadToolResult = body.messages.some(m => m.role === 'tool');
+      if (!hadToolResult) {
+        return json(res, 200, { choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'call-b1', type: 'function', function: { name: 'write_file', arguments: '{path: "demo.txt", content: "hi"' } }] } }] });
+      }
+      return json(res, 200, { choices: [{ message: { role: 'assistant', content: 'Recovered from malformed arguments — run completed.' } }] });
+    }
+    // multi-tool batch simulator: one assistant round carries TWO tool calls;
+    // both must execute and both results must reach the model
+    if (body.model === 'mock-batch') {
+      const nTool = body.messages.filter(m => m.role === 'tool').length;
+      if (nTool === 0) {
+        return json(res, 200, { choices: [{ message: { role: 'assistant', content: '', tool_calls: [
+          { id: 'call-x1', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'a.txt', content: 'alpha' }) } },
+          { id: 'call-x2', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'b.txt', content: 'beta' }) } }
+        ] } }] });
+      }
+      return json(res, 200, { choices: [{ message: { role: 'assistant', content: 'Batch done — ' + nTool + ' tool results received.' } }] });
+    }
+    // transcript-flood simulator: a tool returns a huge output; the loop must
+    // compact (LoopCore.compactTranscript) and still finish coherently
+    if (body.model === 'mock-flood') {
+      const hadToolResult = body.messages.some(m => m.role === 'tool');
+      if (!hadToolResult) {
+        return json(res, 200, { choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'call-f1', type: 'function', function: { name: 'shell_exec', arguments: JSON.stringify({ command: 'flood' }) } }] } }] });
+      }
+      return json(res, 200, { choices: [{ message: { role: 'assistant', content: 'flood handled — run completed coherently.' } }] });
+    }
+    // hard-quota simulator: every call rejected with the provider's quota wording
+    if (body.model === 'mock-quota') {
+      return json(res, 429, { error: { message: 'You exceeded your current quota, please check your plan and billing details.' } });
     }
     const text = replyFor(body.messages || []);
     if (body.stream) {
