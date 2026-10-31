@@ -675,7 +675,23 @@
       if (!txt) { if (spinRow) { spinRow.remove(); spinRow = null; } return; }
       var act = ensureAct();
       if (!spinRow) spinRow = H.el('<div class="act-row spin-row"><span class="spin"></span><span class="stxt"></span></div>');
-      spinRow.querySelector('.stxt').textContent = txt;
+      var stEl = spinRow.querySelector('.stxt');
+      /* ZCode motion v2 — wf-swap: the verb exits up, the new one enters
+         from below (fast/base tokens); first paint writes directly */
+      var cur = stEl.textContent;
+      if (cur && cur !== txt) {
+        var old = document.createElement('span');
+        old.className = 'rv2-swap-old';
+        old.style.display = 'inline-block';
+        old.textContent = cur;
+        var nw = document.createElement('span');
+        nw.className = 'rv2-swap-new';
+        nw.style.display = 'inline-block';
+        nw.textContent = txt;
+        stEl.innerHTML = '';
+        stEl.appendChild(old); stEl.appendChild(nw);
+        setTimeout(function () { if (nw.parentNode === stEl) { stEl.textContent = txt; } }, 210);
+      } else stEl.textContent = txt;
       act.appendChild(spinRow);
       if (stick) scroller.scrollTop = scroller.scrollHeight;
     }
@@ -708,7 +724,7 @@
       /* ZCode-style Thinking row: brain icon + "Thinking" + a live faded
          preview of the actual reasoning text + ticking duration — all on
          one inline row, never a separate panel above the reply */
-      thoughtRow = H.el('<div class="act-row live m-in"><i data-lucide="brain"></i><b class="rv-flow-text">Thinking</b><span class="sep">·</span><span class="rprev"></span><span class="meta">a few seconds</span></div>');
+      thoughtRow = H.el('<div class="act-row live m-in"><i data-lucide="brain"></i><span class="rv2-beat" style="width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none"></span><b class="rv-flow-text">Thinking</b><span class="sep">·</span><span class="rprev"></span><span class="meta">a few seconds</span></div>');
       act.insertBefore(thoughtRow, pendRow || spinRow || null);
       H.icons();
     }
@@ -852,7 +868,7 @@
         row.classList.remove('live');
         row.innerHTML = '<i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i>' + flat;
       } else {
-        row = H.el('<div class="act-row m-in"><i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i>' + flat + '</div>');
+        row = H.el('<div class="act-row m-in rv2-land"><i data-lucide="' + (info.ok === false ? 'alert-circle' : verbIconFor(info.name)) + '"></i>' + flat + '</div>');
         ensureAct().appendChild(row);
       }
       H.icons();
@@ -3117,6 +3133,27 @@
   if (window.REVAMODELDB && navigator.onLine) {
     try { window.REVAMODELDB.refresh().catch(function () {}); } catch (e) {}
   }
+  /* ZCode motion v2: pause ALL animation while the document is hidden —
+     animations cannot settle in a hidden document and Chromium's timeline
+     holds their elements, so background streaming leaks memory. */
+  try {
+    var mpHidden = function () { document.documentElement.toggleAttribute('data-document-hidden', document.hidden); };
+    document.addEventListener('visibilitychange', mpHidden);
+    mpHidden();
+  } catch (eMp) { }
+  /* the hero face: blinks on its own rhythm, hops when a skill loads */
+  try {
+    var heroFace = document.querySelector('#chatEmpty .rv2-face');
+    if (heroFace) {
+      setInterval(function () { heroFace.classList.add('blink'); setTimeout(function () { heroFace.classList.remove('blink'); }, 600); }, 5200);
+      var _alOld = autoLoadSkills;
+      autoLoadSkills = function (text, sess) {
+        var added = _alOld(text, sess);
+        if (added && added.length) { heroFace.classList.add('hop'); setTimeout(function () { heroFace.classList.remove('hop'); }, 700); }
+        return added;
+      };
+    }
+  } catch (eFace) { }
   /* L6: restore a queue that survived process death */
   try {
     if (db.settings.pendingQueue && db.settings.pendingQueue.length) {

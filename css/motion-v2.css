@@ -1,0 +1,99 @@
+/* ============================================================
+   ZCODE MOTION v2 — token system + the new animation families
+   (ported from zai-org/ZCode, Apache-2.0 — see THIRD_PARTY_NOTICES.md)
+   Load AFTER app.css and the motion block. Every rule carries its
+   reduced-motion guard.
+   ============================================================ */
+
+/* ---------- 1. THE MOTION TOKEN SYSTEM ----------
+   Four durations, one easing family, one heartbeat. Every animation
+   in the harness consumes these — coherence is the design. */
+#mono-harness {
+  --mp-fast: 120ms;
+  --mp-base: 160ms;
+  --mp-enter: 200ms;
+  --mp-ink: 320ms;
+  --mp-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --mp-beat: 1.6s;
+}
+
+/* ---------- 2. HIDDEN-DOCUMENT MOTION PAUSE ----------
+   Animations cannot settle while the document is hidden — Chromium's
+   DocumentTimeline holds the removed elements and the whole subtree,
+   so background streaming accumulates memory without bound. Pausing
+   all motion while hidden releases them (upstream bugfix, copied). */
+html[data-document-hidden] *,
+html[data-document-hidden] *::before,
+html[data-document-hidden] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* ---------- 3. WF-SWAP — status words change with an exit/enter ----------
+   Old word exits up + fades (160ms), new word enters from below (200ms) */
+@keyframes rv2-swap-old { to { opacity: 0; transform: translateY(-6px); } }
+@keyframes rv2-swap-new { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+#mono-harness .rv2-swap-old { animation: rv2-swap-old var(--mp-base) var(--mp-ease) both; }
+#mono-harness .rv2-swap-new { animation: rv2-swap-new var(--mp-enter) var(--mp-ease) both; }
+
+/* ---------- 4. WF-LAND — the landing flash ----------
+   A newly-landed row lights its background once (33% hold) and fades —
+   a one-shot "this row just arrived", never a persistent focus band */
+@keyframes rv2-land { 0%, 33% { background-color: var(--surface-hover, rgba(255,255,255,.06)); } 100% { background-color: transparent; } }
+#mono-harness .rv2-land { animation: rv2-land 1.2s var(--mp-ease) 1; border-radius: 10px; }
+
+/* ---------- 5. THE HEARTBEAT LAMP ----------
+   Running indicators pulse together on the shared beat — spine, cards,
+   thinking rows: one rhythm, the harness feels alive as ONE system */
+@keyframes rv2-beat { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 45%, transparent); } 50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 12%, transparent); } }
+#mono-harness .rv2-beat { animation: rv2-beat var(--mp-beat) var(--mp-ease) infinite; }
+
+/* ---------- 6. LIST MARKER FADE — markers follow their rows in ---------- */
+@keyframes rv2-marker-in { from { color: transparent; } to { color: var(--ink3); } }
+#mono-harness .rv2-marker-in { animation: rv2-marker-in 900ms cubic-bezier(0.16, 1, 0.3, 1) var(--d, 0ms) both; }
+
+/* ---------- 7. ALARM RING — quota/pause notifications ---------- */
+@keyframes rv2-ring { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(10deg); } }
+#mono-harness .rv2-ring { animation: rv2-ring 600ms ease-in-out infinite; display: inline-block; }
+
+/* ---------- 8. CHARGE SWEEP — progress bars with a moving highlight ---------- */
+@keyframes rv2-charge { 0% { opacity: .35; transform: translateX(-120%); } 50% { opacity: .9; } 100% { opacity: .35; transform: translateX(260%); } }
+#mono-harness .rv2-charge { position: relative; overflow: hidden; }
+#mono-harness .rv2-charge::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: min(3.5rem, 70%); background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--accent) 62%, transparent), transparent); animation: rv2-charge 1.15s cubic-bezier(0.65, 0, 0.35, 1) infinite; transform: translateX(-120%); }
+
+/* ---------- 9. INTERACTION COUNTDOWN — scaleX timer on a window ---------- */
+@keyframes rv2-countdown { from { transform: scaleX(var(--mp-progress, 1)); } to { transform: scaleX(0); } }
+#mono-harness .rv2-countdown { transform-origin: left; animation: rv2-countdown var(--mp-remaining, 240000ms) linear forwards; }
+
+/* ---------- 10. TITLE MARQUEE — overflow titles travel on hover ---------- */
+#mono-harness .rv2-mq { overflow: hidden; white-space: nowrap; }
+#mono-harness .rv2-mq > span { display: inline-block; }
+#mono-harness .rv2-mq:hover > span, #mono-harness .rv2-mq.rv2-mq-go > span { animation: rv2-mq 2.6s linear infinite; }
+@keyframes rv2-mq { 0%, 15% { transform: translateX(0); } 85%, 100% { transform: translateX(calc(-100% + 150px)); } }
+
+/* ---------- 11. THE FACE (mascot) ----------
+   Identity color never changes with expression; motion acts ONLY on the
+   eyes; the body stays still. Blink/hop/float/shake, dots expression. */
+#mono-harness .rv2-face { display: grid; place-items: center; width: 100%; height: 100%; }
+#mono-harness .rv2-face-body { display: flex; gap: 10px; transition: transform 360ms ease-in-out; }
+#mono-harness .rv2-face-eye { width: 9px; height: 12px; background: var(--accent); border-radius: 5px; transform-origin: center; opacity: .85; }
+#mono-harness .rv2-face.blink .rv2-face-eye { animation: rv2-blink 230ms ease-in-out 2; }
+#mono-harness .rv2-face.hop .rv2-face-body { animation: rv2-hop 240ms ease-in-out 2; }
+#mono-harness .rv2-face.float .rv2-face-body { animation: rv2-float 600ms ease-in-out 1; }
+#mono-harness .rv2-face.shake { animation: rv2-shake 90ms linear 3; }
+@keyframes rv2-blink { 0%, 70%, 100% { transform: scaleY(1); opacity: .85; } 35% { transform: scaleY(0.33); opacity: 0; } }
+@keyframes rv2-hop { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-3px); } 70% { transform: translateY(2px); } }
+@keyframes rv2-float { 0%, 100% { transform: translateY(0); } 30% { transform: translateY(-1.5px); } 70% { transform: translateY(1.5px); } }
+@keyframes rv2-shake { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-1.4px, -0.5px); } 75% { transform: translate(1.4px, 0.5px); } }
+#mono-harness .rv2-face.blink .rv2-face-eye:nth-child(2) { animation-delay: 0ms; }
+
+/* ---------- reduced motion: everything above switches off ---------- */
+@media (prefers-reduced-motion: reduce) {
+  #mono-harness .rv2-swap-old, #mono-harness .rv2-swap-new, #mono-harness .rv2-land,
+  #mono-harness .rv2-beat, #mono-harness .rv2-marker-in, #mono-harness .rv2-ring,
+  #mono-harness .rv2-charge, #mono-harness .rv2-countdown, #mono-harness .rv2-mq > span,
+  #mono-harness .rv2-face.blink .rv2-face-eye, #mono-harness .rv2-face.hop .rv2-face-body,
+  #mono-harness .rv2-face.float .rv2-face-body, #mono-harness .rv2-face.shake { animation: none !important; }
+  #mono-harness .rv2-charge::after { animation: none !important; opacity: .2; transform: none; }
+  #mono-harness .rv2-countdown { transform: scaleX(var(--mp-progress, 1)); }
+}

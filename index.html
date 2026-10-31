@@ -8,6 +8,7 @@
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/motion-v2.css">
   <link rel="stylesheet" href="css/ui2.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -173,7 +174,9 @@
           <button class="iconb" id="setupDismiss" style="width:30px;height:30px" aria-label="Dismiss"><i data-lucide="x" style="width:15px;height:15px"></i></button>
         </div>
         <div class="empty-wrap" id="chatEmpty">
-          <div class="orb"><i data-lucide="sparkles"></i></div>
+          <div class="orb rv2-face" data-expression="dots" aria-hidden="true">
+            <span class="rv2-face-body"><span class="rv2-face-eye"></span><span class="rv2-face-eye"></span></span>
+          </div>
           <p>Fresh context window.<br>Everything you send goes to your configured provider.</p>
           <div class="suggs">
             <button class="chip" data-sugg="Explain how the context meter and compaction work in this app">Explain how this app works</button>
