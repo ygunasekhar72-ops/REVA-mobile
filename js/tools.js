@@ -762,189 +762,6 @@
         '\n' + (errors.length ? 'FIX the errors above, then run_check again — report done only when the console is clean.' : 'Console is clean. Check the screenshot stats match what the user asked for.') + saved;
       return out;
     },
-    /* ---- gen3d: AI 3D generation (Microsoft TRELLIS via NVIDIA BYOK) ----
-       text-to-3d or image-to-3d → a real GLB saved into the project.
-       SCARCE RESOURCE: 6 generations/day, enforced before the API call.
-       CORS note: ai.api.nvidia.com must allow the WebView origin (the APK
-       talks direct; desktop browsers may need the local proxy). */
-    gen3d: async function (a) {
-      if (!window.LoopCore) return 'Error: loopcore unavailable';
-      var today = new Date().toISOString().slice(0, 10);
-      /* BACKEND SELECTION (v2 — the 3D model registry pattern):
-         nvidia (default — hosted TRELLIS, examples + fast text assets),
-         meshy (real image-to-3d, free monthly credits — phone-only users),
-         bridge (self-hosted NIM on the user's RTX — unlimited, real images).
-         Each backend has its OWN quota bucket and key. */
-      var backend = String(a.backend || 'nvidia').toLowerCase();
-      if (backend === 'bridge' && !Store.db.settings.gen3dBridge) backend = 'nvidia';
-      var bkey = 'gen3d_' + backend;
-      var dbq = (Store.db.settings[bkey] = Store.db.settings[bkey] || { date: today, used: 0 });
-      var limit = backend === 'nvidia' ? 6 : 40;
-      var q = LoopCore.gen3dQuota(dbq, today, limit);
-      if (!q.allowed) return 'Error: the ' + backend + ' 3D-generation quota is used up (' + limit + '/' + limit + ' today) — it resets at midnight. ' + (backend === 'nvidia' ? 'A REVA Bridge (self-hosted NIM on an RTX PC) or a Meshy key removes this ceiling.' : 'Tell the user; try the nvidia backend for fast example-tier assets.') ;
-      var nv = (Store.db.providers || []).find(function (p) { return /nvidia/i.test(p.name) && p.key; });
-      var meshyKey = String(Store.db.settings.gen3dMeshyKey || '').trim();
-      if (backend === 'meshy' && !meshyKey) return 'Error: no Meshy key — add it in Settings (meshy.ai → API keys; the free tier includes monthly credits and accepts real images).';
-      if (backend === 'nvidia' && !nv) return 'Error: no NVIDIA provider with an API key — gen3d needs one (Settings → Providers). Multiple keys can be pasted comma-separated — gen3d rotates across them.';
-
-      var mode;
-      var body = null;
-      var image = null;
-      if (a.image_path) {
-        image = String(a.image_path);
-        var img = Store.active().vfsContent[image];
-        if (img === undefined) return notFound(image);
-        if (String(img).indexOf('data:image') !== 0) return 'Error: image_path must be an image (png/jpg) in the workspace or project';
-        mode = 'image';
-      } else if (a.prompt) {
-        mode = 'text';
-      } else return 'Error: provide a prompt (text-to-3d) or image_path (image-to-3d)';
-
-      /* same-day dedupe: the same prompt/image already generated today is
-         reused — quota is never spent twice on the same asset */
-      var ck = LoopCore.gen3dCacheKey(a.prompt || image, mode + ':' + backend, today);
-      var cache = (Store.db.settings.gen3dCache = Store.db.settings.gen3dCache || {});
-      if (cache[ck]) {
-        var cachedPath = cache[ck].path;
-        if (Store.active().vfsContent[cachedPath] !== undefined) {
-          return 'Reused today\'s existing generation: ' + cachedPath + ' — the same asset was already generated today (quota saved: ' + q.remaining + ' of ' + limit + ' left). Load it with GLTFLoader.';
-        }
-      }
-      var path = String(a.project_path || ('assets/models/gen-' + Date.now().toString(36) + '.glb'));
-      var finish = function (dataUrl) {
-        if (dataUrl.length > 30 * 1024 * 1024) return 'Error: the generated asset exceeds 30MB — too large for the project storage';
-        var s = Store.active();
-        s.vfsContent[normPath(path)] = dataUrl;
-        dbq.used = (dbq.date === today ? (dbq.used || 0) : 0) + 1;
-        dbq.date = today;
-        cache[ck] = { path: normPath(path) };
-        Store.save();
-        var left = Math.max(0, limit - dbq.used);
-        return 'Generated 3D model (' + mode + '-to-3d via ' + backend + '): ' + normPath(path) + ' — ' + Math.round(dataUrl.length * 0.75 / 1024) + 'KB.\n' +
-          'Load it in the scene with GLTFLoader using this exact path. Quota: ' + dbq.used + ' of ' + limit + ' used today (' + left + ' left).';
-      };
-      var dlToDataUrl = function (u) {
-        return fetch(u).then(function (r) { if (!r.ok) throw new Error('download failed (HTTP ' + r.status + ')'); return r.blob(); }).then(function (bl) {
-          return new Promise(function (r) { var fr = new FileReader(); fr.onload = function () { r(fr.result); }; fr.readAsDataURL(bl); });
-        });
-      };
-
-      /* ---- backend: MESHY (real image-to-3d, async task + poll) ---- */
-      if (backend === 'meshy') {
-        if (mode !== 'image') return 'Error: the meshy backend is image-to-3d — provide image_path (text-to-3d runs on the nvidia backend)';
-        setStatus('Meshy: submitting task…');
-        var mk = meshyKey;
-        var sub = await fetch('https://api.meshy.ai/openapi/v2/image-to-3d', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mk },
-          body: JSON.stringify({ image_url: img, ai_model: 'meshy-4', enable_pbr: true })
-        }).catch(function (e) { return { ok: false, error: e }; });
-        if (!sub.ok) {
-          var et = await sub.text().catch(function () { return ''; });
-          return 'Error: Meshy task submit failed (HTTP ' + sub.status + ') — ' + et.slice(0, 240);
-        }
-        var taskId = (await sub.json().catch(function () { return null; }) || {}).result;
-        if (!taskId) return 'Error: Meshy did not return a task id';
-        for (var poll = 0; poll < 60; poll++) {
-          await new Promise(function (r) { setTimeout(r, 5000); });
-          var st = await fetch('https://api.meshy.ai/openapi/v2/image-to-3d/' + taskId, { headers: { 'Authorization': 'Bearer ' + mk } }).catch(function () { return null; });
-          if (!st || !st.ok) continue;
-          var sj = await st.json().catch(function () { return null; });
-          var status = sj && sj.status;
-          setStatus('Meshy: ' + status + (sj && sj.progress ? ' ' + sj.progress + '%' : ''));
-          if (status === 'SUCCEEDED') {
-            var glbUrl = sj.model_urls && sj.model_urls.glb;
-            if (!glbUrl) return 'Error: Meshy finished but no GLB url was returned';
-            var data = await dlToDataUrl(glbUrl);
-            return finish(data);
-          }
-          if (status === 'FAILED') return 'Error: Meshy generation failed — tell the user and adjust the image or try another backend';
-        }
-        return 'Error: Meshy generation timed out (5 min) — the task may still finish on meshy.ai';
-      }
-
-      /* ---- backend: BRIDGE (self-hosted NIM on the user's RTX — real images, unlimited) ---- */
-      if (backend === 'bridge') {
-        var bridgeBase = String(Store.db.settings.gen3dBridge || '').replace(/\/+$/, '');
-        if (!bridgeBase) return 'Error: no REVA Bridge configured — Settings → 3D Bridge (the NIM container URL on your PC)';
-        if (bridgeBase.indexOf('http') !== 0) return 'Error: bridge URL must start with http';
-        var bHost = bridgeBase.split('/')[2];
-        if (/(^|\.)local$/.test(bHost) === false && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.)/.test(bHost.split(':')[0]) === false) { /* LAN or localhost only for bridges */ }
-        body = { image: img || undefined, prompt: mode === 'text' ? a.prompt : undefined, slat_cfg_scale: 3, ss_cfg_scale: 7.5, slat_sampling_steps: 25, ss_sampling_steps: 25, seed: Math.floor(Math.random() * 100000) };
-        setStatus('Bridge: generating on your RTX…');
-        var br = await fetch(bridgeBase + '/v1/infer', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body) }).catch(function (e) { return { ok: false, error: e }; });
-        if (!br.ok) return 'Error: REVA Bridge generation failed (HTTP ' + br.status + ') — is the NIM container running?';
-        var btext = await br.text().catch(function () { return ''; });
-        var bg = LoopCore.extractGlb(btext);
-        if (!bg) return 'Error: bridge response had no GLB — raw: ' + btext.slice(0, 400);
-        var bdata = bg.kind === 'url' ? await dlToDataUrl(bg.value) : bg.value;
-        return finish(bdata);
-      }
-
-      /* ---- backend: NVIDIA hosted TRELLIS (default) ---- */
-      if (!nv) return 'Error: no NVIDIA provider with an API key — gen3d needs one (Settings → Providers). Multiple keys can be pasted comma-separated — gen3d rotates across them.';
-
-      var bodyN = { slat_cfg_scale: 3, ss_cfg_scale: 7.5, slat_sampling_steps: 25, ss_sampling_steps: 25, seed: Math.floor(Math.random() * 100000) };
-      if (mode === 'image') {
-        /* the hosted preview accepts ONLY bundled examples — real images
-           need the meshy or bridge backends (honest limitation) */
-        return 'Error: the hosted NVIDIA preview only accepts its bundled example images — real image-to-3d requires the meshy backend (free tier, real images) or a REVA Bridge (self-hosted NIM). Use text-to-3d here for original assets.';
-      }
-      bodyN.prompt = String(a.prompt).slice(0, 1000);
-
-
-      /* L1 load handling: rotate across the USER'S OWN keys (comma-separated
-         in the provider key field — never pooled from anywhere else), honor
-         429 Retry-After, and pin the host hard (https, allowlisted).
-         Desktop-test override: location-gated (127.0.0.1/localhost only) so
-         the CORS-blocked desktop can route via the local test proxy; on the
-         APK the real host is always used. */
-      var HOST = 'https://ai.api.nvidia.com';
-      try {
-        var hn = location.hostname;
-        if ((hn === '127.0.0.1' || hn === 'localhost') && Store.db.settings.gen3dBase) HOST = String(Store.db.settings.gen3dBase);
-      } catch (eH) { }
-      if (HOST.indexOf('https://') !== 0 && HOST.indexOf('http://127.0.0.1') !== 0 && HOST.indexOf('http://localhost') !== 0) return 'Error: gen3d endpoint must be https or the local test proxy';
-      var keys = (window.AI && AI.keyList ? AI.keyList(nv) : String(nv.key || '').split(/[,;\n]/)).filter(function (k) { return k && k.trim(); });
-      if (!keys.length) keys = [String(nv.key || '')];
-      /* two passes over the keys: the trial gateway resets ~38s sync
-         connections for queued jobs — a retry often lands on a warm worker */
-      var res = null, lastErr = '', attempt = 0, waitMs = 0;
-      var maxAttempts = Math.max(2, keys.length * 2);
-      for (attempt = 0; attempt < maxAttempts; attempt++) {
-        if (waitMs) await new Promise(function (r) { setTimeout(r, waitMs); });
-        var key = keys[attempt % keys.length].trim();
-        var r2;
-        try {
-          r2 = await fetch(HOST + '/v1/genai/microsoft/trellis', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': 'Bearer ' + key },
-            body: JSON.stringify(bodyN)
-          });
-        } catch (e) { lastErr = (e && e.message || e) + ' (network or CORS; on desktop browsers the local proxy may be needed)'; continue; }
-        if (r2.ok) { res = r2; break; }
-        var et = await r2.text().catch(function () { return ''; });
-        lastErr = 'HTTP ' + r2.status + ' — ' + et.slice(0, 240);
-        if (r2.status === 429) {
-          var ra = parseInt(r2.headers.get('retry-after') || '0', 10);
-          waitMs = Math.min(ra * 1000 || 2000, 30000);
-        }
-        if (r2.status === 401 && keys.length === 1) break; // dead single key
-      }
-      if (!res) return 'Error: 3D generation failed after ' + attempt + ' attempt(s) across ' + keys.length + ' key(s) — ' + lastErr;
-      var text = await res.text().catch(function () { return ''; });
-
-      var glb = LoopCore.extractGlb(text);
-      if (!glb) return 'Error: could not locate a GLB in the generation response — raw response (truncated): ' + text.slice(0, 600);
-      var dataUrl = glb.value;
-      if (glb.kind === 'url') {
-        var dl = await fetch(glb.value).catch(function () { return null; });
-        if (!dl || !dl.ok) return 'Error: the generated model URL could not be downloaded: ' + glb.value;
-        var blob = await dl.blob().catch(function () { return null; });
-        if (!blob) return 'Error: model download failed';
-        dataUrl = await new Promise(function (r) { var fr = new FileReader(); fr.onload = function () { r(fr.result); }; fr.readAsDataURL(blob); });
-      }
-      return finish(dataUrl);
-    },
     screenshot: async function (a) {
       /* capture the live built-in browser if it has canvases; otherwise render args.path hidden */
       var f = document.getElementById('wbFrame');
@@ -1360,7 +1177,6 @@
     if (name === 'image_gen') return { label: 'Imagining ' + String(args.prompt || '').slice(0, 36), meta: 'FLUX', ok: ok, target: args.path || 'images/' };
     if (name === 'run_check') return { label: 'Verify · ' + String(args.path || '').split('/').pop(), meta: 'console + visual', ok: ok };
     if (name === 'screenshot') return { label: 'Screenshot', meta: 'visual check', ok: ok };
-    if (name === 'gen3d') return { label: 'Generating 3D asset', meta: 'AI · TRELLIS', ok: ok };
     if (name === 'fetch_asset') return { label: 'Asset · ' + String(args.path || '').split('/').pop(), meta: 'download', ok: ok };
     if (name === 'checkpoint') return { label: 'Checkpoint · ' + String(args.label || '').slice(0, 26), meta: 'saved', ok: ok };
     if (name === 'rollback') return { label: 'Rollback · ' + String(args.label || '').slice(0, 26), meta: 'restored', ok: ok };
@@ -1399,7 +1215,6 @@
     { type: 'function', function: { name: 'browser_read', description: 'Read a web page as clean markdown AND open it in the built-in browser so the user can see it. Best way to show a page to the user while studying it.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     { type: 'function', function: { name: 'run_check', description: 'Build-quality verification: renders an HTML entry (workspace or lib/ path) in a hidden frame, captures its console errors/warnings and a screenshot analysis (canvas size, non-blank %, dominant colors), and saves the screenshot into workspace/screenshots/. ALWAYS run this after building or changing anything visual/interactive; fix every error and run again until the console is clean before reporting done.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'HTML entry: workspace path or lib/<slug>/index.html' }, seconds: { type: 'number', description: 'seconds to let it run before capture (default 3)' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'screenshot', description: 'Capture what the built-in browser is currently showing (or render a given HTML path) — returns canvas size, non-blank % and dominant colors, and saves a PNG to workspace/screenshots/. Use to SEE the current state of a visual build.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'optional HTML path to render and capture (defaults to the current browser page)' } } } } },
-    { type: 'function', function: { name: 'gen3d', description: 'Generate a REAL 3D model (GLB) with AI from a text description or an image — saved into the project and loadable with GLTFLoader. SCARCE: limited to 6 generations per day — craft the prompt carefully, describe the asset fully in one prompt, reuse the result, and never regenerate for trivial changes. Use for original assets; use fetch_asset for existing known models.', parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'text-to-3d: full description of the asset (shape, style, materials, detail level)' }, image_path: { type: 'string', description: 'image-to-3d: workspace path of a png/jpg to convert into a 3D model' }, project_path: { type: 'string', description: 'where to save the GLB (default assets/models/gen-<id>.glb)' } } } } },
     { type: 'function', function: { name: 'fetch_asset', description: 'Download a real asset (3D model .glb/.gltf, texture, image, audio) from a public CORS-enabled URL into the workspace — real assets beat geometric primitives. Cap 8 MB. Use for games/3D: fetch models and textures from github raw / jsdelivr / unpkg.', parameters: { type: 'object', properties: { url: { type: 'string' }, path: { type: 'string', description: 'workspace path to save to, e.g. assets/models/ship.glb' } }, required: ['url', 'path'] } } },
     { type: 'function', function: { name: 'checkpoint', description: 'Snapshot the whole workspace before a risky experiment or a big refactor. Roll back with rollback{label} if it goes wrong.', parameters: { type: 'object', properties: { label: { type: 'string', description: 'short name, e.g. "before physics refactor"' } }, required: ['label'] } } },
     { type: 'function', function: { name: 'rollback', description: 'Restore the workspace to a saved checkpoint (latest one, or by label). Use when an experiment made things worse.', parameters: { type: 'object', properties: { label: { type: 'string' } } } } },

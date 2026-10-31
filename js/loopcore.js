@@ -181,49 +181,5 @@
     });
   }
 
-  /* ---- gen3d daily quota (scarce resource: 6 generations/day) ----
-     Pure: state is the persisted record {date:'YYYY-MM-DD', used:n}. */
-  function gen3dQuota(state, today, limit) {
-    limit = limit || 6;
-    var used = state && state.date === today ? (state.used || 0) : 0;
-    return {
-      allowed: used < limit,
-      used: used,
-      remaining: Math.max(0, limit - used),
-      limit: limit,
-      today: today
-    };
-  }
-
-  /* extract a GLB payload from a TRELLIS-style JSON response:
-     (a) the real NVIDIA shape: {"artifacts":[{"base64":"<glb bytes>"}]}
-     (b) an https URL ending in .glb, or an inline base64 model block */
-  function extractGlb(responseText) {
-    var s = String(responseText || '');
-    try {
-      var j = JSON.parse(s);
-      if (j && j.artifacts && j.artifacts[0] && j.artifacts[0].base64) {
-        return { kind: 'dataurl', value: 'data:model/gltf-binary;base64,' + j.artifacts[0].base64 };
-      }
-      if (j && j.assets && typeof j.assets.glb === 'string') return { kind: 'url', value: j.assets.glb };
-    } catch (e) { /* not JSON — fall through to the pattern scans */ }
-    var url = s.match(/https:\/\/[^"'\s\\]+\.glb(?:\?[^"'\s\\]+)?/i);
-    if (url) return { kind: 'url', value: url[0] };
-    var b64 = s.match(/"(?:glb|model|asset|object)[^"]*"\s*:\s*"(data:[^"]{100,})"/i);
-    if (b64) return { kind: 'dataurl', value: b64[1] };
-    var raw = s.match(/data:(?:application\/octet-stream|model\/gltf-binary)[^"']{500,}/i);
-    if (raw) return { kind: 'dataurl', value: raw[0] };
-    return null;
-  }
-
-  /* ---- gen3d cache key: same prompt+image on the same day = reuse,
-     never spend quota twice on the same asset ---- */
-  function gen3dCacheKey(prompt, imagePath, today) {
-    var src = String(prompt || '') + '|' + String(imagePath || '');
-    var h = 5381;
-    for (var i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) >>> 0;
-    return 'g3d:' + today + ':' + h.toString(36);
-  }
-
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, gen3dQuota: gen3dQuota, extractGlb: extractGlb, gen3dCacheKey: gen3dCacheKey };
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS };
 });
