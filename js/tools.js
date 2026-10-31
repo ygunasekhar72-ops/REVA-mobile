@@ -1331,6 +1331,140 @@
       var ids = window.TOOLKIT.uuidGen(String(a.kind || 'uuid4'), parseInt(a.count, 10) || 1, rnd);
       return ids.join('\n');
     },
+    /* ---------- batch 2 utilities (46 → 58) ---------- */
+    html_to_markdown: function (a) {
+      var src;
+      if (a.html !== undefined) src = String(a.html);
+      else if (a.file !== undefined) { var r = readLike(a.file); if (r.err) return r.err; src = r.src; }
+      else return 'Error: html_to_markdown needs html (text) or file (path)';
+      var md = window.TOOLKIT.htmlToMarkdown(src);
+      return md.length > 12000 ? md.slice(0, 12000) + '\n… (truncated)' : (md || '(empty)');
+    },
+    rss_parse: async function (a) {
+      var xml;
+      if (a.xml !== undefined) xml = String(a.xml);
+      else if (a.url !== undefined) {
+        var res = await fetch(String(a.url));
+        xml = await res.text();
+        if (res.status >= 400) return 'Error: HTTP ' + res.status + ' fetching the feed';
+      }
+      else return 'Error: rss_parse needs xml (text) or url';
+      var f = window.TOOLKIT.rssParse(xml);
+      if (!f.items.length) return 'Error: no feed items found — is this an RSS/Atom URL?';
+      var lines = [f.title ? 'Feed: ' + f.title + (f.atom ? ' (Atom)' : ' (RSS)') : (f.atom ? 'Atom feed' : 'RSS feed')];
+      f.items.forEach(function (it) {
+        lines.push('- ' + it.title + (it.link ? '\n  ' + it.link : '') + (it.date ? '\n  ' + it.date : ''));
+      });
+      return lines.join('\n');
+    },
+    qr_generate: function (a) {
+      var q;
+      try { q = window.TOOLKIT.qrMake(String(a.text || ''), a.ecc === 'M' ? 'M' : 'L'); }
+      catch (e) { return 'Error: ' + e.message; }
+      var out = ''.concat('QR generated — v', q.version, ' (', q.size, 'x', q.size, ' modules), ECC ', q.ecc, ', mask ', q.mask);
+      if (a.path) {
+        var p = normPath(a.path);
+        var w = IMPL.write_file({ path: p, content: q.svg });
+        if (String(w).indexOf('Error') === 0) return w;
+        out += '\nSaved ' + p + ' (' + Math.round(q.svg.length / 1024) + ' KB SVG) — embed with <img src="' + p + '"> or open it.';
+      } else {
+        out += '\n' + q.svg.slice(0, 400) + '… (pass path to save the full SVG)';
+      }
+      return out;
+    },
+    text_stats: function (a) {
+      var src;
+      if (a.text !== undefined) src = String(a.text);
+      else if (a.file !== undefined) { var r2 = readLike(a.file); if (r2.err) return r2.err; src = r2.src; }
+      else return 'Error: text_stats needs text or file';
+      var st = window.TOOLKIT.textStats(src);
+      return ''.concat(st.words, ' words · ', st.sentences, ' sentences · ', st.chars, ' chars · avg ', st.avgWordsPerSentence, ' words/sentence · Flesch ', st.flesch, ' (~', st.readingMinutes, ' min read)');
+    },
+    diff_words: function (a) {
+      var A = a.a, B = a.b, nA = 'a', nB = 'b';
+      if (a.fileA !== undefined) { var ra = readLike(a.fileA); if (ra.err) return ra.err; A = ra.src; nA = a.fileA; }
+      if (a.fileB !== undefined) { var rb = readLike(a.fileB); if (rb.err) return rb.err; B = rb.src; nB = a.fileB; }
+      if (A === undefined || B === undefined) return 'Error: diff_words needs a/b text or fileA/fileB paths';
+      var parts = window.TOOLKIT.diffWords(String(A), String(B));
+      var out = [], added = 0, removed = 0;
+      parts.forEach(function (p) {
+        if (p.v === '+') { added++; out.push('+ ' + p.text.trim().slice(0, 120)); }
+        else if (p.v === '-') { removed++; out.push('- ' + p.text.trim().slice(0, 120)); }
+      });
+      if (!out.length) return 'Identical word-for-word.';
+      return ''.concat(nA, ' → ', nB, ': +', added, ' / -', removed, ' word group(s)\n', out.slice(0, 60).join('\n'));
+    },
+    cron_next: function (a) {
+      try {
+        var times = window.TOOLKIT.cronNext(String(a.expr || ''), a.from ? Date.parse(a.from) : Date.now(), Math.min(20, Math.max(1, parseInt(a.count, 10) || 3)));
+        return ''.concat('Next ', times.length, ' run(s) for "', a.expr, '":\n', times.join('\n'));
+      } catch (e) { return 'Error: ' + e.message; }
+    },
+    csv_generate: function (a) {
+      var rows = a.rows;
+      if (a.file !== undefined) {
+        var rj = readLike(a.file);
+        if (rj.err) return rj.err;
+        try { rows = JSON.parse(rj.src); } catch (e) { return 'Error: file is not JSON — ' + e.message; }
+      }
+      if (!Array.isArray(rows) || !rows.length) return 'Error: csv_generate needs rows (array of objects)';
+      var csv = window.TOOLKIT.csvGenerate(rows, a.headers);
+      if (a.path) {
+        var p2 = normPath(a.path);
+        var w2 = IMPL.write_file({ path: p2, content: csv });
+        if (String(w2).indexOf('Error') === 0) return w2;
+        return 'Wrote ' + rows.length + ' rows to ' + p2 + ' (' + csv.length + ' bytes)';
+      }
+      return csv.length > 8000 ? csv.slice(0, 8000) + '…' : csv;
+    },
+    json_schema_check: function (a) {
+      var data;
+      if (a.data !== undefined) data = a.data;
+      else if (a.file !== undefined) {
+        var rd = readLike(a.file);
+        if (rd.err) return rd.err;
+        try { data = JSON.parse(rd.src); } catch (e) { return 'Error: file is not JSON — ' + e.message; }
+      }
+      else return 'Error: json_schema_check needs data or file';
+      var errs = window.TOOLKIT.schemaCheck(data, a.schema || {}, '$');
+      return errs.length ? 'INVALID — ' + errs.length + ' problem(s):\n- ' + errs.join('\n- ') : 'VALID — matches the schema.';
+    },
+    color_convert: function (a) {
+      try {
+        var c = window.TOOLKIT.colorConvert(a.color);
+        return ''.concat(c.hex, ' · rgb(', c.rgb.join(', '), ') · hsl(', c.hsl.join(', '), ')',
+          '\nContrast: ', c.contrastOnWhite, ':1 on white · ', c.contrastOnBlack, ':1 on black — use ', c.bestTextOn, ' text on this fill (WCAG AA needs 4.5)');
+      } catch (e) { return 'Error: ' + e.message; }
+    },
+    password_gen: function (a) {
+      var rnd = (window.crypto && crypto.getRandomValues)
+        ? function () { var u = new Uint32Array(1); crypto.getRandomValues(u); return u[0] / 4294967296; }
+        : Math.random;
+      var n = Math.min(10, Math.max(1, parseInt(a.count, 10) || 1));
+      var out = [];
+      for (var i = 0; i < n; i++) out.push(window.TOOLKIT.passwordGen(a, rnd));
+      return out.join('\n');
+    },
+    url_parse: function (a) {
+      try {
+        var u = window.TOOLKIT.urlParse(a.url);
+        return ''.concat('origin: ', u.origin, '\npath: ', u.path, '\nquery: ', JSON.stringify(u.query), (u.hash ? '\nhash: ' + u.hash : ''));
+      } catch (e) { return 'Error: ' + e.message + ' — url_parse needs an absolute URL'; }
+    },
+    markdown_toc: function (a) {
+      var src;
+      if (a.text !== undefined) src = String(a.text);
+      else if (a.file !== undefined) { var r3 = readLike(a.file); if (r3.err) return r3.err; src = r3.src; }
+      else return 'Error: markdown_toc needs text or file';
+      var toc = window.TOOLKIT.markdownToc(src);
+      if (!toc.length) return 'No headings found.';
+      var lines = toc.map(function (h) {
+        var ind = '';
+        for (var i = 0; i < h.level - 1; i++) ind += '  ';
+        return ind + '- ' + h.text + ' (#' + h.slug + ')';
+      });
+      return lines.join('\n');
+    },
     run_command: function (a) {
       return Console.exec(String(a.command || '')).out;
     }
@@ -1381,6 +1515,18 @@
     if (name === 'init_project') return { label: 'Scaffold · ' + String(args.name || ''), meta: args.kind || 'static', ok: ok };
     if (name === 'format_json') return { label: 'JSON fmt · ' + String(args.path || '').split('/').pop(), meta: args.mode || 'pretty', ok: ok };
     if (name === 'uuid_key') return { label: 'Ids · ' + String(args.kind || 'uuid4'), meta: 'crypto', ok: ok };
+    if (name === 'html_to_markdown') return { label: 'HTML→MD · ' + String(args.file || 'html').split('/').pop(), meta: 'converted', ok: ok };
+    if (name === 'rss_parse') return { label: 'Feed · ' + String((args.url || 'xml').replace(/^https?:\/\//, '')).slice(0, 34), meta: 'parsed', ok: ok };
+    if (name === 'qr_generate') return { label: 'QR · ' + String(args.text || '').slice(0, 26), meta: 'svg', ok: ok };
+    if (name === 'text_stats') return { label: 'Stats · ' + String(args.file || 'text').split('/').pop(), meta: 'readability', ok: ok };
+    if (name === 'diff_words') return { label: 'Word diff · ' + String(args.fileA || 'texts').split('/').pop(), meta: 'jsdiff', ok: ok };
+    if (name === 'cron_next') return { label: 'Cron · ' + String(args.expr || '').slice(0, 24), meta: 'next runs', ok: ok };
+    if (name === 'csv_generate') return { label: 'CSV · ' + String(args.path || (Array.isArray(args.rows) ? args.rows.length + ' rows' : 'json')), meta: 'generated', ok: ok };
+    if (name === 'json_schema_check') return { label: 'Schema check', meta: 'validate', ok: ok };
+    if (name === 'color_convert') return { label: 'Color · ' + String(args.color || ''), meta: 'contrast', ok: ok };
+    if (name === 'password_gen') return { label: 'Passphrase · ×' + (args.count || 1), meta: 'crypto', ok: ok };
+    if (name === 'url_parse') return { label: 'URL · ' + String(args.url || '').slice(0, 34), meta: 'parsed', ok: ok };
+    if (name === 'markdown_toc') return { label: 'TOC · ' + String(args.file || 'md').split('/').pop(), meta: 'outline', ok: ok };
     if (name === 'shell_exec') return { label: '❯ ' + String(args.command || '').slice(0, 46), meta: '', ok: ok, cmd: args.command, out: s };
     return { label: name, meta: '', ok: ok };
   }
@@ -1431,6 +1577,18 @@
     { type: 'function', function: { name: 'init_project', description: 'Scaffold a real starter project in one call: kind=static (index.html + style.css + app.js), kind=game (canvas game loop with resize + keyboard), kind=node (package.json + index.js), kind=python (main.py + requirements.txt). ALWAYS use this to start a new app/site/game instead of writing boilerplate from scratch — then build out from these working entry points.', parameters: { type: 'object', properties: { kind: { type: 'string', description: 'static | game | node | python' }, name: { type: 'string', description: 'project name (becomes the folder slug)' } }, required: ['kind', 'name'] } } },
     { type: 'function', function: { name: 'format_json', description: 'Validate + pretty-print or minify a JSON file in place. Reports the exact parse error when invalid. Use after hand-building JSON config files.', parameters: { type: 'object', properties: { path: { type: 'string' }, mode: { type: 'string', description: 'pretty (default) | minify' }, indent: { type: 'number' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'uuid_key', description: 'Generate identifiers: uuid4, nanoid (21-char), hex, or 6-digit pin. Cryptographically random. Use when building apps that need ids, tokens, or demo keys.', parameters: { type: 'object', properties: { kind: { type: 'string', description: 'uuid4 (default) | nanoid | hex | pin' }, count: { type: 'number', description: '1-50' } } } } },
+    { type: 'function', function: { name: 'html_to_markdown', description: 'Convert HTML to clean markdown (headings, links, lists, code, emphasis; scripts stripped). Feed it HTML fetched via http_request to read pages as markdown, or convert workspace .html content for docs.', parameters: { type: 'object', properties: { html: { type: 'string' }, file: { type: 'string', description: 'workspace/lib path to an .html file' } } } } },
+    { type: 'function', function: { name: 'rss_parse', description: 'Parse an RSS or Atom feed (url or xml) into items with title/link/date/summary. Use to build news readers, integrate feeds, or check what a feed publishes.', parameters: { type: 'object', properties: { url: { type: 'string' }, xml: { type: 'string' } } } } },
+    { type: 'function', function: { name: 'qr_generate', description: 'Generate a real QR code as crisp SVG (Reed-Solomon ECC, masked): URLs, text, wifi strings, contact cards. Saves to the workspace when given a path — embed with <img src>. Use for share features in built apps.', parameters: { type: 'object', properties: { text: { type: 'string', description: 'the payload (URL, text, wifi:...)' }, ecc: { type: 'string', description: 'L (default) | M' }, path: { type: 'string', description: 'save the SVG to this workspace path, e.g. assets/qr.svg' } }, required: ['text'] } } },
+    { type: 'function', function: { name: 'text_stats', description: 'Readability analysis: words, sentences, Flesch reading ease, reading time. Use to report on docs/content the agent wrote or to tune copy length.', parameters: { type: 'object', properties: { text: { type: 'string' }, file: { type: 'string' } } } } },
+    { type: 'function', function: { name: 'diff_words', description: 'Word-level diff of two texts or files (+added / -removed groups, vendored jsdiff). Use to show what changed between two drafts or versions in human terms.', parameters: { type: 'object', properties: { a: { type: 'string' }, b: { type: 'string' }, fileA: { type: 'string' }, fileB: { type: 'string' } } } } },
+    { type: 'function', function: { name: 'cron_next', description: 'Parse a 5-field cron expression and compute the next N fire times. Use when building schedulers, explaining cron, or verifying a schedule (e.g. "30 9 * * 1-5").', parameters: { type: 'object', properties: { expr: { type: 'string', description: 'min hour dom month dow' }, from: { type: 'string', description: 'ISO date to start scanning from (default now)' }, count: { type: 'number', description: 'default 3, max 20' } }, required: ['expr'] } } },
+    { type: 'function', function: { name: 'csv_generate', description: 'Generate RFC-4180 CSV from an array of objects (proper quoting) — the inverse of csv_parse. Saves to a file or returns the text. Use to produce data files for built apps.', parameters: { type: 'object', properties: { rows: { type: 'array', description: 'array of objects' }, file: { type: 'string', description: 'JSON file to convert' }, headers: { type: 'array' }, path: { type: 'string', description: 'save to this .csv path' } } } } },
+    { type: 'object', function: { name: 'json_schema_check', description: 'Validate JSON against a mini schema (type/required/properties/items/enum/min/max) and report every violation with its path. Use to verify API responses, config files, or generated data before shipping.', parameters: { type: 'object', properties: { data: { type: 'object' }, file: { type: 'string' }, schema: { type: 'object', description: 'mini-schema: {type, required, properties, items, enum, minimum, maximum}' } }, required: ['schema'] } } },
+    { type: 'function', function: { name: 'color_convert', description: 'Convert colors (hex/rgb/hsl) and compute WCAG contrast ratios against white/black with the AA verdict. Use when picking palettes so text is readable — pairs with the color-theory-ui skill.', parameters: { type: 'object', properties: { color: { type: 'string', description: '#7c5cff, #f55 or rgb(124,92,255)' } }, required: ['color'] } } },
+    { type: 'function', function: { name: 'password_gen', description: 'Generate memorable crypto-random passphrases (word words-digits-symbol) for demos, seeded users, or test accounts. NOT for real security use.', parameters: { type: 'object', properties: { words: { type: 'number', description: 'words per phrase, default 3' }, count: { type: 'number', description: 'how many, default 1' } } } } },
+    { type: 'function', function: { name: 'url_parse', description: 'Break a URL into origin/path/query object/hash. Use to inspect URLs before fetching or to build routing in apps.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+    { type: 'function', function: { name: 'markdown_toc', description: 'Extract the heading outline of a markdown file/text with anchor slugs (skips code fences). Use to navigate or document long docs.', parameters: { type: 'object', properties: { file: { type: 'string' }, text: { type: 'string' } } } } },
   ];
 
   /* ---------- harness console (user terminal + run_command) ---------- */
