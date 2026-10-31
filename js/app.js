@@ -250,27 +250,35 @@
     'mobile-optimization': 'Touch first: pointerdown/pointermove/pointerup on the canvas or buttons; touch-action:none on game surfaces; e.preventDefault() on touchmove to stop scroll-bounce; hit targets >=44px. Buttons must work with a thumb, one-handed.\n\nViewport: meta viewport width=device-width,initial-scale=1,viewport-fit=cover; size from visualViewport or innerWidth/innerHeight on resize AND orientationchange.\n\nFrame budget 16ms — spend it on render, not layout: never read layout (offsetWidth) inside a loop that also writes styles; batch DOM changes; canvas over DOM for games.\n\nNetwork: local assets only on the critical path; show progress for anything over 100ms; the app may go offline — everything the game needs must already be in the workspace.\n\nVisibility: document.addEventListener("visibilitychange", ...) — pause the loop, mute audio, save state. A game that drains battery in the background gets uninstalled.\n\nTest at phone width with run_check before shipping; the user tests on a real phone and reports what you could have caught.',
     'asset-pipeline': 'Formats: models = GLB (binary glTF) — one file, textures embedded; textures = PNG (with alpha) or JPG (opaque); audio = MP3/OGG. Never reference external URLs from the built app — fetch_asset assets into the workspace first, then load local paths so the app works offline.\n\nLoading with three.js:\nvar manager = new THREE.LoadingManager();\nmanager.onProgress = function (url, loaded, total) { console.log("loading " + loaded + "/" + total); };\nvar loader = new THREE.GLTFLoader(manager);\nloader.load("assets/models/scene.glb", function (gltf) { scene.add(gltf.scene); }, undefined, function (err) { console.error("model failed", err); });\nAlways pass an error callback — a silent model failure is a black screen.\n\nTexture colorSpace: color maps SRGBColorSpace; normal/roughness maps stay linear. Wrong colorSpace = washed-out or too-dark surfaces.\n\nOrganization: assets/models/, assets/textures/, assets/audio/ — clean relative paths (assets/x.png from the project root) so previews and servers resolve them.\n\nSources that work with fetch_asset: raw.githubusercontent.com, cdn.jsdelivr.net, unpkg.com (CORS-enabled). Keep each asset <8 MB; prefer fewer, better assets over many broken ones.'
   };
+  /* Skillpack batches (skills factory) merge into the same seeding flow —
+     descs stay trigger-rich (the matcher's contract), bodies are the
+     dense expert procedures every chat's workspace receives */
+  var SKILLPACK = window.SKILLPACK || {};
+  Object.keys(SKILLPACK.descs || {}).forEach(function (k) { BUILD_SKILL_DESCS[k] = SKILLPACK.descs[k]; });
+  Object.keys(SKILLPACK.bodies || {}).forEach(function (k) { BUILD_SKILL_BODIES[k] = SKILLPACK.bodies[k]; });
   /* BUILD_SKILLS seeding: every chat gets the expert build procedures in its
      workspace (once per session — the flag persists, which is intended) */
   function seedBuildSkills(sess) {
     if (!sess) return;
-    /* the persisted flag alone is not enough — files can be lost in storage
-       migrations, so verify per file (cheap: 6 has-key lookups) */
-    var allPresent = Object.keys(BUILD_SKILL_BODIES).every(function (nm) {
-      return sess.vfsContent && sess.vfsContent['workspace/skills/' + skillSlug(nm) + '.md'] !== undefined;
-    });
+    /* runs on every chat open: desc sync + stub upgrade are idempotent and
+       cheap (per-name has-key lookups) — files lost in storage migrations
+       and stubs left by bodyless load_skill calls both heal here */
+    sess._buildSkillsSeeded = true;
     /* keep build-skill descriptions in sync with the code (the code is the
        source of truth) — runs even when skill files are already seeded */
     Object.keys(BUILD_SKILL_DESCS).forEach(function (nm) {
       var ex = db.skills.find(function (x) { return x.name === nm && BUILD_SKILL_DESCS[nm]; });
       if (ex) ex.desc = BUILD_SKILL_DESCS[nm];
     });
-    if (allPresent) { sess._buildSkillsSeeded = true; return; }
-    sess._buildSkillsSeeded = true;
     Object.keys(BUILD_SKILL_BODIES).forEach(function (nm) {
       var fname = 'workspace/skills/' + skillSlug(nm) + '.md';
-      if (sess.vfsContent && sess.vfsContent[fname] === undefined) {
-        sess.vfsContent[fname] = '---\nname: ' + nm + '\ndescription: ' + (BUILD_SKILL_DESCS[nm] || nm) + '\n---\n\n' + BUILD_SKILL_BODIES[nm] + '\n';
+      if (sess.vfsContent) {
+        var cur = sess.vfsContent[fname];
+        /* a stub (bodyless load_skill seeding) must never mask the real
+           expert body — upgrade it when the code carries the procedure */
+        if (cur === undefined || (typeof cur === 'string' && cur.indexOf('Stub body') >= 0)) {
+          sess.vfsContent[fname] = '---\nname: ' + nm + '\ndescription: ' + (BUILD_SKILL_DESCS[nm] || nm) + '\n---\n\n' + BUILD_SKILL_BODIES[nm] + '\n';
+        }
       }
       var existing = db.skills.find(function (x) { return x.name === nm; });
       if (!existing) db.skills.push({ id: 'sk' + H.uid(), name: nm, desc: (BUILD_SKILL_DESCS[nm] || nm), on: true });
