@@ -196,9 +196,17 @@
   }
 
   /* extract a GLB payload from a TRELLIS-style JSON response:
-     an https URL ending in .glb, or an inline base64 model block */
+     (a) the real NVIDIA shape: {"artifacts":[{"base64":"<glb bytes>"}]}
+     (b) an https URL ending in .glb, or an inline base64 model block */
   function extractGlb(responseText) {
     var s = String(responseText || '');
+    try {
+      var j = JSON.parse(s);
+      if (j && j.artifacts && j.artifacts[0] && j.artifacts[0].base64) {
+        return { kind: 'dataurl', value: 'data:model/gltf-binary;base64,' + j.artifacts[0].base64 };
+      }
+      if (j && j.assets && typeof j.assets.glb === 'string') return { kind: 'url', value: j.assets.glb };
+    } catch (e) { /* not JSON — fall through to the pattern scans */ }
     var url = s.match(/https:\/\/[^"'\s\\]+\.glb(?:\?[^"'\s\\]+)?/i);
     if (url) return { kind: 'url', value: url[0] };
     var b64 = s.match(/"(?:glb|model|asset|object)[^"]*"\s*:\s*"(data:[^"]{100,})"/i);

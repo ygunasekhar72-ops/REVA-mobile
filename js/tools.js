@@ -800,22 +800,32 @@
         }
       }
 
-      setStatus('Generating 3D asset…');
       /* L1 load handling: rotate across the USER'S OWN keys (comma-separated
          in the provider key field — never pooled from anywhere else), honor
-         429 Retry-After, and pin the host hard (https, allowlisted) */
+         429 Retry-After, and pin the host hard (https, allowlisted).
+         Desktop-test override: location-gated (127.0.0.1/localhost only) so
+         the CORS-blocked desktop can route via the local test proxy; on the
+         APK the real host is always used. */
       var HOST = 'https://ai.api.nvidia.com';
-      if (!HOST.startsWith('https://')) return 'Error: endpoint must be https';
+      try {
+        var hn = location.hostname;
+        if ((hn === '127.0.0.1' || hn === 'localhost') && Store.db.settings.gen3dBase) HOST = String(Store.db.settings.gen3dBase);
+      } catch (eH) { }
+      if (HOST.indexOf('https://') !== 0 && HOST.indexOf('http://127.0.0.1') !== 0 && HOST.indexOf('http://localhost') !== 0) return 'Error: gen3d endpoint must be https or the local test proxy';
       var keys = (window.AI && AI.keyList ? AI.keyList(nv) : String(nv.key || '').split(/[,;\n]/)).filter(function (k) { return k && k.trim(); });
       if (!keys.length) keys = [String(nv.key || '')];
+      /* two passes over the keys: the trial gateway resets ~38s sync
+         connections for queued jobs — a retry often lands on a warm worker */
       var res = null, lastErr = '', attempt = 0, waitMs = 0;
-      for (attempt = 0; attempt < keys.length; attempt++) {
+      var maxAttempts = Math.max(2, keys.length * 2);
+      for (attempt = 0; attempt < maxAttempts; attempt++) {
         if (waitMs) await new Promise(function (r) { setTimeout(r, waitMs); });
+        var key = keys[attempt % keys.length].trim();
         var r2;
         try {
           r2 = await fetch(HOST + '/v1/genai/microsoft/trellis', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': 'Bearer ' + keys[attempt].trim() },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': 'Bearer ' + key },
             body: JSON.stringify(body)
           });
         } catch (e) { lastErr = (e && e.message || e) + ' (network or CORS; on desktop browsers the local proxy may be needed)'; continue; }
@@ -826,7 +836,7 @@
           var ra = parseInt(r2.headers.get('retry-after') || '0', 10);
           waitMs = Math.min(ra * 1000 || 2000, 30000);
         }
-        if (r2.status === 401) break; // dead key — rotation will try the next
+        if (r2.status === 401 && keys.length === 1) break; // dead single key
       }
       if (!res) return 'Error: 3D generation failed after ' + attempt + ' attempt(s) across ' + keys.length + ' key(s) — ' + lastErr;
       var text = await res.text().catch(function () { return ''; });

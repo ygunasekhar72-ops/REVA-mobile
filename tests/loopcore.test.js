@@ -114,7 +114,11 @@ const LoopCore = require('../js/loopcore.js');
   const q4 = LoopCore.gen3dQuota({ date: '2026-10-30', used: 6 }, '2026-10-31', 6);
   assert.ok(q4.allowed && q4.used === 0, 'new day resets the counter');
 
-  // 9. GLB extraction from a TRELLIS-style response
+  // 9. GLB extraction from the REAL NVIDIA response shape
+  const nvidiaResp = '{"artifacts":[{"base64":"' + Buffer.from('glTF-fake-bytes-for-test').toString('base64') + '"}]}';
+  const ex = LoopCore.extractGlb(nvidiaResp);
+  assert.strictEqual(ex.kind, 'dataurl', 'artifacts[0].base64 found');
+  assert.ok(ex.value.startsWith('data:model/gltf-binary;base64,'), 'wrapped as a GLB data url');
   const urlResp = '{"assets":{"glb":"https://assets.nvidia.com/xyz/model.glb?sig=abc"}}';
   assert.deepStrictEqual(LoopCore.extractGlb(urlResp).kind, 'url', 'GLB url found');
   assert.ok(LoopCore.extractGlb(urlResp).value.indexOf('model.glb') > 0, 'url value');
