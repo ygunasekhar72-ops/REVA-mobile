@@ -149,6 +149,35 @@ const T = require('../js/toolkit.js');
     assert.strictEqual(bad, -1, 'v' + cs[0] + ' RS syndromes zero (failed at α^' + bad + ')');
   });
 
-  console.log('toolkit: 11/11 scenarios PASS (incl. RS syndrome proof)');
+  // 12. batch-3 engines: md→html (escaping!), stats, merge/flatten, case, mime,
+  //     roman, bytes, cron humanize, set ops, line sort
+  const htmlOut = T.mdToHtml('# Title\n\nPara with **bold** and [x](https://a.io)\n\n- one\n- two\n\n```js\nlet a = "<b>";\n```');
+  assert.ok(htmlOut.indexOf('<h1>Title</h1>') === 0, 'heading');
+  assert.ok(htmlOut.indexOf('<strong>bold</strong>') > 0 && htmlOut.indexOf('<a href="https://a.io"') > 0, 'inline rules');
+  assert.ok(htmlOut.indexOf('<li>one</li>') > 0 && htmlOut.indexOf('<ul>') > 0, 'list');
+  assert.ok(htmlOut.indexOf('&lt;b&gt;') > 0, 'code fence escaped');
+  assert.ok(T.mdToHtml('<img src=x onerror=alert(1)>').indexOf('<img') < 0, 'raw html NEVER passes');
+  assert.ok(T.mdToHtml('[x](javascript:alert(1))').indexOf('javascript:') < 0, 'javascript: hrefs neutered');
+  const agg = T.csvStats([{ c: 'a', v: 1 }, { c: 'a', v: 3 }, { c: 'b', v: 2 }], { groupBy: 'c', field: 'v', op: 'avg' });
+  assert.strictEqual(agg[0].avg, 2, 'avg per group');
+  assert.strictEqual(agg[0].count, 2, 'count per group');
+  assert.deepStrictEqual(T.jsonMerge({ a: { x: 1, keep: 1 } }, { a: { y: 2 } }), { a: { x: 1, keep: 1, y: 2 } }, 'deep merge keeps');
+  assert.deepStrictEqual(T.jsonUnflatten(T.jsonFlatten({ a: { b: [1, 2] }, c: 'x' })), { a: { b: [1, 2] }, c: 'x' }, 'flatten roundtrip');
+  assert.strictEqual(T.textCase('helloWorld foo_bar', 'kebab'), 'hello-world-foo-bar', 'kebab');
+  assert.strictEqual(T.textCase('data-viz-pro', 'camel'), 'dataVizPro', 'camel');
+  assert.strictEqual(T.mimeLookup('.glb'), 'model/gltf-binary', 'mime table');
+  assert.strictEqual(T.mimeLookup('unknown-ext'), 'application/octet-stream', 'mime fallback');
+  assert.strictEqual(T.romanConvert(2026), 'MMXXVI', 'roman to');
+  assert.strictEqual(T.romanConvert('mmxxvi'), 2026, 'roman from (case-insensitive)');
+  assert.throws(function () { T.romanConvert(4000); }, /1\.\.3999/, 'roman range honest');
+  assert.strictEqual(T.byteSize(1536), '1.5 KB', 'bytes format');
+  assert.strictEqual(T.byteSize('1.5 KB'), 1536, 'bytes parse');
+  assert.strictEqual(T.cronDescribe('30 9 * * 1-5'), 'at 09:30 on Monday through Friday', 'cron humanized');
+  const ld = T.listDiff([1, 2, 3], [2, 3, 4]);
+  assert.deepStrictEqual(ld.intersect, [2, 3], 'set intersect');
+  assert.deepStrictEqual(ld.onlyA, [1], 'set onlyA');
+  assert.strictEqual(T.sortLines('b\n10\na\n2', { numeric: true }), '2\n10\na\nb', 'numeric sort (numbers before strings)');
+
+  console.log('toolkit: 12/12 scenarios PASS (incl. RS syndrome proof)');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

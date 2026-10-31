@@ -1465,6 +1465,99 @@
       });
       return lines.join('\n');
     },
+    /* ---------- batch 3 utilities (58 → 70) ---------- */
+    markdown_to_html: function (a) {
+      var src;
+      if (a.text !== undefined) src = String(a.text);
+      else if (a.file !== undefined) { var r4 = readLike(a.file); if (r4.err) return r4.err; src = r4.src; }
+      else return 'Error: markdown_to_html needs text or file';
+      var html = window.TOOLKIT.mdToHtml(src);
+      return html.length > 14000 ? html.slice(0, 14000) + '\n… (truncated)' : html;
+    },
+    csv_stats: function (a) {
+      var rows;
+      if (a.rows !== undefined) rows = a.rows;
+      else if (a.file !== undefined) {
+        var r5 = readLike(a.file);
+        if (r5.err) return r5.err;
+        try { rows = JSON.parse(r5.src); } catch (e) {
+          rows = window.TOOLKIT.csvParse(r5.src, a.delimiter).rows;
+        }
+      }
+      else return 'Error: csv_stats needs rows or file';
+      if (!Array.isArray(rows) || !rows.length) return 'Error: no rows to aggregate';
+      var st = window.TOOLKIT.csvStats(rows, a);
+      return JSON.stringify(st, null, 1);
+    },
+    json_merge: function (a) {
+      var A = a.a, B = a.b;
+      if (a.fileA !== undefined) { var ra2 = readLike(a.fileA); if (ra2.err) return ra2.err; try { A = JSON.parse(ra2.src); } catch (e) { return 'Error: fileA is not JSON'; } }
+      if (a.fileB !== undefined) { var rb2 = readLike(a.fileB); if (rb2.err) return rb2.err; try { B = JSON.parse(rb2.src); } catch (e) { return 'Error: fileB is not JSON'; } }
+      if (A === undefined || B === undefined) return 'Error: json_merge needs a/b or fileA/fileB (JSON)';
+      var merged = window.TOOLKIT.jsonMerge(A, B);
+      var out = JSON.stringify(merged, null, 2);
+      if (a.path) {
+        var p3 = normPath(a.path);
+        var w3 = IMPL.write_file({ path: p3, content: out });
+        if (String(w3).indexOf('Error') === 0) return w3;
+        return 'Merged into ' + p3 + ' (' + out.length + ' bytes)';
+      }
+      return out.length > 8000 ? out.slice(0, 8000) + '…' : out;
+    },
+    json_flatten: function (a) {
+      var data;
+      if (a.json !== undefined) { try { data = JSON.parse(a.json); } catch (e) { return 'Error: json is not valid JSON'; } }
+      else if (a.file !== undefined) {
+        var rf = readLike(a.file);
+        if (rf.err) return rf.err;
+        try { data = JSON.parse(rf.src); } catch (e) { return 'Error: file is not JSON — ' + e.message; }
+      }
+      else return 'Error: json_flatten needs json or file';
+      var out = a.op === 'unflatten' ? window.TOOLKIT.jsonUnflatten(data, a.sep) : window.TOOLKIT.jsonFlatten(data, a.sep);
+      return JSON.stringify(out, null, a.op === 'unflatten' ? 2 : undefined).slice(0, 8000);
+    },
+    text_case: function (a) {
+      var mode = String(a.mode || 'kebab');
+      if (['camel', 'snake', 'kebab', 'pascal', 'title', 'words'].indexOf(mode) < 0) return 'Error: mode is camel | snake | kebab | pascal | title | words';
+      return window.TOOLKIT.textCase(String(a.text || ''), mode);
+    },
+    mime_lookup: function (a) {
+      var ext = String(a.ext || '');
+      var list = ext.split(',').map(function (e) { return e.trim(); }).filter(Boolean).slice(0, 20);
+      return list.map(function (e) {
+        return ''.concat(e, ' → ', window.TOOLKIT.mimeLookup(e));
+      }).join('\n');
+    },
+    roman_convert: function (a) {
+      try { return String(window.TOOLKIT.romanConvert(a.value)); }
+      catch (e) { return 'Error: ' + e.message; }
+    },
+    byte_size: function (a) {
+      try { return String(window.TOOLKIT.byteSize(a.value)); }
+      catch (e) { return 'Error: ' + e.message; }
+    },
+    cron_describe: function (a) {
+      try { return window.TOOLKIT.cronDescribe(a.expr); }
+      catch (e) { return 'Error: ' + e.message; }
+    },
+    list_diff: function (a) {
+      var A = a.a, B = a.b;
+      if (a.fileA !== undefined) { var ra3 = readLike(a.fileA); if (ra3.err) return ra3.err; A = ra3.src.split('\n').map(function (l) { return l.trim(); }).filter(Boolean); }
+      if (a.fileB !== undefined) { var rb3 = readLike(a.fileB); if (rb3.err) return rb3.err; B = rb3.src.split('\n').map(function (l) { return l.trim(); }).filter(Boolean); }
+      if (!Array.isArray(A) || !Array.isArray(B)) return 'Error: list_diff needs a/b arrays or fileA/fileB line lists';
+      var d = window.TOOLKIT.listDiff(A, B);
+      return ''.concat('only in A (', d.onlyA.length, '): ', d.onlyA.slice(0, 30).join(', '),
+        '\nonly in B (', d.onlyB.length, '): ', d.onlyB.slice(0, 30).join(', '),
+        '\nin both (', d.intersect.length, '): ', d.intersect.slice(0, 30).join(', '));
+    },
+    sort_lines: function (a) {
+      var src;
+      if (a.text !== undefined) src = String(a.text);
+      else if (a.file !== undefined) { var r6 = readLike(a.file); if (r6.err) return r6.err; src = r6.src; }
+      else return 'Error: sort_lines needs text or file';
+      var out = window.TOOLKIT.sortLines(src, a);
+      return out.length > 8000 ? out.slice(0, 8000) + '…' : out;
+    },
     run_command: function (a) {
       return Console.exec(String(a.command || '')).out;
     }
@@ -1527,6 +1620,17 @@
     if (name === 'password_gen') return { label: 'Passphrase · ×' + (args.count || 1), meta: 'crypto', ok: ok };
     if (name === 'url_parse') return { label: 'URL · ' + String(args.url || '').slice(0, 34), meta: 'parsed', ok: ok };
     if (name === 'markdown_toc') return { label: 'TOC · ' + String(args.file || 'md').split('/').pop(), meta: 'outline', ok: ok };
+    if (name === 'markdown_to_html') return { label: 'MD→HTML · ' + String(args.file || 'md').split('/').pop(), meta: 'converted', ok: ok };
+    if (name === 'csv_stats') return { label: 'Stats · ' + String(args.file || 'rows').split('/').pop(), meta: args.op || 'count', ok: ok };
+    if (name === 'json_merge') return { label: 'JSON merge · ' + String(args.path || 'result'), meta: 'deep', ok: ok };
+    if (name === 'json_flatten') return { label: 'JSON ' + (args.op || 'flatten'), meta: 'dot-keys', ok: ok };
+    if (name === 'text_case') return { label: 'Case · ' + (args.mode || 'kebab'), meta: '', ok: ok };
+    if (name === 'mime_lookup') return { label: 'MIME · ' + String(args.ext || '').slice(0, 24), meta: 'types', ok: ok };
+    if (name === 'roman_convert') return { label: 'Roman · ' + String(args.value || '').slice(0, 12), meta: 'convert', ok: ok };
+    if (name === 'byte_size') return { label: 'Size · ' + String(args.value || '').slice(0, 12), meta: 'convert', ok: ok };
+    if (name === 'cron_describe') return { label: 'Cron · ' + String(args.expr || '').slice(0, 20), meta: 'plain english', ok: ok };
+    if (name === 'list_diff') return { label: 'Set diff · A vs B', meta: 'lists', ok: ok };
+    if (name === 'sort_lines') return { label: 'Sort lines', meta: args.numeric ? 'numeric' : 'alpha', ok: ok };
     if (name === 'shell_exec') return { label: '❯ ' + String(args.command || '').slice(0, 46), meta: '', ok: ok, cmd: args.command, out: s };
     return { label: name, meta: '', ok: ok };
   }
@@ -1589,6 +1693,17 @@
     { type: 'function', function: { name: 'password_gen', description: 'Generate memorable crypto-random passphrases (word words-digits-symbol) for demos, seeded users, or test accounts. NOT for real security use.', parameters: { type: 'object', properties: { words: { type: 'number', description: 'words per phrase, default 3' }, count: { type: 'number', description: 'how many, default 1' } } } } },
     { type: 'function', function: { name: 'url_parse', description: 'Break a URL into origin/path/query object/hash. Use to inspect URLs before fetching or to build routing in apps.', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
     { type: 'function', function: { name: 'markdown_toc', description: 'Extract the heading outline of a markdown file/text with anchor slugs (skips code fences). Use to navigate or document long docs.', parameters: { type: 'object', properties: { file: { type: 'string' }, text: { type: 'string' } } } } },
+    { type: 'function', function: { name: 'markdown_to_html', description: 'Convert markdown to clean HTML (headings, lists, code fences, links, bold/italic, blockquotes). Content is HTML-escaped first — injection impossible. Use to render docs as pages in built apps.', parameters: { type: 'object', properties: { text: { type: 'string' }, file: { type: 'string', description: 'workspace .md path' } } } } },
+    { type: 'function', function: { name: 'csv_stats', description: 'Aggregate rows: groupBy a field + sum/avg/min/max/count over a value field. Works on JSON arrays or parsed CSV files. Use for quick data summaries in reports and dashboards.', parameters: { type: 'object', properties: { file: { type: 'string' }, rows: { type: 'array' }, groupBy: { type: 'string' }, field: { type: 'string' }, op: { type: 'string', description: 'count (default) | sum | avg | min | max' } } } } },
+    { type: 'function', function: { name: 'json_merge', description: 'Deep-merge two JSON objects (objects merge, arrays/scalars replace) — from text or files, saved to a path. Use to combine configs or update state files.', parameters: { type: 'object', properties: { a: { type: 'object' }, b: { type: 'object' }, fileA: { type: 'string' }, fileB: { type: 'string' }, path: { type: 'string', description: 'save the merged result here' } } } } },
+    { type: 'function', function: { name: 'json_flatten', description: 'Flatten nested JSON to dot-keys (a.b.c) or unflatten back — roundtrips. Use to normalize config shapes or inspect deep structures.', parameters: { type: 'object', properties: { json: { type: 'string' }, file: { type: 'string' }, op: { type: 'string', description: 'flatten (default) | unflatten' }, sep: { type: 'string' } } } } },
+    { type: 'function', function: { name: 'text_case', description: 'Convert identifier/text casing: camel, snake, kebab, pascal, title, words. Use to normalize names across generated code and files.', parameters: { type: 'object', properties: { text: { type: 'string' }, mode: { type: 'string' } }, required: ['text'] } } },
+    { type: 'function', function: { name: 'mime_lookup', description: 'Content-type for file extensions (70+ types incl. wasm/glb/fonts) — the table a static server needs. Comma-separate several extensions.', parameters: { type: 'object', properties: { ext: { type: 'string', description: 'e.g. ".html, .js, .glb"' } }, required: ['ext'] } } },
+    { type: 'function', function: { name: 'roman_convert', description: 'Convert numbers to Roman numerals and back (1..3999). Use for game levels, outlines, stylized numbering in built apps.', parameters: { type: 'object', properties: { value: { type: 'string', description: 'a number or a roman numeral' } }, required: ['value'] } } },
+    { type: 'function', function: { name: 'byte_size', description: 'Format bytes human (1536 → "1.5 KB") or parse human sizes back ("1.5 KB" → 1536). Use for file-size displays and limit configs.', parameters: { type: 'object', properties: { value: { type: 'string', description: 'bytes or a size string' } }, required: ['value'] } } },
+    { type: 'function', function: { name: 'cron_describe', description: 'Explain a cron expression in plain English ("30 9 * * 1-5" → "at 09:30 on Monday through Friday"). Pairs with cron_next.', parameters: { type: 'object', properties: { expr: { type: 'string' } }, required: ['expr'] } } },
+    { type: 'function', function: { name: 'list_diff', description: 'Set operations on two lists (text or file lines): only-in-A, only-in-B, in-both. Use to compare exports, file lists, dependency lists.', parameters: { type: 'object', properties: { a: { type: 'array' }, b: { type: 'array' }, fileA: { type: 'string' }, fileB: { type: 'string' } } } } },
+    { type: 'function', function: { name: 'sort_lines', description: 'Sort/dedupe text lines: alpha, numeric, by-length, desc, dedupe, trim. Use to normalize lists, sort logs, clean output.', parameters: { type: 'object', properties: { text: { type: 'string' }, file: { type: 'string' }, numeric: { type: 'boolean' }, desc: { type: 'boolean' }, dedupe: { type: 'boolean' }, length: { type: 'boolean' } } } } },
   ];
 
   /* ---------- harness console (user terminal + run_command) ---------- */

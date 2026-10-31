@@ -745,6 +745,269 @@
     }
   }
 
+  /* ---- batch 3 engines (tool batch 3: documents + data) ---- */
+
+  /* mdToHtml: line-based markdown → HTML (the inverse of htmlToMarkdown).
+     Escape FIRST, then inline rules — model content can never inject HTML. */
+  function mdToHtml(md) {
+    var lines = String(md == null ? '' : md).split('\n');
+    var out = [], inCode = false, codeBuf = [], listMode = null, para = [];
+    function flushPara() {
+      if (para.length) { out.push('<p>' + para.map(inline).join('<br>') + '</p>'); para = []; }
+    }
+    function inline(t) {
+      var e = esc(t);
+      e = e.replace(/\*\*([^*]+)\*\*/g, function (_, x) { return '<strong>'.concat(x, '</strong>'); });
+      e = e.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, function (_, pre, x) { return pre + '<em>' + x + '</em>'; });
+      e = e.replace(/`([^`]+)`/g, function (_, x) { return '<code>'.concat(x, '</code>'); });
+      e = e.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_, txt, href) {
+        var safe = /^(https?:\/\/|\/|\.\/)/.test(href) ? href : '#';
+        return '<a href="'.concat(safe, '" rel="noopener">', txt, '</a>');
+      });
+      return e;
+    }
+    lines.forEach(function (line) {
+      var fence = line.match(/^```(\w*)\s*$/);
+      if (fence) {
+        flushPara();
+        if (inCode) { out.push('<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>'); codeBuf = []; inCode = false; }
+        else { inCode = true; }
+        return;
+      }
+      if (inCode) { codeBuf.push(line); return; }
+      var h = line.match(/^(#{1,4})\s+(.+?)\s*#*\s*$/);
+      if (h) { flushPara(); out.push('<h' + h[1].length + '>' + inline(h[2]) + '</h' + h[1].length + '>'); return; }
+      if (/^\s*([-*])\s+/.test(line)) {
+        flushPara();
+        if (listMode !== 'ul') { if (listMode === 'ol') out.push('</ol>'); out.push('<ul>'); listMode = 'ul'; }
+        out.push('<li>' + inline(line.replace(/^\s*[-*]\s+/, '')) + '</li>');
+        return;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) {
+        flushPara();
+        if (listMode !== 'ol') { if (listMode === 'ul') out.push('</ul>'); out.push('<ol>'); listMode = 'ol'; }
+        out.push('<li>' + inline(line.replace(/^\s*\d+\.\s+/, '')) + '</li>');
+        return;
+      }
+      if (/^\s*>\s?/.test(line)) { flushPara(); out.push('<blockquote>' + inline(line.replace(/^\s*>\s?/, '')) + '</blockquote>'); return; }
+      if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) { flushPara(); out.push('<hr>'); return; }
+      if (!line.trim()) { flushPara(); if (listMode) { out.push(listMode === 'ul' ? '</ul>' : '</ol>'); listMode = null; } return; }
+      if (listMode) { out.push(listMode === 'ul' ? '</ul>' : '</ol>'); listMode = null; }
+      para.push(line.trim());
+    });
+    if (inCode) out.push('<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
+    flushPara();
+    if (listMode) out.push(listMode === 'ul' ? '</ul>' : '</ol>');
+    return out.join('\n');
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /* csvStats: aggregate rows — groupBy field + op over a value field */
+  function csvStats(rows, opts) {
+    opts = opts || {};
+    var op = opts.op || 'count', field = opts.field, groupBy = opts.groupBy;
+    var groups = {};
+    (rows || []).forEach(function (r) {
+      var k = groupBy ? String(r[groupBy] === undefined ? '(none)' : r[groupBy]) : '(all)';
+      if (!groups[k]) groups[k] = { count: 0, sum: 0, min: Infinity, max: -Infinity };
+      var g = groups[k];
+      g.count++;
+      var v = field ? Number(r[field]) : NaN;
+      if (!isNaN(v)) { g.sum += v; if (v < g.min) g.min = v; if (v > g.max) g.max = v; }
+    });
+    return Object.keys(groups).sort().map(function (k) {
+      var g = groups[k];
+      var row = {};
+      if (groupBy) row[groupBy] = k;
+      row.count = g.count;
+      if (field) {
+        if (op === 'sum') row.sum = Math.round(g.sum * 100) / 100;
+        if (op === 'avg') row.avg = g.count ? Math.round(g.sum / g.count * 100) / 100 : 0;
+        if (op === 'min') row.min = g.min === Infinity ? null : g.min;
+        if (op === 'max') row.max = g.max === -Infinity ? null : g.max;
+      }
+      return row;
+    });
+  }
+
+  /* jsonMerge: deep merge — objects merge, arrays and scalars replace */
+  function jsonMerge(a, b) {
+    if (Array.isArray(b) || typeof b !== 'object' || b === null) return b;
+    if (Array.isArray(a) || typeof a !== 'object' || a === null) a = {};
+    var out = Object.assign({}, a);
+    Object.keys(b).forEach(function (k) {
+      out[k] = jsonMerge(a[k], b[k]);
+    });
+    return out;
+  }
+
+  /* jsonFlatten / jsonUnflatten: dot-key roundtrip */
+  function jsonFlatten(obj, sep, prefix, out) {
+    sep = sep || '.'; out = out || {};
+    Object.keys(obj || {}).forEach(function (k) {
+      var key = prefix ? prefix + sep + k : k;
+      if (obj[k] && typeof obj[k] === 'object' && !Array.isArray(obj[k])) jsonFlatten(obj[k], sep, key, out);
+      else out[key] = obj[k];
+    });
+    return out;
+  }
+  function jsonUnflatten(flat, sep) {
+    sep = sep || '.';
+    var out = {};
+    Object.keys(flat || {}).forEach(function (key) {
+      var parts = key.split(sep);
+      var cur = out;
+      parts.forEach(function (p, i) {
+        if (i === parts.length - 1) cur[p] = flat[key];
+        else { if (!cur[p] || typeof cur[p] !== 'object') cur[p] = {}; cur = cur[p]; }
+      });
+    });
+    return out;
+  }
+
+  /* textCase: word splitting across conventions → camel/snake/kebab/pascal/title */
+  function textCase(str, mode) {
+    var words = String(str == null ? '' : str)
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .split(/[\s_-]+/)
+      .filter(Boolean)
+      .map(function (w) { return w.toLowerCase(); });
+    if (!words.length) return '';
+    var cap = function (w) { return w[0].toUpperCase() + w.slice(1); };
+    if (mode === 'snake') return words.join('_');
+    if (mode === 'kebab') return words.join('-');
+    if (mode === 'camel') return words[0] + words.slice(1).map(cap).join('');
+    if (mode === 'pascal') return words.map(cap).join('');
+    if (mode === 'title') return words.map(cap).join(' ');
+    return words.join(' '); // default: clean words
+  }
+
+  /* MIME table: the extensions a static server actually serves */
+  var MIME = {
+    html: 'text/html; charset=utf-8', htm: 'text/html; charset=utf-8',
+    css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8',
+    mjs: 'text/javascript; charset=utf-8', json: 'application/json; charset=utf-8',
+    txt: 'text/plain; charset=utf-8', md: 'text/markdown; charset=utf-8', csv: 'text/csv; charset=utf-8',
+    svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', ico: 'image/x-icon', avif: 'image/avif',
+    mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4',
+    mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+    woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
+    pdf: 'application/pdf', zip: 'application/zip', gz: 'application/gzip',
+    wasm: 'application/wasm', xml: 'application/xml', rss: 'application/rss+xml',
+    glb: 'model/gltf-binary', gltf: 'model/gltf+json',
+    bin: 'application/octet-stream', exe: 'application/octet-stream',
+    sh: 'text/x-sh', py: 'text/x-python', java: 'text/x-java-source',
+    c: 'text/x-c', h: 'text/x-c', cpp: 'text/x-c', rs: 'text/x-rust', go: 'text/x-go',
+    yml: 'application/x-yaml', yaml: 'application/x-yaml', toml: 'application/toml'
+  };
+  function mimeLookup(ext) {
+    var e = String(ext == null ? '' : ext).toLowerCase().replace(/^\./, '');
+    return MIME[e] || 'application/octet-stream';
+  }
+
+  /* romanConvert: to/from roman numerals (1..3999) */
+  function romanConvert(v) {
+    if (/^[0-9]+$/.test(String(v))) {
+      var n = parseInt(v, 10);
+      if (n < 1 || n > 3999) throw new Error('roman numerals cover 1..3999');
+      var table = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+      var out = '';
+      table.forEach(function (p) { while (n >= p[0]) { out += p[1]; n -= p[0]; } });
+      return out;
+    }
+    var s = String(v).toUpperCase();
+    if (!/^[MDCLXVI]+$/.test(s)) throw new Error('not a roman numeral: ' + v);
+    var vals = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+    var total = 0;
+    for (var i = 0; i < s.length; i++) {
+      var cur = vals[s[i]], next = vals[s[i + 1]] || 0;
+      total += cur < next ? -cur : cur;
+    }
+    return total;
+  }
+
+  /* byteSize: format bytes human / parse human back to bytes */
+  function byteSize(v) {
+    if (/^[0-9]+$/.test(String(v))) {
+      var b = parseInt(v, 10);
+      var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      var u = 0;
+      while (b >= 1024 && u < units.length - 1) { b /= 1024; u++; }
+      return (u === 0 ? b : Math.round(b * 10) / 10) + ' ' + units[u];
+    }
+    var m = String(v).trim().toLowerCase().match(/^([0-9.]+)\s*(b|kb|mb|gb|tb)?$/);
+    if (!m) throw new Error('bad size: ' + v);
+    var mult = { b: 1, kb: 1024, mb: 1048576, gb: 1073741824, tb: 1099511627776 };
+    return Math.round(parseFloat(m[1]) * mult[m[2] || 'b']);
+  }
+
+  /* cronDescribe: humanize a 5-field cron expression */
+  function cronDescribe(expr) {
+    var f = String(expr || '').trim().split(/\s+/);
+    if (f.length !== 5) throw new Error('cron needs 5 fields: min hour dom month dow');
+    var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    var MONS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    function field(str, labels, unit) {
+      if (str === '*' || str === '?') return 'every ' + unit;
+      var parts = str.split(',').map(function (p) {
+        if (p.indexOf('/') > 0) { var pv = p.split('/'); return 'every ' + pv[1] + ' ' + unit + 's from ' + (pv[0] === '*' ? 'the start' : label(pv[0], labels)); }
+        if (p.indexOf('-') > 0) { var d = p.split('-'); return label(d[0], labels) + ' through ' + label(d[1], labels); }
+        return label(p, labels);
+      });
+      return parts.join(', ');
+      function label(x, ls) { var n = parseInt(x, 10); return ls && !isNaN(n) ? ls[n] : String(x); }
+    }
+    var time = '';
+    if (f[0] !== '*' && f[1] !== '*') {
+      var hh = String(f[1]).padStart(2, '0'), mm = String(f[0]).padStart(2, '0');
+      time = 'at ' + hh + ':' + mm;
+      if (f[4] !== '*') time += ' on ' + field(f[4], DAYS, 'weekday');
+      else if (f[2] !== '*') time += ' on day ' + field(f[2], null, 'day') + ' of ' + field(f[3], MONS.map(function (m) { return m; }), 'month');
+      else time += ' every day';
+    } else {
+      time = 'every minute' + (f[1] !== '*' ? ' of hour ' + f[1] : '') + (f[4] !== '*' ? ' on ' + field(f[4], DAYS, 'weekday') : '');
+    }
+    if (f[3] !== '*' && f[1] !== '*') time += ' in ' + field(f[3], MONS, 'month');
+    return time;
+  }
+
+  /* listDiff: set operations over two arrays (order-stable by first array) */
+  function listDiff(a, b) {
+    var A = Array.from(new Set(a || [])), B = new Set(b || []);
+    var bs = new Set(b || []);
+    return {
+      onlyA: A.filter(function (x) { return !bs.has(x); }),
+      onlyB: (b || []).filter(function (x, i) { return !A.includes(x) && (b || []).indexOf(x) === i; }),
+      intersect: A.filter(function (x) { return bs.has(x); }),
+      union: A.concat((b || []).filter(function (x) { return A.indexOf(x) < 0; }))
+    };
+  }
+
+  /* sortLines: sort/dedupe/reverse text lines with numeric + natural modes */
+  function sortLines(text, opts) {
+    opts = opts || {};
+    var lines = String(text == null ? '' : text).split('\n');
+    if (opts.trim) lines = lines.map(function (l) { return l.trim(); }).filter(Boolean);
+    if (opts.dedupe) lines = Array.from(new Set(lines));
+    if (opts.reverseOnly) return lines.reverse().join('\n');
+    var dir = opts.desc ? -1 : 1;
+    lines.sort(function (a, b) {
+      if (opts.numeric) {
+        var na = parseFloat(a), nb = parseFloat(b);
+        var an = isNaN(na), bn = isNaN(nb);
+        if (an && bn) return a.localeCompare(b) * dir; // alpha tiebreak
+        if (an) return 1; if (bn) return -1;
+        return (na - nb) * dir;
+      }
+      if (opts.length) return (a.length - b.length) * dir;
+      return a.localeCompare(b, undefined, { numeric: true }) * dir;
+    });
+    return lines.join('\n');
+  }
+
   return {
     mathEval: mathEval,
     csvParse: csvParse,
@@ -767,6 +1030,18 @@
     passwordGen: passwordGen,
     qrRsEc: qrRsEc,
     urlParse: urlParse,
-    markdownToc: markdownToc
+    markdownToc: markdownToc,
+    mdToHtml: mdToHtml,
+    csvStats: csvStats,
+    jsonMerge: jsonMerge,
+    jsonFlatten: jsonFlatten,
+    jsonUnflatten: jsonUnflatten,
+    textCase: textCase,
+    mimeLookup: mimeLookup,
+    romanConvert: romanConvert,
+    byteSize: byteSize,
+    cronDescribe: cronDescribe,
+    listDiff: listDiff,
+    sortLines: sortLines
   };
 });
