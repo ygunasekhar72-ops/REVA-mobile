@@ -208,5 +208,14 @@
     return null;
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, gen3dQuota: gen3dQuota, extractGlb: extractGlb };
+  /* ---- gen3d cache key: same prompt+image on the same day = reuse,
+     never spend quota twice on the same asset ---- */
+  function gen3dCacheKey(prompt, imagePath, today) {
+    var src = String(prompt || '') + '|' + String(imagePath || '');
+    var h = 5381;
+    for (var i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) >>> 0;
+    return 'g3d:' + today + ':' + h.toString(36);
+  }
+
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, gen3dQuota: gen3dQuota, extractGlb: extractGlb, gen3dCacheKey: gen3dCacheKey };
 });

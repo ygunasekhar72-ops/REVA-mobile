@@ -774,8 +774,7 @@
       var q = LoopCore.gen3dQuota(dbq, today, 6);
       if (!q.allowed) return 'Error: the daily 3D-generation quota is used up (' + q.limit + '/' + q.limit + ' today). It resets at midnight — tell the user, and do NOT attempt again today. Reuse or modify the existing assets instead.';
       var nv = (Store.db.providers || []).find(function (p) { return /nvidia/i.test(p.name) && p.key; });
-      if (!nv) return 'Error: no NVIDIA provider with an API key — gen3d needs one (Settings → Providers).';
-      var key = (nv.key.match(/nvapi-[A-Za-z0-9_-]+/) || [nv.key])[0];
+      if (!nv) return 'Error: no NVIDIA provider with an API key — gen3d needs one (Settings → Providers). Multiple keys can be pasted comma-separated — gen3d rotates across them.';
 
       var body = { slat_cfg_scale: 3, ss_cfg_scale: 7.5, slat_sampling_steps: 25, ss_sampling_steps: 25, seed: Math.floor(Math.random() * 100000) };
       var mode;
@@ -790,19 +789,46 @@
         mode = 'text';
       } else return 'Error: provide a prompt (text-to-3d) or image_path (image-to-3d)';
 
-      setStatus('Generating 3D asset…');
-      var res;
-      try {
-        res = await fetch('https://ai.api.nvidia.com/v1/genai/microsoft/trellis', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': 'Bearer ' + key },
-          body: JSON.stringify(body)
-        });
-      } catch (e) { return 'Error: 3D generation request failed — ' + (e && e.message || e) + ' (network or CORS; on desktop browsers the local proxy may be needed)'; }
-      if (!res.ok) {
-        var et = await res.text().catch(function () { return ''; });
-        return 'Error: 3D generation failed (HTTP ' + res.status + ') — ' + et.slice(0, 300);
+      /* same-day dedupe: the same prompt/image already generated today is
+         reused — quota is never spent twice on the same asset */
+      var ck = LoopCore.gen3dCacheKey(body.prompt || a.image_path, mode, today);
+      var cache = (Store.db.settings.gen3dCache = Store.db.settings.gen3dCache || {});
+      if (cache[ck]) {
+        var cachedPath = cache[ck].path;
+        if (Store.active().vfsContent[cachedPath] !== undefined) {
+          return 'Reused today\'s existing generation: ' + cachedPath + ' — the same asset was already generated today (quota saved: ' + q.remaining + ' of 6 left). Load it with GLTFLoader.';
+        }
       }
+
+      setStatus('Generating 3D asset…');
+      /* L1 load handling: rotate across the USER'S OWN keys (comma-separated
+         in the provider key field — never pooled from anywhere else), honor
+         429 Retry-After, and pin the host hard (https, allowlisted) */
+      var HOST = 'https://ai.api.nvidia.com';
+      if (!HOST.startsWith('https://')) return 'Error: endpoint must be https';
+      var keys = (window.AI && AI.keyList ? AI.keyList(nv) : String(nv.key || '').split(/[,;\n]/)).filter(function (k) { return k && k.trim(); });
+      if (!keys.length) keys = [String(nv.key || '')];
+      var res = null, lastErr = '', attempt = 0, waitMs = 0;
+      for (attempt = 0; attempt < keys.length; attempt++) {
+        if (waitMs) await new Promise(function (r) { setTimeout(r, waitMs); });
+        var r2;
+        try {
+          r2 = await fetch(HOST + '/v1/genai/microsoft/trellis', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': 'Bearer ' + keys[attempt].trim() },
+            body: JSON.stringify(body)
+          });
+        } catch (e) { lastErr = (e && e.message || e) + ' (network or CORS; on desktop browsers the local proxy may be needed)'; continue; }
+        if (r2.ok) { res = r2; break; }
+        var et = await r2.text().catch(function () { return ''; });
+        lastErr = 'HTTP ' + r2.status + ' — ' + et.slice(0, 240);
+        if (r2.status === 429) {
+          var ra = parseInt(r2.headers.get('retry-after') || '0', 10);
+          waitMs = Math.min(ra * 1000 || 2000, 30000);
+        }
+        if (r2.status === 401) break; // dead key — rotation will try the next
+      }
+      if (!res) return 'Error: 3D generation failed after ' + attempt + ' attempt(s) across ' + keys.length + ' key(s) — ' + lastErr;
       var text = await res.text().catch(function () { return ''; });
 
       var glb = LoopCore.extractGlb(text);
@@ -822,6 +848,7 @@
       s.vfsContent[normPath(path)] = dataUrl;
       dbq.used = (dbq.date === today ? (dbq.used || 0) : 0) + 1;
       dbq.date = today;
+      cache[ck] = { path: normPath(path) };
       Store.save();
       var left = Math.max(0, 6 - dbq.used);
       return 'Generated 3D model (' + mode + '-to-3d): ' + normPath(path) + ' — ' + Math.round(dataUrl.length * 0.75 / 1024) + 'KB.\n' +
