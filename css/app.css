@@ -405,6 +405,26 @@
 #mono-harness .ide-keys kbd{background:var(--fld);border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-size:11px;font-family:ui-monospace,monospace;color:var(--ink);min-width:34px;text-align:center}
 #mono-harness .ide-keys span{flex:1}
 
+/* ---- IDE Phase D: side-by-side diff view ---- */
+#ide .ide-histfiles{display:flex;flex-wrap:wrap;gap:5px;padding:6px 0}
+#ide .ide-histfile{background:#17171c;border:1px solid #232329;border-radius:7px;color:#a4a4b0;font:inherit;font-size:10.5px;padding:3px 9px;cursor:pointer}
+#ide .ide-histfile.on{color:#f4f4f6;border-color:#2e4568;background:#1a2233}
+#ide .ide-sidediff{border:1px solid #1d1d22;border-radius:10px;overflow:hidden;margin-top:8px}
+#ide .ide-sd-head{background:#121215;padding:6px 12px;font-size:11px;color:#82aaff;font-family:ui-monospace,monospace}
+#ide .ide-sd-cols{display:grid;grid-template-columns:1fr 1fr}
+#ide .ide-sd-l{border-right:1px solid #1d1d22}
+#ide .ide-sd-row{display:flex;font-family:ui-monospace,Consolas,monospace;font-size:10.5px;line-height:1.55;min-height:17px}
+#ide .ide-sd-l .ide-sd-row{text-align:right}
+#ide .ide-sd-row.del{background:#2a1414}
+#ide .ide-sd-row.add{background:#12281a}
+#ide .ide-sd-row.empty{background:#0c0c0f;opacity:.35}
+#ide .ide-sd-op{width:20px;flex:none;text-align:center;color:#5a5a63;user-select:none}
+#ide .ide-sd-row.del .ide-sd-op{color:#f2777a}
+#ide .ide-sd-row.add .ide-sd-op{color:#4fd08a}
+#ide .ide-sd-txt{flex:1;white-space:pre-wrap;word-break:break-all;padding-right:6px;color:#c9c9d2}
+#ide .ide-sd-row.del .ide-sd-txt{color:#f2777a}
+#ide .ide-sd-row.add .ide-sd-txt{color:#4fd08a}
+
 /* ---------- NATIVE MODE (real phones: no mockup hardware) ---------- */
 #mono-harness.native{padding:0;height:100vh;overflow:hidden}
 #mono-harness.native .stage{height:100%}

@@ -758,25 +758,61 @@
       /* checkpoint keys are store-prefixed ('workspace/x') — compare against
          the RAW vfsContent, not filesObj() whose keys are display-relative */
       var now = (Store.active() || {}).vfsContent || {};
-      var changed = [], added = [];
+      var changed = [], added = [], removed = [];
       Object.keys(rec.files).forEach(function (p) {
         if (now[p] === undefined) { added.push(p); return; }
         if (now[p] !== rec.files[p]) changed.push(p);
       });
-      var removed = Object.keys(now).filter(function (p) { return rec.files[p] === undefined; });
+      removed = Object.keys(now).filter(function (p) { return rec.files[p] === undefined && p.indexOf('workspace/skills/') !== 0; });
       var head = '<b>vs checkpoint "' + esc(rec.label) + '":</b> ' + changed.length + ' changed, ' + added.length + ' added since, ' + removed.length + ' removed since';
+      var fileList = changed.concat(added, removed).map(function (p) {
+        var sel = p === (window.__ideHistSel || '') ? ' on' : '';
+        return '<button class="ide-histfile' + sel + '" data-idehistfile="' + esc(p) + '">' + esc(p.split('/').pop()) + '</button>';
+      }).join('');
+      box.innerHTML = '<div class="ide-histdiff">' + head +
+        (fileList ? '<div class="ide-histfiles">' + fileList + '</div>' : '') +
+        '<div id="ideHistSide"></div></div>';
+      box.querySelectorAll('[data-idehistfile]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          window.__ideHistSel = b.getAttribute('data-idehistfile');
+          box.querySelectorAll('.ide-histfile').forEach(function (x) { x.classList.remove('on'); });
+          b.classList.add('on');
+          renderSideDiff(rec, window.__ideHistSel);
+        });
+      });
       var first = (changed.concat(added))[0] || removed[0];
-      var patch = '';
-      if (first) {
-        var before = rec.files[first];
-        var after = now[first];
-        patch = window.Diff && Diff.createTwoFilesPatch
-          ? Diff.createTwoFilesPatch(first + ' (checkpoint)', first + ' (now)', before === undefined ? '' : String(before), after === undefined ? '' : String(after), '', '', { context: 2 })
-          : '(diff needs the jsdiff engine)';
-      }
-      box.innerHTML = '<div class="ide-histdiff">' + head + (patch ? '<pre class="ide-histpatch">' + esc(patch.slice(0, 4000)) + '</pre>' : '') +
-        (changed.concat(added, removed).length ? '<span class="ide-st-dim">files: ' + esc(changed.concat(added, removed).slice(0, 8).join(', ')) + '</span>' : '') + '</div>';
+      if (first) { window.__ideHistSel = first; renderSideDiff(rec, first); }
     });
+  }
+  /* the side-by-side diff view (Phase D): DIFFENG.alignSides → two-pane rows */
+  function renderSideDiff(rec, path) {
+    var holder = $('#ideHistSide');
+    if (!holder || !rec) return;
+    var before = rec.files[path];
+    var after = (Store.active() || {}).vfsContent || {};
+    var nowText = after[path] === undefined ? '(file does not exist now)' : String(after[path]);
+    var rows = window.DIFFENG
+      ? DIFFENG.alignSides(before === undefined ? '' : String(before), nowText)
+      : [];
+    var maxRows = 400;
+    var html = ['<div class="ide-sidediff"><div class="ide-sd-head">' + esc(path) + '</div>'];
+    html.push('<div class="ide-sd-cols"><div class="ide-sd-l">');
+    var i;
+    for (i = 0; i < Math.min(rows.length, maxRows); i++) {
+      var r = rows[i];
+      var lCls = r.left ? (r.left.op === '-' ? ' del' : r.left.op === '+' ? ' add' : '') : ' empty';
+      html.push('<div class="ide-sd-row' + lCls + '"><span class="ide-sd-op">' + (r.left ? r.left.op : ' ') + '</span><span class="ide-sd-txt">' + esc(r.left ? r.left.t : '') + '</span></div>');
+    }
+    html.push('</div><div class="ide-sd-r">');
+    for (i = 0; i < Math.min(rows.length, maxRows); i++) {
+      r = rows[i];
+      var rCls = r.right ? (r.right.op === '-' ? ' del' : r.right.op === '+' ? ' add' : '') : ' empty';
+      html.push('<div class="ide-sd-row' + rCls + '"><span class="ide-sd-op">' + (r.right ? r.right.op : ' ') + '</span><span class="ide-sd-txt">' + esc(r.right ? r.right.t : '') + '</span></div>');
+    }
+    html.push('</div></div>');
+    if (rows.length > maxRows) html.push('<p class="ide-empty">… ' + (rows.length - maxRows) + ' more rows</p>');
+    html.push('</div>');
+    holder.innerHTML = html.join('');
   }
   function historyRestore(id) {
     Store.checkpoints.get(id).then(function (rec) {
@@ -986,6 +1022,6 @@
     toggleHistory: toggleHistory, renderHistory: renderHistory,
     historyDiff: historyDiff, historyRestore: historyRestore,
     replaceAcrossFiles: replaceAcrossFiles,
-    toggleWrap: toggleWrap, showShortcuts: showShortcuts, workspaceSymbols: workspaceSymbols
+    toggleWrap: toggleWrap, showShortcuts: showShortcuts, workspaceSymbols: workspaceSymbols, renderSideDiff: renderSideDiff
   };
 })();
