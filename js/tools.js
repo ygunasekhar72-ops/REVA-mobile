@@ -1199,17 +1199,38 @@
       if (window.WebSearch && WebSearch.isPrivateTarget && WebSearch.isPrivateTarget(url)) return 'Error: blocked — private/loopback targets are not reachable from the agent (SSRF guard)';
       var method = String(a.method || 'GET').toUpperCase();
       if (['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].indexOf(method) < 0) return 'Error: unsupported method ' + method;
+      /* use the FETCH CLIENT (subsystem #6) — retry, timeout, single-flight */
+      var client = window.FETCHCLIENT ? FETCHCLIENT.createClient({
+        baseUrl: url.replace(/\/[^\/]*$/, ''),
+        timeout: 30000,
+        retries: 1,
+        fetch: typeof fetch !== 'undefined' ? fetch : undefined
+      }) : null;
+      if (client) {
+        var t0 = Date.now();
+        var opts = { method: method, headers: a.headers || {}, maxBytes: Math.min(20000, Math.max(500, parseInt(a.maxBytes, 10) || 4000)) };
+        if (a.body !== undefined && method !== 'GET' && method !== 'HEAD') opts.body = a.body;
+        var result;
+        try {
+          result = method === 'GET' ? await client.get(url.replace(/\/[^\/]*$/, '').length ? url : url, opts) : await client.request(method, url, opts);
+        } catch (e) { return 'Error: ' + (e.message || e); }
+        var hs2 = [];
+        Object.keys(result.headers || {}).forEach(function (k) { if (/^(content-type|content-length|cache-control|retry-after|location|server|date)$/i.test(k)) hs2.push(k + ': ' + result.headers[k]); });
+        var dataStr = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+        return 'HTTP ' + result.status + ' (' + (Date.now() - t0) + 'ms)\n' + hs2.join('\n') + '\n\n' + (dataStr || '').slice(0, opts.maxBytes) + ((dataStr || '').length > opts.maxBytes ? '\n… (' + (dataStr || '').length + ' bytes total)' : '');
+      }
+      /* fallback: raw fetch (when FETCHCLIENT is not available) */
       var headers = {};
       Object.keys(a.headers || {}).forEach(function (k) { headers[String(k).replace(/[^\w-]/g, '')] = String(a.headers[k]).slice(0, 500); });
-      var opts = { method: method, headers: headers };
-      if (a.body !== undefined && method !== 'GET' && method !== 'HEAD') opts.body = typeof a.body === 'string' ? a.body : JSON.stringify(a.body);
-      var t0 = Date.now();
-      var res = await fetch(url, opts);
+      var opts2 = { method: method, headers: headers };
+      if (a.body !== undefined && method !== 'GET' && method !== 'HEAD') opts2.body = typeof a.body === 'string' ? a.body : JSON.stringify(a.body);
+      var t1 = Date.now();
+      var res = await fetch(url, opts2);
       var body = await res.text();
       var cap = Math.min(20000, Math.max(500, parseInt(a.maxBytes, 10) || 4000));
       var hs = [];
       res.headers.forEach(function (v, k) { if (/^(content-type|content-length|cache-control|retry-after|location|server|date)$/i.test(k)) hs.push(k + ': ' + v); });
-      return 'HTTP ' + res.status + ' ' + res.statusText + ' (' + (Date.now() - t0) + 'ms)\n' + hs.join('\n') + '\n\n' + body.slice(0, cap) + (body.length > cap ? '\n… (' + body.length + ' bytes total — raise maxBytes up to 20000 to read more)' : '');
+      return 'HTTP ' + res.status + ' ' + res.statusText + ' (' + (Date.now() - t1) + 'ms)\n' + hs.join('\n') + '\n\n' + body.slice(0, cap) + (body.length > cap ? '\n… (' + body.length + ' bytes total — raise maxBytes up to 20000 to read more)' : '');
     },
     diff_texts: function (a) {
       var A = a.a, B = a.b, nA = a.pathA, nB = a.pathB;
