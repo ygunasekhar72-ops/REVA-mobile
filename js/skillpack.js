@@ -13,6 +13,36 @@
   'use strict';
 
   var descs = {
+    /* ---- batch 12: the volume pack — 30 skills across every remaining domain ---- */
+    'character-controller': 'character controller movement acceleration friction jump gravity coyote buffer double jump wall slide dash',
+    'physics-tuning': 'physics tuning gravity restitution friction air resistance terminal velocity mass fixed timestep substep interpolation',
+    'save-load-game': 'save load game checkpoint autosave quick save slot serialize state restore position inventory flags progress',
+    'game-tutorial-flow': 'game tutorial flow first time user onboarding hint ghost ghost input guided free play gradual complexity',
+    'combat-system': 'combat system attack hitbox hurtbox invincibility frame combo stagger knockback damage calculation cooldown',
+    'stealth-mechanics': 'stealth mechanics guard vision cone sound detection light shadow hide spot distraction patrol route suspicion',
+    'inventory-management': 'inventory management slot grid weight limit stack split combine equip unequip swap container transfer item',
+    'world-map-navigation': 'world map navigation fast travel waypoint discovered undiscovered fog of war marker quest tracker minimap',
+    'resource-management': 'resource management gather craft consume regenerate scarcity abundance economy balance production consumption',
+    'dashboard-layout': 'dashboard layout card grid sidebar header kpi metric chart table filter sort pagination real time data display',
+    'crud-interface': 'crud interface create read update delete list detail form validation optimistic update confirmation toast',
+    'wizard-flow': 'wizard flow multi step form step indicator progress validation per step back next skip summary confirm final',
+    'realtime-collaboration': 'realtime collaboration operational transform crdt conflict concurrent edit presence cursor awareness locking',
+    'notification-system': 'notification system toast snackbar alert banner badge inbox feed priority persistent transient action button',
+    'pull-to-refresh': 'pull to refresh overscroll threshold spinner rubber band iOS android native feel custom indicator touch gesture',
+    'bottom-sheet': 'bottom sheet modal drawer swipe dismiss snap points handle drag gesture half sheet full sheet mobile pattern',
+    'scroll-snap': 'scroll snap css scroll snap type mandatory proximity align start center end carousel slider pagination scroll',
+    'aspect-ratio-css': 'aspect ratio css width height proportional responsive image video embed maintain ratio intrinsic sizing',
+    'css-gap-spacing': 'css gap row column flex grid spacing shorthand margin collapse replacement consistent spacing system',
+    'css-object-fit': 'object fit cover contain fill scale down crop image video position center focus point preserve ratio',
+    'lazy-loading-deep': 'lazy loading image video iframe component data on demand viewport root margin threshold placeholder skeleton',
+    'preloading-strategies': 'preloading strategy preload prefetch preconnect modulepreload dns fetchpriority critical above fold priority',
+    'css-animation-performance': 'css animation performance compositor transform opacity will change paint layout avoid reflow gpu accelerate',
+    'image-optimization': 'image optimization format webp avif jpeg png svg compression resize responsive srcset sizes lazy loading',
+    'font-loading-strategy': 'font loading strategy font display swap optional block fallback metric override preload subset woff2',
+    'viewport-meta': 'viewport meta tag width device width initial scale maximum scale user scalable viewport fit cover safe area',
+    'touch-optimization': 'touch optimization target size 44px spacing tap delay touch action manipulation passive event listener',
+    'battery-aware-app': 'battery aware api get battery level charging state reduce quality frame rate animation network usage low power',
+    'progressive-enhancement': 'progressive enhancement base experience enhance feature detect available capability graceful degradation core function',
     /* ---- batch 11: code quality + design patterns ---- */
     'observer-pattern': 'observer pattern subject observer notify subscribe unsubscribe event dispatch decouple state change broadcast one to many',
     'strategy-pattern': 'strategy pattern algorithm swap interchangeably encapsulate family select runtime composition inheritance avoid conditional',
@@ -256,6 +286,469 @@
   };
 
   var bodies = {};
+  /* ---- batch 12 bodies: the volume pack ---- */
+  bodies['character-controller'] = [
+    'A character controller that FEELS right — the numbers are the game:',
+    '',
+    'The movement pipeline (fixed timestep, see game-architecture):',
+    'var SPEED = 200, ACCEL = 2000, FRICTION = 1800;',
+    '/* accelerate toward input direction */',
+    'var inputX = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);',
+    'if (inputX !== 0) { vx += inputX * ACCEL * dt; vx = clamp(vx, -SPEED, SPEED); }',
+    'else { /* friction when no input */ var f = FRICTION * dt; vx = Math.abs(vx) <= f ? 0 : vx - Math.sign(vx) * f; }',
+    '',
+    'The jump (the five numbers that define feel — game-physics-2d): GRAVITY 2200, JUMP_VEL -sqrt(2 × GRAVITY × jumpHeight), coyote 80ms, buffer 100ms, variable height (cut vy × 0.45 on release). The JUMP FEELS different with each number — tune by playing, not by math.',
+    '',
+    'Double jump: a counter reset on ground contact; the second jump is typically 80% of the first (slightly weaker — it feels intentional). Wall slide: when touching a wall AND falling, cap vy at 50 (the wall friction); wall jump: push AWAY from the wall (vx = -wallDir × 250) + jump vy.',
+    '',
+    'The dash: a burst of speed in the input direction — dashSpeed 500, dashDuration 0.15s, THEN a cooldown 0.5s. During the dash: gravity is ZERO (the dash is horizontal — gravity would curve it); after: velocity is set to dashSpeed × 0.3 (the exit speed is slower than the dash itself).',
+    '',
+    'Ground detection: raycast down or a ground-check point at the feet; grounded = the ray hits within skinWidth (0.05px). COYOTE TIME: grounded was true within the last 80ms (a timer, not a boolean — the player can jump AFTER walking off a ledge).',
+    '',
+    'Verify: play for 5 minutes — the character responds to EVERY input within 1 frame; the jump feels tight (no float, no stick); the dash is satisfying (not overpowered, not useless).'
+  ].join('\n');
+  bodies['physics-tuning'] = [
+    'Physics tuning — the constants that make the simulation feel real:',
+    '',
+    'The four forces: GRAVITY (9.8 m/s² in real units; in game units, 500-2500 px/s² depending on scale); FRICTION (ground friction 0.8-0.95 per contact, air friction 0.99); RESTITUTION (bounciness 0-1: 0 = dead stop, 0.8 = bouncy ball); AIR RESISTANCE (drag proportional to velocity² — the terminal velocity where drag = gravity).',
+    '',
+    'The fixed timestep with substeps (the stability fix): when dt is large (a frame spike), the physics explodes (tunneling, jitter). Fix: SUBSTEPS — run the physics N times with dt/N each: var substeps = Math.ceil(dt / (1/120)); for (var s = 0; s < substeps; s++) step(dt / substeps); — 120Hz substeps handle fast objects without tunneling.',
+    '',
+    'Interpolation (the rendering smooth): the physics runs at 120Hz but the render runs at 60fps (or variable) — the renderer interpolates between the last two physics states: renderPos = lerp(prevPos, currPos, accumulator / STEP). Without interpolation, the movement STUTTERS even at a stable physics rate.',
+    '',
+    'Mass and impulse: heavier objects need more force — impulse = mass × deltaV; a 10kg object needs 10× the impulse of a 1kg object for the same velocity change. In a game, mass matters for COLLISIONS (the heavier object pushes the lighter one) and for FORCE application (the same force accelerates less mass).',
+    '',
+    'Sleep: objects at rest (< threshold velocity for N frames) STOP being simulated — re-activated on contact. Without sleep, 1000 resting objects still cost physics time every frame.',
+    '',
+    'Verify: stack 5 boxes — stable (no jitter, no explosion); a fast bullet doesn\'t tunnel through a thin wall (substeps); the simulation is DETERMINISTIC (the same inputs produce the same result — deterministic-replay).'
+  ].join('\n');
+  bodies['save-load-game'] = [
+    'Save/load: the player\'s time is the most valuable data in your game:',
+    '',
+    'The save data model: everything needed to RESUME — {player: {pos, hp, inventory, abilities}, world: {flags, doors, defeated}, progress: {level, checkpoints}, meta: {version, playtime, timestamp}}. Anything RECOMPUTABLE from the save (enemy positions from spawn points, quest states from flags) is NOT saved (a smaller save = a faster load).',
+    '',
+    'When to save: (1) CHECKPOINTS (level transitions, before boss doors — the player EXPECTS a save here); (2) AUTO-SAVE (every 2-3 minutes, on visibilitychange — the mobile law); (3) MANUAL (the save button — with a visible "SAVED" confirmation); (4) QUIT (on beforeunload — the last-chance save).',
+    '',
+    'The slot system: 3 manual slots + 1 autosave slot; each slot: {metadata: {name, level, playtime, screenshot, timestamp}, data: {…}}; the load screen shows the metadata (the player picks by screenshot and level, not by slot number).',
+    '',
+    'The serialization (save-systems-games has the full pattern): JSON.stringify with a version field; migrate on load; the atomic write (json-file-persistence). For REVA: localStorage or IndexedDB (the harness\'s Store).',
+    '',
+    'The load validation: every field has a DEFAULT (a missing field gets the default, not undefined); a corrupt save falls back to the PREVIOUS save (keep .bak — json-file-persistence); the load screen shows save version and timestamp so the player can identify the right save.',
+    '',
+    'Verify: save → kill the app → relaunch → the state is EXACT (position, inventory, flags); a corrupted save → the .bak loads; three slots + autosave all independent.'
+  ].join('\n');
+  bodies['game-tutorial-flow'] = [
+    'The game tutorial flow: teaching WITHOUT the player noticing they\'re being taught:',
+    '',
+    'The ghost-input approach (the gold standard): the game SHOWS the input instead of telling — a ghost thumb appears on screen at the position where the player should swipe; a ghost button pulses where they should tap. The player IMITATES, not reads. After 3 successful imitations, the ghost fades.',
+    '',
+    'The guided-free-play spectrum: GUIDED (the game controls the player — a corridor with one door) → ASSISTED (the game hints — a glowing edge, a prompt after 5s idle) → FREE (the player explores). The tutorial moves from guided to free GRADUALLY — each mechanic starts guided, ends free.',
+    '',
+    'The teaching sequence (level-design\'s 3-beat rule, applied to the tutorial): BEAT 1: introduce the mechanic in isolation (a single gap to jump — impossible to fail); BEAT 2: the same mechanic with a small variation (a moving platform); BEAT 3: combine with a previous mechanic (jump + dash over a wider gap).',
+    '',
+    'The hint system (for stuck players): tiered hints — (1) after 30s idle: a subtle glow on the interactive element; (2) after 60s: a text hint (one line); (3) after 120s: a stronger hint or a skip option. The hints ESCALATE — the player always feels like THEY solved it.',
+    '',
+    'The metrics: WHERE do players drop off during the tutorial? Instrument every step (analytics-integration): step_entered, step_completed, step_skipped, time_per_step. The step with the highest drop-off is your tutorial\'s weakest link.',
+    '',
+    'Verify: a new player reaches the core loop in <60s without reading; the hint system escalates; the tutorial can be skipped; the drop-off analytics show where players struggle.'
+  ].join('\n');
+  bodies['combat-system'] = [
+    'A combat system: the hit, the response, and the rhythm:',
+    '',
+    'The hit detection: HITBOX (the attacking hitbox — active only during the attack frames) vs HURTBOX (the target\'s vulnerable area — always active). A hit = hitbox overlaps hurtbox. The hitbox is SMALLER than the sprite (generous to the player); the hurtbox is SLIGHTLY smaller than the sprite (grazing doesn\'t count).',
+    '',
+    'Attack states: WINDUP (the preparation — 100-300ms, the telegraph), ACTIVE (the hitbox is live — 50-150ms), RECOVERY (the vulnerability — 200-500ms). The RATIO between these defines the weapon feel: a dagger = short windup, short active, short recovery (fast, low damage); a hammer = long windup, short active, LONG recovery (slow, high damage).',
+    '',
+    'Invincibility frames (i-frames): after taking damage, the player is INVULNERABLE for 500-1000ms (flashing sprite) — prevents multi-hit from one attack passing through the player every frame. The i-frames also serve as the dodge reward (a well-timed dodge grants brief invulnerability).',
+    '',
+    'Hit response (the feel): HITSTOP (freeze both attacker and target for 40-80ms — game-juice), KNOCKBACK (push the target away — direction = attacker facing, magnitude = weapon knockback), SCREEN SHAKE (proportional to damage), HIT PARTICLES (at the contact point), SOUND (the impact). ALL FIVE fire together — missing any one weakens the hit.',
+    '',
+    'Combo system: a combo counter that resets after 1s of no hits; each consecutive hit increases a damage multiplier (×1.0, ×1.1, ×1.2…); the combo UI shows the counter with a scaling animation (bigger counter = more exciting). Combo BREAKERS: taking damage resets the combo (the risk-reward).',
+    '',
+    'Verify: every hit produces all 5 feedback signals; i-frames prevent double-hits; the combo system rewards aggressive play; different weapons feel DIFFERENT (the timing ratios).'
+  ].join('\n');
+  bodies['stealth-mechanics'] = [
+    'Stealth: the tension of being seen — or not:',
+    '',
+    'The vision system: each guard has a VISION CONE (direction + angle 60-90° + range) — the player is detected when: within the cone AND within range AND line-of-sight (no wall between — a grid raycast, a-star-pathfinder\'s DDA). Detection is GRADUAL: a meter fills when visible (0.5-2s depending on distance), drains when hidden.',
+    '',
+    'The detection states: UNAWARE (patrolling — doesn\'t know the player exists), SUSPICIOUS (heard something, saw a glimpse — investigates the last known position), ALERT (fully detected — chases, calls for backup). The escalation gives the player a GRACE PERIOD to hide.',
+    '',
+    'Sound propagation: actions generate SOUND RADIUS (running = 150px, walking = 50px, crouch-walking = 0); guards within the radius become SUSPICIOUS and investigate the source. Sound travels through walls at reduced radius (50%).',
+    '',
+    'Hiding spots: predefined locations (bushes, lockers, shadows) — the player enters a hide spot and becomes INVISIBLE (a visual indicator shows the player is hidden); guards can\'t detect hidden players UNLESS they saw them enter.',
+    '',
+    'The distraction tool: throwable objects (a stone) generate SOUND at the landing point — guards investigate; the player uses distractions to MOVE guards away from the path. This is the core stealth VERB.',
+    '',
+    'Verify: the vision cone is visible (debug mode), detection is gradual (not instant), sound attracts guards, hiding spots work, distractions move guards predictably.'
+  ].join('\n');
+  bodies['inventory-management'] = [
+    'The inventory: a system that\'s 50% data model, 50% UI, 100% designed:',
+    '',
+    'The data model: slots = Array(size).fill(null); each item = {id, count, metadata}; stack rules per item type (max stack: 99 for consumables, 1 for equipment). addItem with overflow handling (returns the leftover that didn\'t fit — inventory-systems has the full model).',
+    '',
+    'The UI grid: slots as a CSS grid (auto-fill with minmax for responsiveness — css-grid-layouts); each slot: icon + count badge + rarity border color; hover/tap shows a tooltip with the full item description; DRAG to reorder, SWAP with another slot, DROP to discard (with a confirmation for rare items).',
+    '',
+    'The equip system: equipment slots (head, body, weapon, accessory) are SEPARATE from the inventory; equipping swaps between the inventory slot and the equipment slot (the same move() logic — inventory-systems); stat changes apply immediately (the character\'s DPS updates on equip).',
+    '',
+    'The economy loop: items come from LOOT (enemy drops, chests, quest rewards) and CRAFTING (combining materials); items go to CONSUMPTION (potions used), EQUIPMENT (upgrades), VENDOR (selling). The loop must be BALANCED (game-balance): the player should always have SOMETHING to spend resources on.',
+    '',
+    'Persistence: the inventory IS the save data (json serialization — save-systems-games); versioning from day one (a new item type added later must not break old saves — localstorage-state\'s migration law).',
+    '',
+    'Verify: add/stack/split/swap/equip/unequip — every operation works; the UI updates live; the save/load roundtrip preserves the exact inventory state; overflow is handled (the player is told, not silently dropped).'
+  ].join('\n');
+  bodies['world-map-navigation'] = [
+    'The world map: the player\'s mental model of the game world:',
+    '',
+    'The map layers: TERRAIN (the world layout — tiles, heights), ROADS (paths between locations), REGIONS (colored areas — forest, desert, city), MARKERS (points of interest: quests, shops, fast-travel points), FOG OF WAR (undiscovered areas — grey/black until explored).',
+    '',
+    'The fog of war: a boolean grid matching the world tiles — a tile is REVEALED when the player is within revealRadius (tiles become visible permanently); the UNSEEN tiles are black; the SEEN-BUT-NOT-CURRENT tiles are dimmed (the player remembers the layout but doesn\'t see live changes — the fog-of-war effect).',
+    '',
+    'Fast travel: unlocked at discovered waypoints; the player opens the map, selects a discovered waypoint, confirms — the game teleports (with a fade transition). Fast travel is EARNED (discover the waypoint first) — it rewards exploration.',
+    '',
+    'The minimap: a small canvas (128×128) in the corner — shows the LOCAL area (tiles, entities, markers) around the player; rotation: north-up (fixed) or player-up (rotating — for driving games); the minimap updates every frame but draws ONLY the visible tiles (tilemap-engines\' culling).',
+    '',
+    'The quest tracker: a sidebar or overlay showing ACTIVE quests with their target locations — a marker on the world map AND an on-screen arrow/distance indicator (the HUD guidance). Quest markers use color coding (gold = main, silver = side, red = urgent).',
+    '',
+    'Verify: the fog of war reveals correctly; fast travel works between discovered waypoints; the minimap shows the local area; the quest tracker guides the player to the objective.'
+  ].join('\n');
+  bodies['resource-management'] = [
+    'Resource management: the economy of scarcity and abundance:',
+    '',
+    'The resource types: SOURCES (where resources come from — mining, farming, looting, crafting), SINKS (where they go — building, upgrading, consuming, trading), STORAGE (the inventory or warehouse capacity). A healthy economy has BALANCED sources and sinks — too many sources = inflation (nothing has value); too many sinks = frustration (the player can\'t progress).',
+    '',
+    'The regeneration model: renewable resources (wood from trees, crops from farms) regenerate over time — the regen rate vs the consumption rate determines the SUSTAINABILITY. Non-renewable resources (ore deposits, rare drops) are finite per area — the player must EXPLORE to find more.',
+    '',
+    'The tier system: T1 resources (wood, stone) are abundant and cheap; T2 (iron, crystal) are rarer; T3 (gold, diamond) are rare and valuable; crafting chains: T1 + T1 → T2, T2 + T2 → T3 — the player progresses through the tiers (progression-systems\' ladder).',
+    '',
+    'The UI: each resource shows: current amount, income rate (+5/min), consumption rate (-3/min), and the NET (+2/min or -1/min — the net tells the player if they\'re gaining or losing); a NEGATIVE net warns the player before the resource hits zero.',
+    '',
+    'The storage cap: warehouses have limited capacity — the player UPGRADES storage or SPENDS the surplus; a full warehouse wastes production (the incentive to expand).',
+    '',
+    'Verify: the economy is balanced (income ≈ expenditure at each tier); the UI shows the net flow; the player always has a goal for their resources; running out of a resource has a clear solution.'
+  ].join('\n');
+  bodies['dashboard-layout'] = [
+    'The dashboard layout: information density without overwhelm:',
+    '',
+    'The grid: CSS Grid with named areas (css-grid-layouts) — header, sidebar, main, footer. The main area is a grid of WIDGETS (KPI cards, charts, tables). Mobile: single column (stack); tablet: 2 columns; desktop: 3-4 columns (responsive-fluid-design).',
+    '',
+    'The KPI card: ONE metric per card — the number (large, tabular-nums), the label (small, muted), the trend (an arrow + percentage, colored green/red), and a sparkline (a tiny inline chart showing the trend). The card is a self-contained component (component-architecture).',
+    '',
+    'The chart area: 2-4 charts per dashboard (NOT 20 — a dashboard with 20 charts is a wall of noise); each chart answers ONE question ("how are sales trending?", "what\'s the user distribution?"); the most important chart gets the LARGEST area (visual hierarchy).',
+    '',
+    'The data refresh: real-time dashboards poll every 30s or use websockets (websocket-live); the timestamp of the last refresh is VISIBLE ("Updated 2 min ago") — stale data with no timestamp is a lie; a refresh button for manual updates.',
+    '',
+    'The filter bar: date range, category, status — filters apply to ALL widgets simultaneously (a shared filter state — state-management-vanilla); the URL reflects the filters (url-state-routing — shareable dashboard states).',
+    '',
+    'Verify: resize from mobile to desktop — the grid reflows; every number is tabular; the filter bar updates all widgets; the timestamp shows; the most important chart is the largest.'
+  ].join('\n');
+  bodies['crud-interface'] = [
+    'The CRUD interface: create, read, update, delete — the backbone of every app:',
+    '',
+    'The LIST view: a table or card list with PAGINATION (or infinite scroll), SORT (click column headers), FILTER (search + dropdown filters), and BULK ACTIONS (select multiple → delete/export). Each row: the key data points + row actions (edit, delete — as icon buttons).',
+    '',
+    'The CREATE flow: a form (forms-validation) → on submit → optimistic UI (show the new item immediately) → POST to the API → on success, replace with the server version → on failure, roll back + show the error. The form is a MODAL or a DEDICATED PAGE (inline creation for simple entities, a page for complex ones).',
+    '',
+    'The EDIT flow: pre-fill the form with existing data → the user changes fields → on save, send ONLY the changed fields (a diff, not the whole object — api-design-rest\'s PATCH semantics) → optimistic update → confirm.',
+    '',
+    'The DELETE flow: a CONFIRMATION (a modal with the item name — "Delete \'Project Alpha\'? This cannot be undone."); on confirm, remove from the UI immediately (optimistic) + send the DELETE request; on failure, restore the item + show the error. Soft delete (a "deleted" flag) is SAFER than hard delete (recoverable).',
+    '',
+    'The optimistic update pattern (async-ui-patterns): apply the change locally IMMEDIATELY (the UI feels instant); send to the server in the background; on success, solidify; on failure, ROLL BACK + show the error. The rollback IS the feature — without it, the UI lies.',
+    '',
+    'Verify: every CRUD operation works; the optimistic updates roll back on failure; the list reflects changes immediately; bulk actions work; the delete confirmation shows the item name.'
+  ].join('\n');
+  bodies['wizard-flow'] = [
+    'The wizard: multi-step forms that don\'t overwhelm:',
+    '',
+    'The structure: a STEP ARRAY [{title, fields, validate}] — each step is a mini-form; the state is a WIZARD OBJECT accumulating data across steps; the progress indicator shows where the user is (step 2 of 4) and how far they\'ve come.',
+    '',
+    'Per-step validation: each step validates ITS OWN fields before allowing "Next" — errors are shown INLINE at the field level; the user can\'t advance with invalid data (but they CAN go BACK — their previous entries are preserved).',
+    '',
+    'The navigation rules: NEXT validates the current step; BACK preserves the data (no re-validation on back — the user is going backward to FIX something); the STEP INDICATOR allows clicking BACK to previous steps (but not FORWARD to unvisited steps — they haven\'t earned it).',
+    '',
+    'The summary step: before the final submit, show a SUMMARY of all entered data (a read-only review) — the user confirms before the irreversible action (a submission, a purchase, a configuration). The summary prevents "I didn\'t mean to do that".',
+    '',
+    'The persistence: each step\'s data persists in localStorage (localstorage-state) — a page refresh doesn\'t lose progress; the wizard resumes where the user left off (the step number + the data).',
+    '',
+    'The UX: step titles are VERB phrases ("Choose your plan", "Enter your details", "Review and confirm"); the Next button is ALWAYS visible (the user doesn\'t scroll to find it); a progress bar or step dots show completion.',
+    '',
+    'Verify: navigate forward through validation, backward through preserved data, refresh without losing progress, the summary shows all data, the final submit works.'
+  ].join('\n');
+  bodies['realtime-collaboration'] = [
+    'Real-time collaboration: multiple users editing the same document:',
+    '',
+    'The problem: two users edit the same paragraph simultaneously — whose change wins? The naive approaches: LAST-WRITE-WINS (one user\'s work is silently destroyed); LOCKING (only one user can edit at a time — the "wiki lock" that frustrates).',
+    '',
+    'CRDT (Conflict-free Replicated Data Type): the data structure that GUARANTEES convergence — every edit is an OPERATION with a unique ID and a POSITION; operations commute (order doesn\'t matter); all replicas converge to the same state without coordination.',
+    '',
+    'The simple CRDT for text: each character has a UNIQUE ID and a position BETWEEN its neighbors (a fractional index: the new character between "a" and "b" gets position "a5" — between a4 and b0); deletion is a TOMBSTONE (mark as deleted, don\'t remove — the positions stay stable).',
+    '',
+    'The presence layer: each user broadcasts their CURSOR position (which character offset), their SELECTION (a range), and their IDENTITY (name + color) — the other users see colored cursors moving in real time. Presence is TRANSIENT (not saved — it disappears when the user disconnects).',
+    '',
+    'The sync architecture: local edits apply IMMEDIATELY (zero latency — the user\'s own keystrokes are never delayed); edits broadcast to peers via websocket-live; each peer applies the remote operation AT THE CORRECT POSITION (the CRDT guarantees convergence regardless of arrival order).',
+    '',
+    'Verify: two users type SIMULTANEOUSLY in different positions — both texts appear correctly; the same word typed at the same position by two users — one wins deterministically; a user disconnects — their cursor disappears, their text remains.'
+  ].join('\n');
+  bodies['notification-system'] = [
+    'The notification system: inform without overwhelming:',
+    '',
+    'The taxonomy: TOAST (transient — 3-5s, auto-dismiss, no action needed: "Saved", "Copied"); SNACKBAR (transient with an ACTION — "Deleted — Undo"); BANNER (persistent until dismissed — a system-wide notice: "Maintenance in 10 minutes"); BADGE (a counter on an icon — unread messages); INBOX (a persistent list — the user can review past notifications).',
+    '',
+    'The priority system: CRITICAL (error, payment failed — always visible, requires acknowledgment), IMPORTANT (message received, build finished — toast with an action), INFO (saved, synced — subtle toast or silent), DEBUG (internal — logged, never shown to the user). The priority determines the DISPLAY (modal vs toast vs badge) and the DISMISSAL (user action vs auto-dismiss).',
+    '',
+    'The queue: notifications arrive while another is showing — QUEUE them (don\'t stack infinitely — max 3 visible, the rest queue); when one dismisses, the next appears (a smooth transition — slide in from the edge).',
+    '',
+    'The action: some notifications have BUTTONS ("Undo", "View", "Retry") — the action is INLINE (a button in the toast); clicking the action dismisses the notification AND performs the action; clicking the BODY navigates to the relevant page.',
+    '',
+    'The accessibility: notifications announce via aria-live="polite" (screen readers hear them); the auto-dismiss timer PAUSES on hover/focus; keyboard focus moves to actionable notifications; notifications are dismissible by Escape (accessibility-a11y).',
+    '',
+    'Verify: toasts appear, auto-dismiss, and support actions; the queue limits visible toasts; critical notifications persist; aria-live announces them; the user can dismiss with Escape.'
+  ].join('\n');
+  bodies['pull-to-refresh'] = [
+    'Pull-to-refresh: the mobile gesture that reloads data:',
+    '',
+    'The mechanics: the user PULLS DOWN at the top of a scrollable list; past a THRESHOLD (70-80px), the refresh triggers; release below the threshold = spring back with no refresh; release above = refresh + a spinner until the data arrives.',
+    '',
+    'The implementation (pointer events, not the browser\'s overscroll):',
+    'var startY = 0, pulling = false;',
+    'container.addEventListener("pointerdown", function (e) {',
+    '  if (container.scrollTop <= 0) { startY = e.clientY; pulling = true; }',
+    '});',
+    'container.addEventListener("pointermove", function (e) {',
+    '  if (!pulling) return;',
+    '  var delta = e.clientY - startY;',
+    '  if (delta > 0 && container.scrollTop <= 0) {',
+    '    e.preventDefault();',
+    '    var progress = Math.min(1, delta / 80);',
+    '    indicator.style.transform = "translateY(" + delta * 0.5 + "px)"; // rubber band',
+    '    indicator.style.opacity = progress;',
+    '    if (progress >= 1) { /* trigger refresh */ }',
+    '  }',
+    '});',
+    '',
+    'The rubber band: the indicator moves at HALF the finger speed (delta × 0.5) — the resistance makes the pull feel physical (the iOS overscroll bounce). Past the threshold, the indicator "catches" (stops following the finger — the refresh is armed).',
+    '',
+    'The states: IDLE → PULLING (the indicator follows) → ARMED (past threshold — the indicator locks at the trigger point, the text changes to "Release to refresh") → REFRESHING (a spinner spins while data loads) → DONE (the indicator collapses, the new data renders).',
+    '',
+    'Verify: pull slowly — the rubber band; pull past the threshold — "release to refresh"; release → the spinner; the data updates; release below the threshold → springs back with no refresh.'
+  ].join('\n');
+  bodies['bottom-sheet'] = [
+    'The bottom sheet: the mobile modal that slides up from the bottom:',
+    '',
+    'The snap points: the sheet has 2-3 height positions (25% = peek, 50% = half, 90% = full) — the user drags between them; release SNAPS to the nearest point (with momentum — the velocity decides which snap point, not just the position).',
+    '',
+    'The drag mechanics: a HANDLE bar at the top (a visual affordance — a pill shape); pointerdown on the handle (or the header area) → pointermove tracks the delta → the sheet translates → pointerup snaps to the nearest snap point based on velocity + position. The velocity check: a fast flick UP expands, a fast flick DOWN collapses (even from the middle).',
+    '',
+    'The backdrop: a semi-transparent overlay behind the sheet — tapping the backdrop dismisses (or collapses to peek); the backdrop opacity increases with the sheet height (more content = more dimming).',
+    '',
+    'The content: the sheet contains SCROLLABLE content — when the content is scrolled to the TOP, further pull-down drags the SHEET (not the content); when the content is scrolled down, pull-up scrolls the CONTENT (the gesture handoff — the hardest part of a bottom sheet implementation).',
+    '',
+    'The states: hidden (display: none), peek (25% — a preview), half (50% — the main interaction), full (90% — expanded content); each state is a CSS class (transition: transform 0.25s) — the drag OVERRIDES the transition (direct manipulation), the snap RE-ENABLES it.',
+    '',
+    'Verify: drag between snap points with momentum; the content scrolls inside the sheet; the gesture handoff works (scroll content at the top → drag the sheet); the backdrop tap dismisses.'
+  ].join('\n');
+  bodies['scroll-snap'] = [
+    'Scroll Snap: the browser\'s built-in carousel and pagination:',
+    '',
+    'The container: .carousel { scroll-snap-type: x mandatory; overflow-x: auto; display: flex; } — mandatory = ALWAYS snap (the scroll never rests between snaps); proximity = snap when CLOSE to a snap point (a gentler feel).',
+    '',
+    'The children: .slide { scroll-snap-align: start; } — start = the child\'s start edge aligns with the container\'s start edge; center = the child centers; end = the child\'s end edge aligns. Each child is typically 100% width (a full-page slide) or a fixed width (a card carousel).',
+    '',
+    'The JS integration: read the current slide: Math.round(container.scrollLeft / slideWidth); navigate: container.scrollTo({ left: slideIndex × slideWidth, behavior: "smooth" }); the scroll event tells you the current position (debounced — performance-budgets).',
+    '',
+    'The vertical version: .list { scroll-snap-type: y mandatory; } .item { scroll-snap-align: start; } — a full-screen vertical pager (onboarding screens, stories).',
+    '',
+    'The CSS-only carousel: NO JavaScript needed — the browser handles the snapping natively (smoother than a JS implementation because it uses the native scroll physics); dots/indicators via JS reading the scroll position (or the new scroll-driven animations API).',
+    '',
+    'Pitfalls: mandatory can TRAP the user (they can\'t rest between snaps — use proximity for long content); scroll-snap-type on the WRONG element (it goes on the SCROLL CONTAINER, not the children); combining with lazy-loading images can cause snap-jumps (the image loads and changes the height — set explicit heights).',
+    '',
+    'Verify: swipe left/right — the slides snap cleanly; the dots update to show the current slide; keyboard navigation (arrow keys) works; the carousel works on touch and desktop.'
+  ].join('\n');
+  bodies['aspect-ratio-css'] = [
+    'CSS aspect-ratio: maintain proportions without padding hacks:',
+    '',
+    'The property: .video { aspect-ratio: 16 / 9; width: 100%; } — the height is AUTOMATICALLY calculated from the width (and vice versa). No more padding-bottom percentage hacks (the old way: padding-bottom: 56.25% for 16:9).',
+    '',
+    'The use cases: video containers (16:9), square avatars (1/1), card thumbnails (4/3), hero banners (21/9 cinematic), golden ratio cards (1.618). The aspect-ratio works with ANY width/height combination — the browser calculates the missing dimension.',
+    '',
+    'Interaction with other properties: if BOTH width and height are set, aspect-ratio is IGNORED (the explicit dimensions win); if only ONE is set, the ratio calculates the other; min-height/max-height can OVERRIDE the calculated height (the aspect-ratio is a PREFERENCE, not a law).',
+    '',
+    'object-fit partnership: for IMAGES/VIDEO inside an aspect-ratio container — object-fit: cover fills the container (cropping the excess); object-fit: contain fits INSIDE (letterboxing); object-position controls WHICH part shows (the focal point).',
+    '',
+    'Responsive images: the img with width: 100% + aspect-ratio: 16/9 + object-fit: cover — the image fills the container at the right ratio without distortion (a common pattern for card thumbnails and hero images).',
+    '',
+    'Verify: resize the viewport — the container maintains its ratio; images inside are cropped (cover) or letterboxed (contain) as designed; no layout shift when images load (the ratio reserves the space).'
+  ].join('\n');
+  bodies['css-gap-spacing'] = [
+    'CSS gap: the modern spacing primitive — no margin hacks:',
+    '',
+    'The property: gap works in flexbox AND grid — .stack { display: flex; flex-direction: column; gap: 16px; } — every child gets 16px of vertical space BETWEEN them (not around them — the margin collapse and first/last child problems disappear).',
+    '',
+    'The two-axis version: gap: 16px 8px (row-gap column-gap) — different spacing between rows and columns in a grid. The shorthand: gap: 16px = row-gap: 16px; column-gap: 16px.',
+    '',
+    'Why gap beats margin: (1) no margin-collapse (the top margin + bottom margin don\'t merge into one); (2) no :first-child/:last-child hacks (the old way: .item:not(:last-child) { margin-bottom: 16px }); (3) the spacing is between ITEMS (adding/removing items automatically adjusts — no orphan margins); (4) it works with wrapping (flex-wrap: wrap — the gap applies between ROWS too).',
+    '',
+    'The spacing system: define a scale — --space-1: 4px, --space-2: 8px, --space-3: 16px, --space-4: 24px, --space-5: 32px; use gap: var(--space-3) — consistent spacing across the entire app (typography-systems\' modular scale, applied to spacing).',
+    '',
+    'The responsive gap: gap: clamp(8px, 2vw, 24px) — the spacing scales with the viewport (responsive-fluid-design\'s fluid pattern).',
+    '',
+    'Verify: add/remove items in a flex container — the spacing adjusts automatically; no first/last child margin hacks; the spacing scale is consistent; wrapping items have row gaps.'
+  ].join('\n');
+  bodies['css-object-fit'] = [
+    'object-fit: how an image or video fills its container:',
+    '',
+    'The values: cover (fill the container, CROP the excess — the most common for thumbnails and heroes), contain (fit INSIDE, letterbox the gaps — for logos and screenshots where nothing should be cropped), fill (stretch to fit — DISTORTS, almost always wrong), scale-down (the smaller of contain or none — never larger than the original), none (the original size, cropped to the container).',
+    '',
+    'object-position: WHERE the visible part of the image is — object-position: center (default), object-position: top (for portraits — keep the face visible when cropping), object-position: 20% 80% (a specific focal point — the percentage controls both axes).',
+    '',
+    'The face-preserving crop (the practical pattern for avatars and heroes): img { width: 100%; aspect-ratio: 1; object-fit: cover; object-position: center 20%; } — the 20% from the top keeps the FACE visible (faces are typically in the upper portion of photos).',
+    '',
+    'The combination with aspect-ratio: the container has the aspect-ratio (the SPACE is reserved); the image inside has object-fit: cover (the image fills the space without distortion) — together they create responsive, non-shifting, well-cropped media (web-vitals-metrics\' CLS fix).',
+    '',
+    'The art-direction use case: for DIFFERENT crops at different viewports, use <picture> with different source files (a wide crop for desktop, a square crop for mobile) — object-fit handles the SCALING; <picture> handles the ART DIRECTION.',
+    '',
+    'Verify: a portrait image in a 16:9 container with cover — the top and bottom are cropped; object-position: top keeps the face; contain shows the full image with letterboxing.'
+  ].join('\n');
+  bodies['lazy-loading-deep'] = [
+    'Lazy loading: don\'t load what the user hasn\'t asked for:',
+    '',
+    'Native images: <img loading="lazy" src="photo.jpg"> — the browser handles it (loads when near the viewport); add decoding="async" (off-main-thread decode); ALWAYS set width and height (or aspect-ratio) — the lazy load must not cause layout shift (web-vitals-metrics\' CLS).',
+    '',
+    'IntersectionObserver for everything else: components, iframes, heavy widgets — observe the placeholder, load the real content when it enters the viewport (intersection-observer has the full pattern). The rootMargin: "200px" pre-loads 200px BEFORE the element is visible (the buffer so the content is ready when scrolled to).',
+    '',
+    'Component lazy loading (code splitting): the import() pattern — the component\'s code is a SEPARATE file that loads on demand; pair with a skeleton placeholder (async-ui-patterns) — the user sees a loading shape, not a blank void.',
+    '',
+    'Data lazy loading: fetch data when the tab/section becomes active (NOT at page load); cache the result (api-caching-strategies); the tab pattern: only the ACTIVE tab fetches its data — the inactive tabs show their skeleton until clicked.',
+    '',
+    'The priority hierarchy: CRITICAL (the hero image, the main content) = preload with fetchpriority: high; IMPORTANT (above-fold images) = eager; NICE-TO-HAVE (below-fold images, comments) = lazy; HIDDEN (modals, tabs) = on-demand (load when opened).',
+    '',
+    'The anti-pattern: lazy loading EVERYTHING (including above-fold content) — the user sees skeletons instead of content; lazy load BELOW the fold, EAGER load above it.',
+    '',
+    'Verify: the network tab shows lazy resources loading as they approach the viewport; no layout shift when lazy images load; above-fold content loads eagerly (no skeleton on the hero).'
+  ].join('\n');
+  bodies['preloading-strategies'] = [
+    'Preloading: the strategic head start for critical resources:',
+    '',
+    'The hierarchy (resource-hints has the overview, this is the deep dive):',
+    '1. PRELOAD (current page, high priority): <link rel="preload" href="font.woff2" as="font" crossorigin> — the font, the hero image, the critical CSS. The browser downloads IMMEDIATELY at high priority.',
+    '2. MODULEPRELOAD (ES modules): <link rel="modulepreload" href="app.mjs"> — downloads AND parses (the module graph is pre-wired).',
+    '3. PREFETCH (next page, low priority): <link rel="prefetch" href="/next-page.css"> — downloads during IDLE time for a future navigation.',
+    '4. PRECONNECT (the handshake): <link rel="preconnect" href="https://api.example.com"> — DNS + TCP + TLS before any request.',
+    '',
+    'The font-loading pattern (the most impactful preload): fonts block text rendering — preload the CRITICAL font (the body text font, not every weight): <link rel="preload" href="main.woff2" as="font" type="font/woff2" crossorigin>; pair with font-display: swap (the fallback text shows immediately, the real font swaps when loaded — font-loading-strategy).',
+    '',
+    'The LCP optimization: the LCP element (usually a hero image) MUST be preloaded — the browser discovers it late (after CSS and DOM parsing); preloading tells the browser IMMEDIATELY: <link rel="preload" href="hero.jpg" as="image" fetchpriority="high">.',
+    '',
+    'The measure: the Performance panel shows preloaded resources with a "preload" badge; the LCP timestamp improves; no "preloaded but not used" warnings in the console (unused preloads waste bandwidth).',
+    '',
+    'Verify: the critical font loads before text renders (no FOIT); the hero image is preloaded (the LCP improves); the preconnect to the API host eliminates the handshake delay; no unused preloads.'
+  ].join('\n');
+  bodies['css-animation-performance'] = [
+    'CSS animation performance: the compositor is your friend — layout is your enemy:',
+    '',
+    'The three tiers of properties: (1) COMPOSITED (transform, opacity — the GPU handles these, the fastest); (2) PAINTED (color, background, box-shadow — repaints but no layout); (3) LAYOUT (width, height, top, left, margin — forces a full reflow, the SLOWEST). Animate ONLY transform and opacity for 60fps.',
+    '',
+    'The will-change hint: will-change: transform tells the browser "this element will animate — prepare a layer" — the element gets its own compositing layer. Use SPARINGLY (each layer costs GPU memory); set it just before the animation, remove it after (the browser manages layers automatically for known animation patterns).',
+    '',
+    'The transform tricks: translateX/Y instead of top/left (transform is composited, top/left cause layout); scale instead of width/height (a visual change without layout); rotate instead of skew-based approaches. The transform COMBINES: transform: translateX(100px) rotate(45deg) scale(1.2) — one property, multiple effects.',
+    '',
+    'The GPU layer promotion: elements with transform, opacity < 1, filter, or will-change get their own GPU layer (composited separately); TOO MANY layers = GPU memory pressure (the mobile limit); the browser manages this, but manual layer creation (will-change: transform on 50 elements) can hurt.',
+    '',
+    'The animation frame budget: 16.6ms per frame (60fps) — the animation itself should take < 2ms (leave room for JS and other paints); CSS animations run on the compositor thread (they don\'t block JS); JS-driven animations (requestAnimationFrame) share the main thread.',
+    '',
+    'Verify: the Performance panel shows animations on the COMPOSITOR thread (green bars, not yellow); no layout recalculation during the animation (the purple Layout bars are absent); 60fps maintained on a mid-range device.'
+  ].join('\n');
+  bodies['image-optimization'] = [
+    'Image optimization: the biggest payload on most pages:',
+    '',
+    'The format decision tree: PHOTO (many colors, gradients) → JPEG or WebP; GRAPHIC (few colors, sharp edges, transparency) → PNG or WebP; ICON/logo → SVG (vector — infinite resolution, tiny file); ANIMATION → WebP animation or video (MP4/WebM — smaller than GIF). WebP is 25-35% smaller than JPEG at the same quality — use it as the default with a JPEG fallback.',
+    '',
+    'The responsive pattern (srcset): <img src="photo-400.jpg" srcset="photo-400.jpg 400w, photo-800.jpg 800w, photo-1600.jpg 1600w" sizes="(max-width: 600px) 100vw, 50vw" alt="…"> — the browser picks the BEST size for the viewport and DPI; the sizes attribute tells the browser the display width (it can\'t know otherwise).',
+    '',
+    'The compression levels: JPEG quality 80-85 (the sweet spot — below 70 shows artifacts, above 90 wastes bytes); WebP quality 75-80 (equivalent visual quality to JPEG 85); PNG: use pngquant (lossy PNG — 60-80% smaller without visible loss for graphics).',
+    '',
+    'The dimensions: NEVER serve a larger image than the display size — a 4000px image displayed at 400px wastes 90% of the bytes; resize to the largest display size × 2 (for retina/HiDPI).',
+    '',
+    'The lazy-loading pair: loading="lazy" + width/height (or aspect-ratio) + decoding="async" — the trifecta for below-fold images (lazy-loading-deep).',
+    '',
+    'Verify: every image is in the right format (no GIFs that should be video, no PNGs that should be JPEG); the file sizes are reasonable (< 200KB for content images, < 50KB for thumbnails); srcset serves the right size per viewport.'
+  ].join('\n');
+  bodies['font-loading-strategy'] = [
+    'Font loading: the text appears first, the font catches up:',
+    '',
+    'The font-display values: auto (browser decides — usually block, the invisible text FOIT), swap (show the FALLBACK immediately, swap when loaded — the RECOMMENDED value), optional (the browser decides — if the font isn\'t cached, use the fallback permanently; the best for non-critical fonts), block (invisible text for up to 3s — the worst for UX).',
+    '',
+    'The loading strategy: (1) preload the CRITICAL font (<link rel="preload" as="font" type="font/woff2" crossorigin> — the body text font only); (2) font-display: swap (the fallback shows immediately); (3) subset the font (only the characters used — latin subset covers English; unicode-range splits for multi-language); (4) WOFF2 format (30% smaller than WOFF, universally supported).',
+    '',
+    'The fallback metric matching: the fallback font has DIFFERENT metrics than the web font — the swap causes a layout shift (CLS). Fix: size-adjust in @font-face adjusts the fallback\'s metrics to match the web font: @font-face { font-family: "Fallback"; src: local("Arial"); size-adjust: 105%; ascent-override: 90%; } — the swap is INVISIBLE.',
+    '',
+    'The variable font: one file, ALL weights and styles — font-variation-settings: "wght" 400-700; a single 50KB variable font replaces 5 static fonts (200KB); the axis values animate (a variable font weight transition — the smoothest font animation).',
+    '',
+    'The loading sequence: (1) preload the critical font (woff2, the regular weight); (2) @font-face with font-display: swap; (3) the fallback has matching metrics (size-adjust); (4) the non-critical fonts (headings, icons) load lazily or use the system stack.',
+    '',
+    'Verify: the text renders IMMEDIATELY in the fallback font; the web font swaps within 1s (no invisible text); the layout doesn\'t shift on swap (the metric override works); the font payload is < 100KB.'
+  ].join('\n');
+  bodies['viewport-meta'] = [
+    'The viewport meta tag: the difference between a mobile-friendly site and a zoomed-out desktop page:',
+    '',
+    'The standard: <meta name="viewport" content="width=device-width, initial-scale=1"> — width=device-width (the viewport = the device\'s CSS width, not the default 980px); initial-scale=1 (no zoom on load).',
+    '',
+    'The extensions: viewport-fit=cover (the content extends under the notch and home indicator — pair with env(safe-area-inset-*) CSS for the padding); maximum-scale=1 and user-scalable=no (DISABLE zoom — DO NOT USE except for games where pinch-zoom would break the controls; accessibility-a11y forbids disabling zoom for content).',
+    '',
+    'The dynamic viewport (the mobile browser toolbar problem): 100vh includes the area behind the browser toolbar — the content is cut off. Fix: 100dvh (dynamic viewport height — adjusts as the toolbar hides/shows); fallback: min-height: 100vh; min-height: 100dvh.',
+    '',
+    'The safe areas: env(safe-area-inset-top/right/bottom/left) — the notch and home indicator zones; padding: env(safe-area-inset-top) on the header; padding-bottom: env(safe-area-inset-bottom) on the footer — the content NEVER hides behind the hardware.',
+    '',
+    'The keyboard interaction: when the on-screen keyboard appears, the visualViewport shrinks — window.visualViewport.addEventListener("resize", handler) adjusts the layout (the input stays visible above the keyboard).',
+    '',
+    'Verify: the page fills the screen on mobile (no zoomed-out desktop view); the content is visible above and below the notch; the keyboard doesn\'t cover the input field; no zoom on double-tap (except for accessibility).'
+  ].join('\n');
+  bodies['touch-optimization'] = [
+    'Touch optimization: the differences between mouse and finger:',
+    '',
+    'The target size law: interactive elements MUST be ≥ 44×44px (Apple) or 48×48dp (Google) — the finger is ~7mm wide; smaller targets cause mis-taps (the #1 mobile UX complaint). The VISUAL size can be smaller (a 24px icon with 44px padding = an invisible-but-generous hit area).',
+    '',
+    'The tap delay: historically, browsers added a 300ms delay between tap and click (to detect double-tap zoom) — ELIMINATE it with <meta name="viewport" content="width=device-width"> (the modern browser removes the delay when the viewport is configured) or touch-action: manipulation (the CSS fix — allows pan and pinch but not double-tap zoom).',
+    '',
+    'The passive listeners: scroll-blocking events (touchstart, touchmove, wheel) should be passive by default — addEventListener("touchmove", handler, { passive: true }) tells the browser "I won\'t preventDefault — scroll freely"; passive listeners NEVER block scrolling (the performance win).',
+    '',
+    'The hover problem: hover does NOT exist on touch — :hover styles flash on tap (the sticky hover bug); fix: wrap hover styles in @media (hover: hover) { … } (only apply hover on devices WITH a hover-capable pointer).',
+    '',
+    'The gesture overlap: the browser\'s default gestures (pull-to-refresh, swipe-back, edge-swipe) COMPETE with your custom gestures — touch-action: none on the gesture area prevents the browser from intercepting; touch-action: pan-y allows vertical scroll but owns horizontal.',
+    '',
+    'Verify: all tap targets are ≥ 44px; no 300ms tap delay; scrolling is smooth (passive listeners); hover styles don\'t stick on touch; custom gestures don\'t fight the browser.'
+  ].join('\n');
+  bodies['battery-aware-app'] = [
+    'Battery-aware apps: the app that respects the device\'s power:',
+    '',
+    'The battery API: navigator.getBattery() → { level: 0.85, charging: true, addEventListener("levelchange"), addEventListener("chargingchange") } — the app adapts: level < 0.2 && !charging → reduce quality (fewer particles, lower frame rate cap, disable nonessential animations).',
+    '',
+    'The power consumers ranked: ANIMATION (every frame costs GPU + CPU — a 60fps animation vs a 30fps animation = 2× the power); NETWORK (radio wakeups — batch requests, avoid polling); LOCATION (GPS is the #1 battery drain — use watchPosition with a large maximumAge); WAKE LOCKS (keeping the screen on — only for legitimate cases like video playback).',
+    '',
+    'The adaptive quality: compute-pressure-api tells you the CPU state; the battery API tells you the power state; combine them: low battery + serious CPU pressure → drop to the minimum quality tier (the game equivalent of "low power mode").',
+    '',
+    'The background behavior: when the tab is HIDDEN (visibilitychange), PAUSE everything — the game loop, animations, network polling, audio; resume on visibility return. A game that drains battery in the background gets uninstalled (mobile-game-design\'s law).',
+    '',
+    'The wake lock: navigator.wakeLock.request("screen") keeps the screen on (for a video player or a recipe display) — release on visibilitychange (auto-released when the tab is hidden); re-acquire on return (with the user\'s implied consent — they were using the feature).',
+    '',
+    'Verify: the app pauses when backgrounded; the battery API is detected and the app adapts; no polling when hidden; the frame rate matches the content needs (not always 60fps).'
+  ].join('\n');
+  bodies['progressive-enhancement'] = [
+    'Progressive enhancement: the app WORKS for everyone, then gets BETTER:',
+    '',
+    'The three layers: (1) BASE: HTML that works without JavaScript (the content is readable, the forms submit, the links navigate); (2) ENHANCED: JavaScript adds interactivity (the SPA behavior, the live updates); (3) ADVANCED: modern APIs add polish (streams, workers, sensors).',
+    '',
+    'The feature detection (never browser detection): if ("serviceWorker" in navigator) { register SW; } — test for the CAPABILITY, not the browser name (user-agent sniffing is fragile and lying); CSS: @supports (display: grid) { use grid; } @supports not (display: grid) { use flexbox; }.',
+    '',
+    'The REVA context: the harness runs on a PHONE (the base is mobile); the desktop browser is the ENHANCED version (keyboard shortcuts, hover states, the full IDE); the APK is the FULL experience (the native shell, the device APIs).',
+    '',
+    'The "JavaScript required" problem: a pure SPA shows NOTHING without JS — the fix: server-render the critical content (even a minimal version), or show a "this app needs JavaScript" message with a link to the static content.',
+    '',
+    'The enhancement order: content first → layout second → interactivity third → polish last. A user on a slow connection sees the TEXT before the CSS loads (the FOUC), the images before the JS loads (the lazy-loading baseline), and the core loop before the animations (the progressive layers).',
+    '',
+    'Verify: the app works with JavaScript disabled (the content is readable); each enhanced feature has a fallback; the feature detection uses capability tests (not user-agent); the core loop works on the LOWEST supported device.'
+  ].join('\n');
+
   /* ---- batch 11 bodies: code quality + design patterns ---- */
   bodies['observer-pattern'] = [
     'The Observer pattern: one source of truth, many listeners — the foundation of reactive systems:',
