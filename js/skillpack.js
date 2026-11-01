@@ -13,6 +13,27 @@
   'use strict';
 
   var descs = {
+    /* ---- batch 6: the systems-architecture pack — bigger builds ---- */
+    'entity-component-system': 'entity component system ecs architecture data oriented entities components systems query iterate game composition',
+    'object-pooling': 'object pooling reuse allocations free list pool recycle bullets particles entities garbage collection pressure churn',
+    'dirty-rectangle-rendering': 'dirty rectangle rendering redraw only changed regions canvas layers invalidation repaint region static background compositing',
+    'event-bus-patterns': 'event bus pub sub publish subscribe typed events scoped channels cleanup unsubscribe memory leak listener registry decouple',
+    'undo-redo-engine': 'undo redo history command pattern inverse operations stack coalesce grouping checkpoints time travel editor',
+    'state-management-vanilla': 'state management store selector subscription notify render derived computed reactive vanilla no framework single source',
+    'component-architecture': 'component architecture composition props down events up render functions custom elements attributes lifecycle slots reusable',
+    'router-patterns': 'router nested routes guards params wildcard redirect route table match dynamic segments layout persistence client',
+    'plugin-architecture': 'plugin architecture extension hooks registry manifest capability api sandbox lifecycle register discover third party',
+    'schema-validation-runtime': 'runtime validation schema boundary parse dont validate types guard unknown data trust edges contracts decode',
+    'error-isolation-architecture': 'error isolation boundary containment crash only one module sandbox fallback degrade partial failure resilience blast radius',
+    'memory-management-js': 'memory management leaks weakref weakmap finalization heap snapshot retainers closure accidental references dom detached profiling',
+    'canvas-layer-batching': 'canvas layers batching sprite batch draw order offscreen composite atlas bake static background parallax split canvases',
+    'deterministic-replay': 'deterministic replay fixed timestep seeded rng record inputs replay bug reproduce simulation lockstep state hash',
+    'data-pipeline-transform': 'data pipeline transform chain map filter reduce stages caching memoize intermediate streaming large datasets batch',
+    'feature-flags': 'feature flags toggles runtime config rollout ab test kill switch gradual enable disable remote config defaults',
+    'code-splitting-lazy': 'code splitting lazy load dynamic import prefetch chunk bundle size on demand defer module loading initial payload',
+    'api-caching-strategies': 'api caching stale while revalidate swr etag cache control max age invalidation ttl memory disk offline strategy',
+    'offline-first-sync': 'offline first sync queue mutations conflict resolution last write wins merge replay connectivity detection optimistic',
+    'worker-pool-compute': 'worker pool parallel compute partition work chunks results aggregate progress spawn hardware concurrency queue',
     /* ---- batch 5: the game-design pack — making games FUN ---- */
     'level-design': 'level design pacing layout flow guiding player landmarks sightlines teaching space difficulty curve encounters',
     'game-balance': 'game balance difficulty tuning numbers damage hp economy cost curve dps progression nerf buff playtest math',
@@ -121,6 +142,309 @@
   };
 
   var bodies = {};
+  /* ---- batch 6 bodies: systems architecture ---- */
+  bodies['entity-component-system'] = [
+    'ECS: composition over inheritance for games — the architecture that survives feature creep:',
+    '',
+    'Entities = bare ids. Components = plain data bags attached to ids (position {x,y}, velocity, health, sprite). Systems = functions that run over every entity possessing a component SET (the movement system iterates position+velocity; the render system iterates position+sprite). NO behavior on the data — systems own logic.',
+    '',
+    'Minimal implementation (no libraries):',
+    'var nextId = 1, comps = {};  // comps[compName] = { entityId: data }',
+    'function entity() { return nextId++; }',
+    'function add(e, name, data) { (comps[name] = comps[name] || {})[e] = data; }',
+    'function each(name, fn) { var bag = comps[name] || {}; for (var e in bag) fn(+e, bag[e]); }',
+    'Querying a SET: iterate the SMALLEST component bag, check the others with comps.other[e] !== undefined — 1000 entities, no allocation, cache-friendly enough.',
+    '',
+    'Why it wins: new features = new components + new systems, NEVER editing old ones (the Open-Closed law made practical — scope-slicing loves this); removing a component removes a behavior instantly (an ice-status is delete(health, "frozen")); testing is trivial (systems are pure functions over data).',
+    '',
+    'When NOT to: <20 object types with stable relationships — plain classes are simpler (naming-structure). The pain ECS solves starts when behaviors multiply combinatorially (every enemy × every status × every powerup).',
+    '',
+    'Verify: add a "poisoned" status as a new component + one system — ZERO existing files edited; remove it by deleting the component; the game never iterates a missing field.'
+  ].join('\n');
+  bodies['object-pooling'] = [
+    'Pooling beyond particles — kill the garbage collector\'s power to stutter:',
+    '',
+    'The rule: anything created per-frame or per-event in a loop gets a pool. Pools are free-lists: {items: [], free: []} — acquire pops from free (or grows), release pushes back and DETACHES references. The acquired object must be fully reinitialized (every field reset — a stale hp in a reused enemy is a ghost bug).',
+    '',
+    'What pools in a real game: bullets/particles (per-shot), floating damage numbers, network messages, pathfinder nodes (a-star reuses its open-set nodes), audio source wrappers, DOM rows in a virtual list (the row ELEMENTS pool; only textContent updates).',
+    '',
+    'The leak inverse: pooling also BOUNDS memory — a pool of 300 particles is 300 objects forever, no growth spikes. Size pools to the observed max (instrument: count in-use at peak) with a 20% headroom; overflow behavior is explicit (drop-newest for particles, queue for messages).',
+    '',
+    'The tradeoff: pooled objects cannot be garbage-collected while referenced — dangling references in other systems see "dead" objects. The contract: release() also marks {active: false}, and every SYSTEM checks active before processing (the ECS filter).',
+    '',
+    'Measure honestly: performance-budgets\' profiler before/after — the win is GC PAUSES eliminated (the stutter in a 60fps graph), not average fps.',
+    '',
+    'Verify: 10 minutes of chaos gameplay — heap graph is a sawtooth that RETURNS to baseline (no ratchet); zero frame >20ms from allocation; pool counts match peak usage.'
+  ].join('\n');
+  bodies['dirty-rectangle-rendering'] = [
+    'Redraw only what changed — the canvas optimization ladder:',
+    '',
+    'L0: clear+redraw everything per frame (fine for full-screen games — canvas-2d-games does this). L1: LAYER SPLIT — static background baked to an offscreen canvas ONCE (tilemap-engines), dynamic entities on a second transparent canvas above; per frame: drawImage(bakedLayer) + entity draws — no re-tiling. L2: DIRTY RECTS — track which screen regions changed this frame (entity moved → union(oldRect, newRect)), clear+redraw only those from the baked layer, then repaint entities intersecting them.',
+    '',
+    'Dirty rects shine for UI-canvas hybrids and sparse updates (a timer app, a board game, a dashboard): 95% of the frame is unchanged — redrawing it is waste. Track rects in an array, UNION overlapping ones (a naive union pass, then N clearRects + N blits), cap the list (if dirty area >60% of the canvas, full redraw is CHEAPER than bookkeeping).',
+    '',
+    'The invalidation contract: every mutation must declare its damage — setPixel claims the rect; a text change claims the old AND new text bounds (the old glyph area still shows otherwise — the classic ghost). Fonts/async images: claim on arrival (the load callback dirties).',
+    '',
+    'Pitfalls: anti-aliased edges bleed 1px outside the rect (pad rects by 1-2px); shadows/glow extend further (pad by the blur radius); transform-based drawing invalidates the clip math — dirty-rect and transforms mix badly (bake transformed output to the layer first).',
+    '',
+    'Verify: paint a change marker on each redrawn region in debug mode — the marker covers exactly the moved thing + 2px, never the whole screen; idle app = zero redraws.'
+  ].join('\n');
+  bodies['event-bus-patterns'] = [
+    'The event bus: decoupling without anarchy:',
+    '',
+    'The 40-line core: a Map of event-name → Set of handlers; on(name, fn) returns an UNSUBSCRIBE function (the cleanup contract — every subscriber can leave in one call); emit(name, payload) iterates a COPY of the set (handlers unsubscribing mid-emit must not skip their neighbors).',
+    '',
+    'The three laws: (1) TYPED payloads — document {type, data} shapes per event (schema-lite at the boundary; security-essentials for cross-window/postMessage buses); (2) SCOPED buses beat one global — per-module buses (a bus per game level, per editor document) with a parent relay; a global bus with 200 event names is where architecture goes to die; (3) UNHANDLED events are observable — a dev-mode log of emitted-but-unheard events catches the typo-class bug (emitting "itemPickd" nobody hears).',
+    '',
+    'The memory law: every on() without an off() is a leak (memory-management-js) — components subscribe in mount and MUST unsubscribe in teardown; the unsubscribe-return pattern makes that one line. once(name, fn) for fire-once (toast auto-dismiss, boot-complete).',
+    '',
+    'Wildcards and priorities: avoid both until proven necessary — ordered handlers = hidden coupling; if ordering matters, the event is really two events (emit "combatEnded" then "lootRoll" explicitly).',
+    '',
+    'Verify: subscribe, emit, receive; unsubscribe mid-emit (the current handler runs, the next still fires); 1000 emit cycles with an unsubscribed listener — the listener set stays empty (memory honest).'
+  ].join('\n');
+  bodies['undo-redo-engine'] = [
+    'Undo/redo — the command pattern, generalized:',
+    '',
+    'The engine: two stacks + one command shape. Command = {do(ctx), undo(ctx), label}. execute(cmd): cmd.do(); undoStack.push(cmd); redoStack.length = 0 (a new action KILLS the redo branch — the universal editor convention). undo(): pop → cmd.undo() → redoStack.push. redo(): the mirror.',
+    '',
+    'The inverse contract: undo must restore EXACTLY the prior state — the safest commands capture data: {before, after, apply(data)} — do() writes after, undo() writes before (snapshot commands); inverse commands (move left ↔ move right) are smaller but must handle EVERY path (a failed do must not push). Snapshots win on correctness; inverses win on memory — snapshot for document edits (harness checkpoints ARE this), inverse for continuous gestures (drag).',
+    '',
+    'Coalescing: typing "hello" is 5 keystrokes = ONE undo step — merge when cmd.label === last.label AND within 700ms (the coalesce window): replace the top command with a combined one (before stays, after updates). Without coalescing, undo is a single-character treadmill nobody uses.',
+    '',
+    'Grouping: a composite command runs children atomically (a drag = 40 move commands = ONE undo entry): execute({label: "move", children: [...]}) runs all, undoes all REVERSED.',
+    '',
+    'UI contract: undo/redo buttons disable by stack emptiness; the label shows what would undo ("Undo move"); memory cap (200 entries, oldest dropped — with a checkpoint fallback for the big ones, save-systems).',
+    '',
+    'Verify: do 5 actions → undo 5 → redo 3 → the state matches the 3-action prefix byte-exact; type 10 chars → ONE undo; a failed action leaves both stacks clean.'
+  ].join('\n');
+  bodies['state-management-vanilla'] = [
+    'A store without a framework — 30 lines that scale:',
+    '',
+    'var store = { state: {…}, listeners: new Set(),',
+    '  get: function (selector) { return selector(this.state); },',
+    '  set: function (patch) { this.state = Object.assign({}, this.state, patch); this.listeners.forEach(function (l) { l(); }); },',
+    '  subscribe: function (l) { this.listeners.add(l); return function () { this.listeners.delete(l); }.bind(this); } };',
+    '',
+    'The three disciplines: (1) IMMUTABLE updates (js-core-patterns) — set() replaces the state object so any previous reference stays valid (undo-redo snapshots and render comparisons depend on it); (2) SELECTORS for reads — components read via get(s => s.items.filter(...)), never reaching into state shape directly — the shape can then change in ONE place; (3) NOTIFY SMART — a naive notify-per-set rerenders everything; batch with a microtask queue (multiple sets in one handler = one render) and let components compare their selector output before rerendering (the poor-man\'s memoization — enough for 90% of apps).',
+    '',
+    'Derived state: computed values live as FUNCTIONS of state, never stored twice (two copies of the same truth drift — error-prevention). Expensive derivations memoize by input reference.',
+    '',
+    'Module layout: ONE store module owning the shape + actions (the only functions that call set); components import actions, never mutate (naming-structure\'s boundaries). Multiple stores (per domain) beat one mega-store past ~30 fields.',
+    '',
+    'Verify: any UI refresh survives a console-driven store.set({…}) — the render pipeline is data-driven; no component holds a stale copy after two rapid sets (batched notify).'
+  ].join('\n');
+  bodies['component-architecture'] = [
+    'Components without a framework: composition rules that hold at scale:',
+    '',
+    'The shape: a component = a function returning a DOM node + attaching its own behavior, with a destroy() for cleanup —',
+    'function makeCounter(initial) {',
+    '  var n = initial, el = document.createElement("div");',
+    '  function render() { el.innerHTML = "<b>" + n + "</b><button>+</button>"; … }',
+    '  el.addEventListener("click", …); render();',
+    '  return { el: el, destroy: function () { …listeners… }, add: function () { n++; render(); } };',
+    '}',
+    'Parent composes children, passes CONFIG down (props), receives EVENTS up (callbacks) — data flows one direction; a child never reaches into its parent (the discipline that keeps 50 components debuggable).',
+    '',
+    'Rerender policy: full-innerHTML repaint for small pure components (simple, safe — but re-attaching listeners per render is the leak source: attach listeners to the CONTAINER once, delegate with closest()); surgical updates (text waypoints) for hot components (performance-budgets decides).',
+    '',
+    'Custom elements (the platform\'s answer): class extends HTMLElement with connectedCallback/disconnectedCallback — USE for leaf widgets (a timer, a badge) where lifecycle hooks earn their cost; function-components for everything else. Both patterns coexist fine.',
+    '',
+    'The boundary law: components own their DOM and state; they NEVER query into another component\'s subtree (that is the coupling that dies at scale) — communication via events up / api calls down only.',
+    '',
+    'Verify: mounting 100 instances — no listener leaks (destroy runs); a component used in 3 places needs 0 edits per place; removing a parent destroys children (the tree, not a list).'
+  ].join('\n');
+  bodies['router-patterns'] = [
+    'Client routing beyond hash-switch — the patterns that scale:',
+    '',
+    'A route TABLE (data, not if-chains): [{pattern: "/game/:id", handler: openGame}, {pattern: "/shop", guard: requireAuth, handler: openShop}] — matching converts ":id" to a regex ONCE at boot (compileUserRegex-style bounded compile, idecore precedent); params flow to the handler. url-state-routing covers the history mechanics; this is the STRUCTURE layer.',
+    '',
+    'Guards: per-route pre-checks (auth, data-ready) that redirect or block — a guard returns {redirect: "/login"} or null (proceed). Async guards: route change awaits data BEFORE swapping the view (a route with a loading state beats a blank view + late fill — async-ui-patterns per route).',
+    '',
+    'Nested layouts: the shell (header/nav) renders ONCE; routes render INTO an outlet — a route declares {layout: "game", view: …}; layout switching is the exception (a different top nav per section) — full-page repaints per navigation are the amateur tell.',
+    '',
+    'Transitions: leave-cleanup is the router\'s real job — the OUTGOING route\'s teardown runs before the incoming renders (listeners, intervals, AbortControllers — the leak farm); a navigation token guards against race: only the LATEST navigation may render (async-patterns\' generation guard).',
+    '',
+    '404 + fallback: an explicit not-found route; unknown params validated in the handler (a :id that is not an id → the not-found view, not a crash — error-prevention).',
+    '',
+    'Verify: deep-link every route fresh (restore works), navigate rapidly between two async routes — no cross-render races, back button traverses history in order, guards redirect correctly.'
+  ].join('\n');
+  bodies['plugin-architecture'] = [
+    'A plugin system = controlled extensibility. The minimal honest version:',
+    '',
+    'The contract: a plugin = {name, version, setup(api)} registered into a host: host.register(plugin) → plugin.setup(hostApi). The hostApi is a CAPABILITY LIST you designed — on(event), addCommand(), registerView(), getLogger() — the plugin can do NOTHING else (that is the sandbox; real isolation needs workers — web-workers — but a capability-limited API is the 90% version).',
+    '',
+    'The registry: plugins persist as manifests {name, version, enabled, settings}; boot order is deterministic (registration order, dependencies declared via a "needs" field, topologically sorted); a plugin that THROWS in setup is disabled + logged, never allowed to kill the host boot (error-isolation-architecture — the blast radius is ONE plugin).',
+    '',
+    'Version the API: hostApi carries a version; plugins declare compatibility — an API change without a version bump breaks every third-party caller silently (the v-field discipline from save-systems, applied to code).',
+    '',
+    'The hook surface (design it BEFORE plugins exist): lifecycle hooks (boot, ready, teardown), data hooks (before-save, after-load — the checkpoint system\'s shape), UI slots (named render positions). Each hook = a documented call signature; hooks you cannot document, you cannot support.',
+    '',
+    'Revocation: disable(plugin) runs its teardowns and removes its listeners (event-bus unsubscribe discipline) — a plugin that cannot be cleanly disabled was given too much surface.',
+    '',
+    'Verify: a sample plugin adds a command + listens to an event in 15 lines; a THROWING plugin disables itself with a visible notice; disable → enable roundtrip leaves no duplicate listeners.'
+  ].join('\n');
+  bodies['schema-validation-runtime'] = [
+    'Runtime validation: the boundary discipline ("parse, don\'t validate"):',
+    '',
+    'The rule: data crossing a boundary (fetch, storage, postMessage, URL params, file import) is UNKNOWN until validated — after validation it is TRUSTED, and the type system of your discipline carries that forward. Validate ONCE at the edge, then pass clean data inward (re-checking everywhere means the edge check failed its job).',
+    '',
+    'The toolkit: the harness\'s json_schema_check (type/required/properties/enum/min/max) covers structure; write per-entity validators as functions returning {ok, value} or {ok: false, errors} — the PARSE shape: function parseItem(raw) { if (typeof raw.name !== "string") return {ok: false, errors: ["name"]}; return {ok: true, value: {name: raw.name, count: Number(raw.count) || 0}}; } — validation and COERCION together (trim strings, default numbers) so the output is always well-formed, not just judged.',
+    '',
+    'Strictness dial: APIs you OWN = strict (unknown fields rejected — typo-catching); external APIs = lenient (ignore extras, require only what you use — their schema is not your contract).',
+    '',
+    'Error reporting: ALL violations at once (schema-check style), field-pathed ("user.address.zip: expected string") — one-error-at-a-time validation turns integration into ping-pong (error-handling-ux).',
+    '',
+    'Where validation is FORBIDDEN: between your own well-typed modules (checking what the compiler/discipline guarantees is noise — trust the internal contract, name-structure\'s boundaries).',
+    '',
+    'Verify: feed every boundary garbage (null, wrong types, extra fields, hostile strings) — the edge returns a clean field-pathed error; the interior runs with ZERO defensive checks (they were hired at the door).'
+  ].join('\n');
+  bodies['error-isolation-architecture'] = [
+    'Isolation: a failure in module A must never take down module B:',
+    '',
+    'The blast-radius principle: every subsystem runs inside a CONTAINER — try/catch at the entry (error-handling-ux), a state machine for the subsystem (state-machines-ui: healthy | degraded | down), and a RECOVERY path (restart the subsystem, not the app). A crashing sound engine mutes audio and shows a notice; the game continues.',
+    '',
+    'The sandbox seams: dynamic boundaries (plugin setup, user content render, external data parse) get their own try/catch + a default — user HTML renders inside a sanitizing layer that CANNOT throw into the host; a plugin error is caught at the hook dispatch (plugin-architecture), never at the host level.',
+    '',
+    'Async isolation: unhandled rejections are the sneaky killers — a global handler (window.onunhandledrejection) logs + routes to the subsystem owner; every promise chain inside a subsystem ends in .catch(localHandler) — the global handler is the alarm, not the handling strategy.',
+    '',
+    'The degraded-mode contract: when a subsystem goes down, the app announces it honestly (a banner, not a toast), keeps the rest running, and offers the recovery action — the harness\'s own "shell wedged, continuing with file tools" message IS this pattern shipped.',
+    '',
+    'Testing isolation: kill each subsystem ON DELIBERATE command (a debug flag) — every one degrades gracefully (error-prevention\'s verify, architecture-scale).',
+    '',
+    'Verify: force-fail every subsystem in a debug run — the app never white-screens, the failure is visible and named, recovery works without a reload where possible.'
+  ].join('\n');
+  bodies['memory-management-js'] = [
+    'Memory: the leaks you cannot see until the device thermal-throttles:',
+    '',
+    'The leak taxonomy: (1) FORGOTTEN TIMERS/listeners — every setInterval and addEventListener needs a teardown paired with its setup (the pairs live and die TOGETHER — component-architecture\'s destroy); (2) DETACHED DOM — a JS variable holding a removed subtree keeps the WHOLE tree alive (query results cached past their render); (3) CLOSURE CAPTURE — a long-lived function capturing a big object keeps it alive forever (the handler that needed one field captured the whole entity); (4) GROWING MAPS/ARRAYS — caches without eviction (data-structures-js: WeakMap for object-keyed metadata that should die with the key).',
+    '',
+    'The inspector method: heap snapshot A (baseline) → perform the suspect action 10× → snapshot B → comparison filtered by "objects allocated between" — the retainer chain shows WHO holds the reference (the file:line of the closure). Fix at the retainer, not the symptom (debugging-methodology applies to memory).',
+    '',
+    'WeakRef/WeakMap: object-keyed caches and metadata where the KEY\'s lifetime should rule — a WeakMap entry vanishes when the key does; never WeakRef something you cannot afford to lose (it may be collected ANY time).',
+    '',
+    'The big-object discipline: pass FIELDS not records into long-lived closures; bounded caches (LRU-lite: Map + delete-first-key on insert past cap); pools (object-pooling) convert churn into fixed memory.',
+    '',
+    'Verify: the 10× action test returns to baseline ±5%; a 30-minute session shows a flat heap graph (a sawtooth is fine — a RAMP is a leak); the app survives the device\'s app-switcher roundtrip.'
+  ].join('\n');
+  bodies['canvas-layer-batching'] = [
+    'Canvas batching: the draw-call discipline for 2D at scale:',
+    '',
+    'Layer canvases: split the scene into stacked <canvas> elements — background (static, baked once), entities (redrawn per frame), effects/particles (additive), UI (rarely changes). Each layer redraws at ITS rate — the background never costs a frame again (dirty-rectangle-rendering\'s L1, generalized). CSS compositing stacks them for free.',
+    '',
+    'Sprite batching: canvas2d has no batch API — the cost is STATE CHANGES, not draws. Order draws to minimize: group by atlas/image (one drawImage per sprite, zero state switches), set globalAlpha/composite sparingly, batch same-style fillRects. A frame with 500 state changes at 60fps is the budget you are saving (performance-budgets\' 16ms).',
+    '',
+    'Atlas discipline: one PNG atlas per scene layer (fetch_asset a sheet, or bake at boot: draw many small canvases into one big one) — texture swaps become zero; the source-rect math (tilemap-engines) picks frames.',
+    '',
+    'Bake static composition: anything that renders the same for >2 frames (a frozen scene, a complex icon stack) bakes to an offscreen canvas ONCE and blits — bake invalidates on change only (the dirty contract).',
+    '',
+    'Resolution discipline: layers at devicePixelRatio (charts-canvas-impl) — mixed-DPI layers composite blurry; all-or-none.',
+    '',
+    'Verify: 500 sprites across 3 atlases — the frame profiler shows state changes < 30/frame; a static scene costs ~0ms (layers idle); no seams from DPI mismatch.'
+  ].join('\n');
+  bodies['deterministic-replay'] = [
+    'Determinism: the same inputs produce the same game — and bugs become movies:',
+    '',
+    'The determinism contract: no Math.random (seeded RNG only — procedural-worlds\' mulberry32), no Date.now in game logic (a fixed logical clock advanced by the STEP), no iteration over object key ORDER (Map with insertion order, or sorted keys — JS object iteration IS ordered but Map makes the contract explicit), no floating-point drift across platforms (integer or quantized positions for anything network/replay-critical).',
+    '',
+    'Replay = inputs + seed: record [{frame, input}] per tick (a few bytes/minute); replay = boot from the seed, feed the same inputs through the same fixed timestep (game-architecture\'s accumulator) — the game replays EXACTLY. A bug report becomes a replay file the developer can STEP THROUGH (debugging-methodology\'s reproduce-deterministically, automated).',
+    '',
+    'The state hash: every N frames, hash the serialized world state — a replay that diverges reports the FIRST divergent frame (bisecting the desync to one tick); desyncs come from hidden nondeterminism (an unseeded random, a Set iteration order assumption, a Math.pow edge).',
+    '',
+    'Why networks need it: lockstep multiplayer sends INPUTS (tiny), not states — both sims converge (a-star-pathfinding\'s determinism note scaled up). Recoil, crits, spawns: all seeded streams (each system its own stream index so call-order changes cannot shift others\' rolls).',
+    '',
+    'Pragmatic tier: full determinism is a discipline tax — apply it to the SIMULATION core; presentation (particles, cosmetic jitter) stays free-range (visual randomness never desyncs anything).',
+    '',
+    'Verify: record 60s of play, replay it — the state hash matches at every checkpoint; change ONE input frame — divergence starts exactly there.'
+  ].join('\n');
+  bodies['data-pipeline-transform'] = [
+    'Data pipelines: chains of transforms that stay debuggable:',
+    '',
+    'The shape: source → validate (schema-validation-runtime) → normalize (units, casing, shapes) → transform (the business logic) → sink. Each stage = a PURE function (in → out, no side effects) — pipelines of pure stages test one-stage-at-a-time and compose freely (js-core-patterns\' compose).',
+    '',
+    'The runner: a simple stage array — stages.reduce(function (data, stage) { return stage(data); }, input) — with per-stage try/catch that tags failures with the STAGE NAME (a pipeline error without its stage is half a bug report). Count rows in/out per stage in dev mode: a stage silently DROPPING rows is the classic pipeline bug (a filter that was meant to be a map).',
+    '',
+    'Intermediate caching: expensive stages memoize by input hash (js-core-patterns) — or materialize to a file/store for big data (the harness\'s gen-modeldb script IS a pipeline: 5.9MB in → 174KB curated out, staged and resumable).',
+    '',
+    'Streaming for scale: past ~10MB in memory, process row-batches (read 1000, transform, write) — the same pure stages, batched; progress reporting falls out naturally (batch N of M — async-ui-patterns).',
+    '',
+    'Schema evolution: pipelines outlive their input shape — each stage declares the fields it READS; a new input field flows through untouched, a removed field fails LOUDLY at its consumer (not silently as undefined downstream — error-prevention).',
+    '',
+    'Verify: feed 1000 rows — counts logged per stage (1000 → 1000 → 980 deduped → …); corrupt one row — the stage error names the row and the stage; re-running with a cached stage skips its work.'
+  ].join('\n');
+  bodies['feature-flags'] = [
+    'Feature flags: ship dark, enable safely:',
+    '',
+    'The mechanism: a flags object resolved at boot — defaults in code ← config file ← URL params (the override ladder, env-config-server\'s precedence) — read through ONE helper: flags.enabled("newShop") — raw flag checks scattered across files are un-auditable.',
+    '',
+    'The three flag types (never mix them): RELEASE flags (a feature half-built, off in production — the ship-dark pattern: the code is LIVE, the flag hides it), OPS flags (a kill switch for something risky — the off position is the emergency brake), EXPERIMENT flags (A/B — needs an assignment strategy + metrics, or it is just a coin flip you cannot measure). Each flag has an OWNER and an EXPIRY — permanent flags are the codebase rotting in slow motion (delete the flag and the dead branch on schedule).',
+    '',
+    'The discipline: flags wrap FEATURES at coarse granularity (the whole shop screen), not line-by-line — flag-in-function bodies doubles the code paths you must test. The default MUST be the safe state; a flag read failure (config missing) resolves to the default (error-prevention).',
+    '',
+    'Testing both sides: every flag state is a shipped configuration — the smoke ladder runs with flags ON and OFF (the harness evals would call this: both failure paths have a test).',
+    '',
+    'Verify: toggle every flag via URL param — the UI changes live (or on next route); an unknown flag in config logs once and is ignored; the flag inventory (a grep) matches the documented list with owners.'
+  ].join('\n');
+  bodies['code-splitting-lazy'] = [
+    'Code splitting: the initial payload is the first impression:',
+    '',
+    'The mechanism: dynamic import() — a lazy module loads on demand: button.onclick = function () { import("./editor.js").then(function (mod) { mod.open(); }); }; — the bundler/serve splits it; in REVA\'s no-bundle world the equivalent is lazy SCRIPT loading (the harness\'s own hljs loader appends script tags on demand and caches — the pattern to copy).',
+    '',
+    'What goes lazy: heavy libraries used on ONE path (the chart engine for the stats screen), large data (the language pack), anything below the fold. What stays eager: everything the first screen needs — a lazy-loaded critical path trades a fast boot for a mid-use stall (the wrong trade).',
+    '',
+    'Prefetch the likely: after first paint, idle-prefetch the PROBABLE next chunk (requestIdleCallback + a link/script preload) — the settings screen the user opens in minute 2 should already be there; prefetch on HOVER/touchstart for buttons (the intent signal).',
+    '',
+    'The loading contract: a lazy surface shows its skeleton INSTANTLY (async-ui-patterns) with an honest error + retry if the chunk fails (offline first-run! — the PWA cache must pre-warm lazy chunks or the offline user hits the void — pwa-offline\'s cache-first rule covers precache).',
+    '',
+    'Measure honestly: initial payload before/after, time-to-interactive, and the mid-use stall the split introduced (it should be <100ms cached, <1s first-ever).',
+    '',
+    'Verify: cold boot loads only the eager set (network tab); the lazy feature opens with a skeleton then content; airplane-mode boot works (precache) and the lazy surface either works or shows the retry, never a void.'
+  ].join('\n');
+  bodies['api-caching-strategies'] = [
+    'Caching: the answer to "should this fetch again?" — per data type:',
+    '',
+    'The taxonomy: IMMUTABLE data (an old version identifier, a published asset) → cache FOREVER (memory + disk); PERSONAL feeds (recent items) → stale-while-revalidate (show cached INSTANTLY, refresh in background — async-ui-patterns); VOLATILE (a live price) → no cache, or a 5s micro-cache; WRITE-through (the user\'s own edits) → the cache IS the source until confirmed (optimistic, async-ui-patterns).',
+    '',
+    'The implementation: a Map cache with {value, expires} + a helper — cacheGet(key, fetcher, ttl): return fresh if not expired; else return stale + REFRESH IN BACKGROUND (the SWR promise deduped by key — concurrent calls share ONE fetch, the single-flight rule: a Map of in-flight promises).',
+    '',
+    'Invalidation is the hard 20%: prefer TTL-honesty (short TTLs for changeable data) over clever invalidation; on WRITE, update or delete the cache entry for that key immediately (write-through); version keys when the SHAPE changes ("items:v2:" — the save-systems rule, cache edition).',
+    '',
+    'HTTP cooperation: Cache-Control/ETag from the server (api-design-rest should SET them) — fetch respects nothing by itself for custom needs; a conditional request (If-None-Match) gives 304s = free freshness.',
+    '',
+    'Offline tier: the SWR cache doubles as the offline layer (serve stale when the network dies — a stale product beats an error product); pair with the mutation queue (offline-first-sync).',
+    '',
+    'Verify: two rapid navigations to the same data = ONE network request (single-flight); a slow endpoint renders cached instantly and updates in place; kill the network — the app serves stale with an offline notice.'
+  ].join('\n');
+  bodies['offline-first-sync'] = [
+    'Offline-first: the network is an upgrade, not a requirement:',
+    '',
+    'The architecture: every mutation writes to a LOCAL QUEUE (with {id, op, data, ts}) AND applies optimistically to local state — the UI never waits for the network (async-ui-patterns\' optimistic rule, taken to its conclusion). A sync engine drains the queue when connectivity returns (online event + a periodic probe), in ORDER, marking each done.',
+    '',
+    'Conflict resolution — pick ONE per data type, honestly: LAST-WRITE-WINS (simple, fine for user-owned single objects — the ts decides); SERVER-WINS (read-mostly data); MERGE (per-field LWW for forms — field timestamps beat object timestamps); CRDTs for real multi-user text (a library, not a weekend). The failure mode to design: the SAME field edited offline on two devices — anything else is solvable with LWW.',
+    '',
+    'The server contract: idempotent operations (client-generated ids — websocket-live\'s dedupe rule) because the queue WILL retry after a timeout that actually succeeded; a revision/updated-at on every record so the server can arbitrate; batch endpoints for drain efficiency (api-design-rest).',
+    '',
+    'UX honesty: pending mutations visible (a spinner dot per unsynced row), an offline banner that is CALM ("changes saved locally — will sync"), and a conflict that surfaces to the USER only when a machine truly cannot decide (show both values, let them pick — the dignified failure).',
+    '',
+    'Storage: the queue persists (localstorage-state / indexeddb-patterns — a lost queue is lost user work); cap + compact (done entries prune; a 10k-entry queue needs batching).',
+    '',
+    'Verify: airplane-mode edits (5 mutations) → network back → all 5 apply server-side in order, once each; a server-rejected mutation surfaces to the user; killing the app mid-drain resumes the queue.'
+  ].join('\n');
+  bodies['worker-pool-compute'] = [
+    'A worker pool: parallel compute with a sane API (web-workers\' structure, production-sized):',
+    '',
+    'The pool: spawn navigator.hardwareConcurrency - 1 workers (leave one core for the UI); a job queue feeds idle workers FIFO; each job = {task, data, resolve, reject} — the pool exposes pool.run(task, data) → Promise. Workers are GENERIC: one script, the task name selects a function from a registry inside the worker (a switch, not eval — security-essentials).',
+    '',
+    'Work partitioning: the SPEEDUP rule — partition into chunks ≥ 4× the message overhead (a 5ms chunk loses 2ms to messaging); data-parallel problems (per-pixel, per-item) chunk by range: worker i takes rows [i*N/n, (i+1)*N/n); results aggregate in order (Promise.all of the pool\'s per-chunk promises — async-patterns).',
+    '',
+    'Transferables: move buffers, do not copy — postMessage(buf, [buf]) transfers ownership (zero-copy) but the sender loses it (clone first if both sides need it); ImageBitmap transfers for image work (canvas-image-fx at scale).',
+    '',
+    'Progress + cancellation: chunked jobs report progress per chunk (postMessage({progress})); cancellation = a generation token checked inside the worker loop (stale results drop) + pool.terminate for hard cancel on teardown.',
+    '',
+    'When NOT to pool: small jobs (spawn cost > compute — web-workers\' 50ms rule), DOM-adjacent work (impossible), IO (already async). Profile first: the long task must be >100ms to earn its pool.',
+    '',
+    'Verify: a 2M-pixel filter via the pool — main thread stays interactive (the spinner animates), wall time ≈ serial/N, results bit-identical to the serial version (a correctness diff).'
+  ].join('\n');
+
   /* ---- batch 5 bodies: the game-design pack ---- */
   bodies['level-design'] = [
     'Levels teach without words. The rules of readable space:',
