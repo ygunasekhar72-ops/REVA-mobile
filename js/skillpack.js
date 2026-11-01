@@ -13,6 +13,27 @@
   'use strict';
 
   var descs = {
+    /* ---- batch 5: the game-design pack — making games FUN ---- */
+    'level-design': 'level design pacing layout flow guiding player landmarks sightlines teaching space difficulty curve encounters',
+    'game-balance': 'game balance difficulty tuning numbers damage hp economy cost curve dps progression nerf buff playtest math',
+    'boss-fight-design': 'boss fight design phases attacks telegraphs patterns health bars enrage arena dodge bullet mechanics',
+    'tutorial-design': 'tutorial onboarding teach mechanics first minutes gradual instructions diegetic hints context without walls of text',
+    'progression-systems': 'progression upgrades unlock economy currency xp level skill tree rewards pacing grind retention loop',
+    'roguelike-design': 'roguelike design run based permadeath procedural rooms meta progression items synergies seed difficulty scaling',
+    'puzzle-design': 'puzzle design rules teaching introduce combine twist difficulty hint system aha moment sokoban mechanic clarity',
+    'raycasting-engine': 'raycasting engine wolfenstein pseudo 3d walls column fov distances textures dobby rendering grid map',
+    'isometric-rendering': 'isometric rendering diamond grid tiles depth sorting projection 2:1 iso coordinates screen world mouse picking',
+    'procedural-animation': 'procedural animation spring physics secondary motion follow through overlap procedural walk squash chain bones',
+    'enemy-ai-behaviors': 'enemy ai behavior patrol chase attack retreat states aggro range line of sight flocking pack coordination',
+    'game-feel-input': 'input buffering coyote time responsiveness controls latency keyboard gamepad deadzone sensitivity tight controls',
+    'camera-systems-2d': 'game camera follow lookahead deadzone shake limits room transitions parallax zoom smooth clamp screen scroll',
+    'narrative-structure': 'narrative story structure intro hook rising climax payoff dialogue tone lore environmental storytelling pacing',
+    'ui-hud-games': 'game hud ui health bar minimap score ammo icons feedback screen layout readability diegetic menu pause',
+    'save-systems-games': 'game save system checkpoints autosave slots serialization versioning cloud progress restore corruption safe',
+    'audio-design-games': 'game audio music layers sfx ducking spatial volume mixing loop seamless stinger ambience trigger',
+    'mobile-game-design': 'mobile game design portrait landscape one hand sessions short touch friction battery vertical games hyper casual',
+    'genre-formulas': 'game genre conventions platformer shooter rpg idle tower defense match3 survivor formulas expectations twist',
+    'playtesting-mindset': 'playtest watch players fun seconds test difficulty curves frustration iterate metrics where players quit boring',
     /* ---- batch 4: the backend/server pack — build + run real servers ---- */
     'node-http-server': 'node http server create server request response routing json api listen port node built-in no framework httpstatus',
     'express-api': 'express app get post put delete router middleware json body parser params query status endpoints minimal api',
@@ -100,6 +121,322 @@
   };
 
   var bodies = {};
+  /* ---- batch 5 bodies: the game-design pack ---- */
+  bodies['level-design'] = [
+    'Levels teach without words. The rules of readable space:',
+    '',
+    'Guiding the eye: players move toward LIGHT, CONTRAST and MOTION. A lit doorway, a coin trail, an enemy facing the player — place these where you want the player to go; never force with walls alone. Landmarks (a tower, a red tree) orient instantly — if the player gets lost twice, the level lacks landmarks, not maps.',
+    '',
+    'Teaching layout: introduce a mechanic in a SAFE space (a gap with no hazard below), then twist it (moving platform), then COMBINE it (gap + enemy). This is the world-building version of tutorial-design; three beats per mechanic, no explanations needed.',
+    '',
+    'Pacing: tension → release → tension. After a hard fight, give a quiet corridor with pickups; before a boss, an empty arena (the silence IS the buildup). Never two max-intensity encounters back to back — the second feels cheap.',
+    '',
+    'Sightlines: what the player SEES at the entrance is the promise of the level — show the goal early (the door, the treasure across the chasm) so traversal has intent. Hide shortcuts and secrets BEHIND the main path direction (players backtrack with new powers — metroidvania structure).',
+    '',
+    'Practical construction: blockout first — boxes and jumps only, PLAY the flow, then dress. If the blockout is not fun, art will not save it.',
+    '',
+    'Verify: play the level 3×; the intended path is discovered without instructions, the secret is found on the 2nd run, and no room is empty of intent (a space without challenge, reward or story is cut).'
+  ].join('\n');
+  bodies['game-balance'] = [
+    'Balance = math that produces FEELING. The instruments:',
+    '',
+    'Time-to-kill and time-to-die: the two numbers that define combat feel. A fight where the player dies in 2s feels unfair; where enemies die in 10s, boring. Start TTK_player (player kills enemy) at ~1-3s for trash mobs, TTK_enemy 3-5× that. Write the numbers DOWN before tuning.',
+    '',
+    'Curves over constants: enemy hp = base × growth^level with growth 1.15-1.35 (linear growth breaks by level 10; polynomial feels right); player damage should grow slightly FASTER than enemy hp early (power fantasy) and slower late (tension). Plot your curve on paper — 5 points are enough.',
+    '',
+    'Economy: income sources × rate vs costs — the player should afford the NEXT meaningful upgrade every 5-10 minutes (progression-systems). If a currency accumulates with nothing to spend on, the economy is broken; if everything is affordable, nothing is a decision.',
+    '',
+    'The 20% rule for buffs/nerfs: change one number by ~20%, PLAY, re-decide. Sweeping rebalances from the armchair always overshoot. Tune ONE variable per play session so you know what caused what.',
+    '',
+    'Randomness honesty: roll damage in a range (±20%) for variety, but never let a single roll kill a full-health player (max spike damage < 60% of player hp) — variance is fun, lottery deaths are not.',
+    '',
+    'Verify: 3 difficulty spikes played in a row — each survived with <50% hp lost on a good run; the weakest upgrade still changes a fight; write down the final numbers (save-systems) — tunables in one CONFIG object, never magic numbers in logic.'
+  ].join('\n');
+  bodies['boss-fight-design'] = [
+    'A boss = a choreography of readable patterns, not a bigger enemy:',
+    '',
+    'Structure: 2-3 PHASES with distinct patterns; phase transitions at hp thresholds (100→60→25%) with a beat — a roar, a screen shake, a pause (game-juice) — that RESETS the player\'s attention. Each phase introduces exactly ONE new attack; a phase dump is memorization, not play.',
+    '',
+    'Telegraphs: every attack announces itself BEFORE it lands — a flash, a windup animation (200-400ms), a target reticle. Dodge-ability = telegraph clarity; the telegraph IS the gameplay. Un Telegraphed damage reads as a bug.',
+    '',
+    'The pattern kit: aimed shot (dodge sideways), sweeping beam (jump/duck), ground AoE rings (move out), summon adds (switch priority), charge across the arena (step aside). Compose 3-4 of these per boss at different rhythms — same attack twice in a row is dull; three overlapping is chaos (cap at 2 simultaneous threats).',
+    '',
+    'The arena: a shape that supports the patterns (pillars for LOS breaks, low walls, a pit risk); ENOUGH ROOM for the biggest attack + dodge distance. Enrage timer (soft): after 90-120s the boss adds pressure — prevents infinite kiting without a hard fail.',
+    '',
+    'Reward proportionality: the boss gates a MEANINGFUL unlock (a power, a door, story) — the fight is the exam for the level\'s mechanics; use every mechanic taught so far at least once (level-design\'s teaching rule, examined).',
+    '',
+    'Verify: win on the 2nd-3rd attempt (1st teaches the patterns), zero deaths to UNTELEGRAPHED damage, the phase-2 pattern is dodged correctly the first time it appears (readability proof).'
+  ].join('\n');
+  bodies['tutorial-design'] = [
+    'The first 60 seconds decide the review. Tutorial rules:',
+    '',
+    'Teach by DOING, not reading: the player performs the mechanic within 5 seconds of it appearing on screen — move on the first frame (a nudge animation, not a text wall); jump within the first 10s at a safe obstacle. One mechanic at a time; the second waits until the first is USED successfully twice.',
+    '',
+    'Diegetic over modal: arrows painted on the wall, a sign in the world, an NPC gesture — in-world teaching beats popup text (popups pause the game and break flow; if you must, one line, auto-dismissed, never two).',
+    '',
+    'Safe-to-fail: early failures cost nothing (no death, no reset) — the tutorial gap has no spikes below. Punishing during teaching teaches players to QUIT, not to learn.',
+    '',
+    'Layered depth: core verbs first (move, jump, interact); advanced verbs (dash, combine, buy) introduced JUST before first needed — teaching everything upfront is forgetting everything upfront. Re-introduce gently after absence (a refresher prompt at the mechanic\'s first reuse after 10 minutes).',
+    '',
+    'Skip path: experienced players (and your own replays) need a fast-forward — a skip option after the first true teaching moment; the game must remain completable if every tutorial popup is ignored (never gate progress behind reading).',
+    '',
+    'The mobile cut: one-thumb playable in the first minute (mobile-game-design); the tutorial must finish before the first session ends (~3 minutes) — the player who bounces in 90 seconds never sees your second system.',
+    '',
+    'Verify: hand the build to a stranger (or replay with fresh eyes): no text read aloud, yet the core loop is discovered inside 60 seconds, and they SMILE at least once (the fun proof).'
+  ].join('\n');
+  bodies['progression-systems'] = [
+    'Progression = a ladder of wants. The mechanics:',
+    '',
+    'The loop: ACTION → REWARD → WANT. Every core action pays something (coins, xp, materials) within seconds; every reward opens a visible WANT (the next upgrade, the locked door) within minutes. A loop without visible next-wants stalls retention instantly.',
+    '',
+    'Upgrade ladders: 3-5 tracks (damage, speed, health, utility) each with 5-8 steps; costs grow ×1.6-2 per step while gains grow ×1.2-1.3 (the classic softening curve — game-balance math); ALWAYS show the next step\'s cost and effect on the same screen (visible want).',
+    '',
+    'Unlock pacing: one new MECHANIC (not just a number) every 10-15 minutes — a new verb renews the game for free (level-design\'s combine rule applies: the new verb should interact with old ones — dash + enemy projectiles = deflection).',
+    '',
+    'Currency discipline: ONE primary currency + at most one premium; two sinks minimum per currency (upgrades, cosmetics) — a currency with one sink is a progress bar, not an economy. Never sell power and cosmetics for the same currency (values collision).',
+    '',
+    'Milestones: name the checkpoints (Zone 2, Boss 1, Level 10) and CELEBRATE them (a flash, a toast, a stat card) — remembered progress = motivation; invisible progress = grind.',
+    '',
+    'Verify: write the first 30 minutes of the economy on paper (income per minute × sources vs costs); play 10 minutes — one meaningful upgrade landed, and the NEXT want is visible on screen right now.'
+  ].join('\n');
+  bodies['roguelike-design'] = [
+    'Roguelike structure: runs, death, and the meta that makes death matter:',
+    '',
+    'The run: 10-20 minutes, 3-5 areas, escalating difficulty (game-balance curves), a build ASSEMBLED during the run — the draft choice every 2-3 minutes (pick 1 of 3 upgrades) IS the game; choices must COMBINE (synergies: "fire + fast attacks" = a build, two unrelated stats = a spreadsheet).',
+    '',
+    'Permadeath honesty: the run ends, the BUILD is lost — what persists is meta-progression: currency for permanent unlocks (new characters, starting bonuses, ITEM POOL expansion). The meta run should shorten time-to-fun: by run 5-8 the player reaches the area that killed them first.',
+    '',
+    'Procedural honesty: generate rooms from authored pieces (procedural-dungeons), not pure noise — the pieces carry the design (a puzzle room, an elite arena, a shop); pure-random runs feel like nothing. Seed display = shareable runs (players trade seeds).',
+    '',
+    'The difficulty contract: the first 2 runs teach (weak enemies, generous pickups); difficulty scales with DEPTH, not with punishment — an early death should be the player\'s fault (readable telegraphs) and QUICK to retry (one keypress to the next run; a 20s meta-screen kills the loop).',
+    '',
+    'Item design: every item answers "when is this good?" — a flat +10% damage is boring; "damage +20%, but -10% max hp" creates DECISIONS. Write the exception cases (stacking rules, exclusions) before shipping the pool.',
+    '',
+    'Verify: 3 consecutive runs feel DIFFERENT (different build names can describe each); death on run 1 leads to an unlock that visibly changes run 2; restart-to-first-combat < 15 seconds.'
+  ].join('\n');
+  bodies['puzzle-design'] = [
+    'A puzzle = a rule the player LEARNS, then applies in a way that surprises:',
+    '',
+    'The 4-beat grammar: (1) INTRODUCE the rule trivially (push the box onto the plate — impossible to fail); (2) REINFORCE with a small variation; (3) TWIST — combine with a second rule or invert the expectation; (4) optionally a CHALLENGE combining 2-3 rules. Never skip beat 1 — the aha moment REQUIRES the rule be known.',
+    '',
+    'The aha moment: the solution must be discoverable through THINKING, not pixel-hunting — the player should say "of COURSE" (hindsight-obvious), never "how would I know". Test: describe the puzzle aloud; if the explanation needs a map or trial-and-error enumeration, the rule is not readable.',
+    '',
+    'Clarity rules: every interactive element LOOKS interactive (consistent visual language — buttons glow, movers move); the goal state is visible from the start (see the door open as the block lands — instant feedback teaching causality); reset is one tap and LOSS-FREE (experimentation is the verb — punishing experimentation kills puzzle play).',
+    '',
+    'Hint ladder (built in, not bolted on): after N minutes idle, the environment hints (a glint, a sound); after 2N, a stronger nudge (the relevant element pulses). The solution should NEVER be behind a paywall or a menu — the puzzle\'s dignity is the player\'s aha.',
+    '',
+    'Sokoban-family wisdom: state-space small (few movable entities); a level where 15 boxes interact is a solver\'s problem, not a player\'s. Undo is a FEATURE (free undo → bolder thinking).',
+    '',
+    'Verify: 3 players solve it; the fastest does it "wrong" first (your intended path is one of several); nobody brute-forced it; the aha is audible.'
+  ].join('\n');
+  bodies['raycasting-engine'] = [
+    'A Wolfenstein-style raycaster — pseudo-3D from a 2D grid, ~120 lines:',
+    '',
+    'The core: for each screen COLUMN, cast a ray from the player along the view direction; step the ray through the grid (DDA — grid-line intersections, not tiny steps); on hitting a wall, the perpendicular distance = how tall the wall slice is drawn:',
+    'for (var x = 0; x < W; x++) {',
+    '  var camX = 2 * x / W - 1;                     // -1..1 across the screen',
+    '  var rdx = dirX + planeX * camX, rdy = dirY + planeY * camX;',
+    '  /* DDA: step through grid cells until a wall */',
+    '  var perp = sideDistX - deltaDistX; /* or Y — the SHORTER axis wins */',
+    '  var lineH = Math.floor(H / perp);            // closer = taller',
+    '  ctx.fillRect(x, H/2 - lineH/2, 1, lineH);    // the wall slice',
+    '}',
+    '',
+    'The perpendicular distance (not euclidean) is what kills fisheye — project onto the camera direction before scaling. FOV via the plane vector length (plane 0.66 ≈ 66°).',
+    '',
+    'Texture mapping: the wall hit has an exact grid-crossing coordinate — the fraction (0..1) along the wall face is the texture U; sample a texture COLUMN and draw it scaled (drawImage with source-rect per column — 1px-wide slices, ~W draws per frame, fine at 320×200 upscaled).',
+    '',
+    'Movement with collision: slide along walls (try X move, then Y move separately — walking into a corner slides, never sticks). Sprite billboards for objects: sort by distance, draw back-to-front with the same per-column depth test (zbuffer[x]).',
+    '',
+    'Performance: render at 320×200 into an offscreen canvas, scale up with imageSmoothing off (the retro look IS the optimization). Floor/ceiling: flat colors first; textured floors double the cost.',
+    '',
+    'Verify: walk a corridor — walls stay straight (no fisheye bulge), corners slide smoothly, sprites occlude correctly behind walls, 60fps at the internal resolution.'
+  ].join('\n');
+  bodies['isometric-rendering'] = [
+    'Isometric worlds on canvas — the diamond grid done right:',
+    '',
+    'The projection (classic 2:1): screenX = (worldX - worldY) * TILE_W/2; screenY = (worldX + worldY) * TILE_H/2 — TILE_W = 2×TILE_H (64×32). Inverse (for mouse picking): worldX = (sx / (TILE_W/2) + sy / (TILE_H/2)) / 2; worldY = (sy / (TILE_H/2) - sx / (TILE_W/2)) / 2 — floor both.',
+    '',
+    'Depth sorting (the whole difficulty): draw order = worldX + worldY ascending (painter\'s algorithm) — anything "closer to the camera" draws later. Tall objects: sort key = the tile they STAND ON, plus a small y-offset bias so a sprite on tile (3,3) draws before a wall at (4,3). Wrong sorts show as heads poking through floors — 90% of iso bugs are sort keys, not projection.',
+    '',
+    'Tiles: a diamond sprite (or path2D diamond) per tile type; variations by hash (procedural-worlds seeding) so grass is not wallpaper. Height: multi-level worlds add level*STEP to screenY — walls become two-tile diamonds.',
+    '',
+    'Picking: use the INVERSE projection on the mouse position MINUS camera offset — do NOT hit-test diamond sprites (slow and fiddly); the math gives the exact tile.',
+    '',
+    'Rendering order per frame: compute visible tile range from the camera (only screen + margin), iterate diagonals (constant sum worldX+worldY lines), draw tiles then standing objects per cell. Culling keeps 60fps on big maps.',
+    '',
+    'Verify: walk an entity around a tall building — it passes BEHIND the near face and IN FRONT of the far face; clicking any tile highlights exactly that tile at any zoom/camera offset.'
+  ].join('\n');
+  bodies['procedural-animation'] = [
+    'Procedural animation: motion computed from state, not keyframed — the alive feel:',
+    '',
+    'Springs everywhere (the core primitive): value += (target - value) * stiffness * dt with velocity damping, or the verlet spring: vel += (target - pos) * k * dt; vel *= damp; pos += vel — stiffness k 30-120 for UI, 8-20 for floaty camera. Springs make EVERY follow motion organic (camera, hair, UI badges).',
+    '',
+    'Secondary motion: the body moves, everything ATTACHED lags — ears/tail/cape as chained spring points (each follows the previous with a phase delay); a 2-3 node chain sells weight instantly. Overlap: the head turns before the hat finishes turning.',
+    '',
+    'Procedural walk (no sprites): feet as two spring points alternating targets based on distance traveled (step when the foot lags too far behind the hip — a threshold, not a timer); bob the body with the step frequency; lean into acceleration (rot = clamp(vel * k)).',
+    '',
+    'Squash-stretch from velocity: scaleY = 1 + clamp(speed * k, -0.3, 0.3); scaleX = 1/scaleY (volume preservation) — the cheapest life sign on any moving sprite (game-juice\'s rule, generalized to everything).',
+    '',
+    'Look-at and aiming: eyes/head track the nearest point of interest with a lazy spring + occasional idle wander (a noise-driven target every 2-4s) — idle characters that LOOK around read as alive.',
+    '',
+    'Verify: turn the debug overlay off and ask — does the character feel weighted? Springs respond to speed changes; pause the game mid-motion — nothing snaps; resume — motion continues smoothly (dt clamped).'
+  ].join('\n');
+  bodies['enemy-ai-behaviors'] = [
+    'Enemy AI that reads as intentional — the behavior tier:',
+    '',
+    'State machines per enemy (state-machines-ui): idle → patrol → alert → chase → attack → recover → dead. The ALERT transition is the feel-maker: a 300-500ms "notice" beat (exclamation, head turn) before the chase — instant aggro reads as robotic unfairness.',
+    '',
+    'Patrol: waypoints (a loop or ping-pong) + pauses at each end (enemies that never stop look scripted); vision check = distance + facing cone (dot product) + optional line-of-sight (a grid raycast — a-star-pathfinding\'s DDA) — an enemy through a wall is a broken illusion.',
+    '',
+    'Chase with personality: direct pursuit is the dumb baseline; add FLANKING (offset the target point by ±90° per enemy index — packs surround), CIRCLING at attack range (strafe direction per enemy, flips occasionally), and RETREAT below 20% hp for cowardly types. Cap simultaneous attackers (a global attack-slot counter — 2 melee on the player max; the rest circle) — mob-swarm is the #1 unfairness complaint.',
+    '',
+    'Telegraphed attacks: windup (state attack-windup, 300ms, visual flash) → strike → recover (500ms vulnerability window) — the recover window is the player\'s reward window (boss-fight-design\'s rule, per enemy).',
+    '',
+    'Anti-cheese honesty: enemies that can be infinitely kited need a leash (return home + heal when the player leaves the aggro zone) — leashing reads as "the world has rules", not as cheating.',
+    '',
+    'Verify: watch 60s of combat — you can NARRATE each enemy\'s state ("that one just noticed me"); packs surround instead of queueing; no enemy attacks through walls.'
+  ].join('\n');
+  bodies['game-feel-input'] = [
+    'Input is where feel is won or lost — the 3 frame rules:',
+    '',
+    'Buffer EVERYTHING: a jump pressed 80ms before landing still fires on landing (jump buffer); an attack during a swing queues the next (input buffer 100-150ms). Dropped inputs read as "the game ignored me" — the #1 feel complaint players cannot articulate (mobile-game-design\'s touch slop, the desktop twin).',
+    '',
+    'Coyote time: 80-120ms of valid jumping AFTER leaving a ledge — human reaction is ~200ms; without coyote, every edge feels like a trap. Pair with the jump buffer and platformers feel "tight" instantly.',
+    '',
+    'Latency budget: input → visible response ≤ 3 frames (50ms) — process input at the TOP of the frame, apply movement the SAME frame; audio feedback within the same frame (a click on press, not release). At 60fps that budget is your whole handshake — no deferred processing on the critical path.',
+    '',
+    'Analog care: deadzone 0.15-0.2 (drift immunity), a response CURVE (square the magnitude for fine control near center), per-axis or circular stick gating (circular = natural circles). Keyboard is digital — simulate ramp: walk→run over 150ms of held key for Analog-adjacent smoothness.',
+    '',
+    'The response ladder: every input gets SOME feedback the same frame — movement, a sound, an animation start, even a denied-click shake. Silence = broken (error-handling-ux applied to the gamepad).',
+    '',
+    'Verify: play with the sound OFF and eyes half-closed — the character does what you meant within the same breath; edge-of-ledge jumps land 9/10; mashing attack never eats an input.'
+  ].join('\n');
+  bodies['camera-systems-2d'] = [
+    'The camera is the player\'s neck — tune it like a character:',
+    '',
+    'Follow with intent: deadzone first (the player moves freely inside a screen-center box; the camera only moves when they EXIT it — no constant swimming), then lookahead (offset toward the facing direction by 2-3 tiles — you look where you walk), then smooth: pos += (target - pos) * (1 - Math.pow(0.001, dt)) — framerate-independent (math-for-games), NEVER a hard copy except teleports.',
+    '',
+    'Clamp to the world: camera bounds = level bounds; a level smaller than the screen centers it. The camera must NEVER show out-of-world void — extend backgrounds or clamp tighter.',
+    '',
+    'Room transitions: lock-scroll per room (zelda-style) with a 200ms slide or an instant cut + 100ms fade — mixed free-scroll/room-lock confuses space memory. Vertical rooms: gravity games bias the deadzone DOWNWARD (see more of what approaches).',
+    '',
+    'Parallax: 2-3 background layers scrolling at 0.2×/0.5× — depth for free; tie the farthest layer to camera position × factor, drawn before tiles (tilemap-engines order).',
+    '',
+    'Screen shake discipline (game-juice owns the numbers): shake is an OFFSET added LAST, after the follow logic — never inside the follow position (it accumulates). Zoom pulses: camera.zoom spring toward 1 (procedural-animation) — a hit zooms 1.03 for 150ms.',
+    '',
+    'Verify: run the level both directions and vertically — the player stays visible in every maneuver, no edge-void, no nausea (shake decays, lookahead flips crisply on direction change).'
+  ].join('\n');
+  bodies['narrative-structure'] = [
+    'Story in small games = structure, not word count:',
+    '',
+    'The 5-beat micro-arc (fits any session length): HOOK (something is wrong — shown, not told, in the first 30s), PROMISE (a clear want: escape, rescue, reach), ESCALATION (each stage raises stakes or reveals a twist on the promise), CLIMAX (the promise confronts its cost), PAYOFF (changed world/character — the promise KEPT, SUBVERTED, or PAID FORWARD). Write these 5 lines BEFORE writing dialogue.',
+    '',
+    'Environmental storytelling: the world IS the exposition — wreckage implies battle; an empty crib implies loss; scorch marks imply fire. Show > tell ×10 in games (the player WALKS past text). One readable note per area max; notes carry VOICE, not plots (dialogue-systems handles the conversations).',
+    '',
+    'Dialogue economy: NPCs speak in WANT + INFO (what they need, what they know) — small talk is cut; every line either advances plot, characterizes, or offers a choice. The player\'s choices should change SOMETHING visible within 10 minutes (a door opened, a price changed) — consequence is the medium.',
+    '',
+    'Tone lock: pick 3 adjectives ("melancholy, wry, hopeful") and test every line against them — tone drift reads as amateur faster than any bug. Names, places and objects follow the same phonetic/lexical family.',
+    '',
+    'Pacing: story beats ride the level-design pacing — exposition in the quiet corridors, revelations in the safe rooms, NEVER during mechanical intensity (the player reads nothing mid-boss).',
+    '',
+    'Verify: retell your story in 5 sentences — if beat 3 or 5 is empty, the arc is a premise, not a story; a fresh player can state the WANT within 2 minutes of play.'
+  ].join('\n');
+  bodies['ui-hud-games'] = [
+    'Game UI: glanceable, diegetic-first, invisible when healthy:',
+    '',
+    'The glance test: every HUD element answers ONE question in <300ms of attention — health (how close to dying?), objective (where next?), timer, currency. Anything needing study belongs in a menu. Layout: corners own status (health bottom-left, minimap top-right are the learned conventions — break conventions at a readability cost you must pay back).',
+    '',
+    'Health honesty: damage flashes + a brief red vignette say "you are dying" better than numbers; regen shows as a slow refill; a one-hit system shows ONLY danger. Numbers for damage-lovers (a toggle), pictures for everyone else.',
+    '',
+    'Diegetic first: health as the character\'s posture/screen edges, ammo in the weapon model, objective markers IN the world — UI attached to the world survives immersion; overlay UI is the fallback, not the default.',
+    '',
+    'Feedback trinity per event: every game event = visual + audio + haptic(small screens vibrate on damage — mobile-game-design) — the player PERCEIVES through whichever channel they are attending.',
+    '',
+    'Menus: pause = the escape hatch (a big obvious button on mobile — mobile-game-design); settings that matter (volume, sensitivity, screen-shake toggle) reachable within 2 taps; the HUD scales for phone widths (ui-design-system tokens apply — games are not exempt from contrast or tap sizes).',
+    '',
+    'Verify: screenshot any moment — a stranger names your health, objective and score in 3 seconds; damage received is felt through ≥2 channels; no HUD element overlaps the action hot-zone.'
+  ].join('\n');
+  bodies['save-systems-games'] = [
+    'Game saves: the player\'s time is the asset — protect it like money:',
+    '',
+    'When to save: at CHECKPOINTS (level transitions, boss doors), after meaningful choices, on visibilitychange (mobile-game-design — the OS can kill you any second), and on quit. Never only-on-manual — players do not press save; they assume you did.',
+    '',
+    'What a save contains: player state (position, hp, inventory), world flags (doors opened, quests done), meta-progression, and a SCHEMA VERSION + timestamp + playtime + location name (the header the load screen shows). Reconstructable state (respawned enemies, timers) is NEVER saved — save the CAUSES, recompute effects.',
+    '',
+    'Corruption armor: the atomic write (json-file-persistence\'s tmp+rename) + one .bak of the previous save + a load-time validator (missing fields → defaults with a toast, not a crash). A save that fails to load = the worst bug report you will ever get; test the corruption path deliberately (truncate the file, load).',
+    '',
+    'Slots + autosave: 3 manual slots + 1 autosave slot + maybe a per-area rollback; the autosave writes DEBOUNCED (not per frame — flash wear and jank); show "SAVED" honestly (a small toast at the actual write).',
+    '',
+    'Versioning: migrate old saves on load (localstorage-state\'s ladder) — a shipped game that invalidates old saves commits a small betrayal; migrations are code you keep forever.',
+    '',
+    'Verify: save at every checkpoint type and reload each — the world resumes EXACTLY (position, inventory, flags); corrupt a save byte → the game loads the .bak with a notice; 50 saves leave 4 files on disk (rotation works).'
+  ].join('\n');
+  bodies['audio-design-games'] = [
+    'Game audio: the layer players feel before they notice:',
+    '',
+    'The mix hierarchy: MUSIC (looping, mood-setting) < AMBIENCE (the world\'s bed — wind, hum) < SFX (events — must cut through) < UI/critical cues (always audible). Ducking: when a stinger or dialogue plays, MUSIC dips −6dB for a second (a gain automation — web-audio-synth\'s envelopes) — without ducking, dialogue drowns.',
+    '',
+    'SFX rules: one DISTINCT sound per event class (pickup, hit, jump, death) — variations by pitch (±10% random) prevent the machine-gun repetition effect; the SOUND must match the VISUAL weight (game-juice: a big hit = a big sound + big shake).',
+    '',
+    'Music that loops: seamless loops (bar-aligned lengths — 8/16 bars), intensity LAYERS (drums add in combat, strings in calm) crossfaded by game state — a 30-second loop with 2 layers beats a 3-minute track that fights the mood.',
+    '',
+    'Spatialization-lite: pan + volume by relative position (a simple x-offset pan and distance falloff — no full HRTF needed); the stereo field tells the player WHERE things happen (audio-design as gameplay information — a chest glimmers audibly).',
+    '',
+    'Mobile reality: audio starts only after a gesture (web-audio-synth\'s resume law); the mute toggle is FIRST-CLASS (os interrupts are constant); test with the ringer off and in a noisy room — your mix must survive phone speakers (cut sub-bass, favor mids).',
+    '',
+    'Verify: 5 minutes of play — no sound repeats identically back-to-back, music survives 2 state changes seamlessly, every damage event is audible before it is visible.'
+  ].join('\n');
+  bodies['mobile-game-design'] = [
+    'Mobile-first game design — the constraints ARE the design:',
+    '',
+    'The thumb decides everything: one-handed portrait OR two-handed landscape, chosen at the concept stage (mixed = mush); interactive zones in the bottom 40% of the screen (the reachable arc); 56px minimum targets; nothing critical under the player\'s finger mid-action (no buttons top-center in portrait).',
+    '',
+    'Session shape: 2-5 minute sessions with a CLEAN pause at any second (visibilitychange auto-pause + instant resume — the OS will interrupt constantly); progress granularity per session (a run, a level, a build step) — a game needing 20 uninterrupted minutes dies on a bus.',
+    '',
+    'Touch honesty: direct manipulation where possible (drag the character, tap the target) beats virtual joysticks; when a stick is needed, touch-controls\' pointerId rules; gestures limited to 2 (tap + swipe) — teach at most one gesture per session.',
+    '',
+    'Battery + thermal: cap the frame rate (30fps for slow games, 60 only when motion demands), pause loops when hidden, skip GPU-heavy effects (bloom) — a phone at 45°C gets the game uninstalled (mobile-optimization has the frame budget).',
+    '',
+    'The friction audit: install → play ≤ 15 seconds and ≤ 3 taps; no accounts before the first fun; notifications opt-in asked AFTER the first session (not the first launch); every permission has an in-context why.',
+    '',
+    'Verify: play one-handed on a real phone on a bus-equivalent bump — no missed inputs, no grip shifts, one full session completed with 2 interruptions; the phone stays under hand-warmth.'
+  ].join('\n');
+  bodies['genre-formulas'] = [
+    'Genres are contracts — know the clause before you twist it:',
+    '',
+    'Platformer: tight controls (game-feel-input IS the genre), teach jumps in a safe gap, checkpoint density = frustration budget; the twist lives in ONE movement mechanic (double jump, wall-cling, grapple) that re-reads every level (level-design\'s combine rule).',
+    '',
+    'Shooter/roguelite: TTK short, dodging is the verb, builds via draft (roguelike-design); the arena is the level (enemy-ai-behaviors\' surround rule).',
+    '',
+    'Idle/incremental: the number goes up FOREVER — prestige resets convert time→multiplier; offline progress is mandatory (save-systems timestamps); the active layer (choices while watching) prevents pure-watching boredom.',
+    '',
+    'Tower defense: path topology is the puzzle; tower synergies (slow + splash) are the depth; the first wave teaches targeting; speed-up + fast-retry are mandatory UI.',
+    '',
+    'Match-3: the board must OFFER moves (shuffle on no-moves); cascades are the dopamine; objectives rotate (score, jelly, order) to refresh a fixed mechanic every 10 levels.',
+    '',
+    'Survivor-like: auto-attack, move-only input (mobile-perfect), the DRAFT every level, density ramps to absurdity (the power fantasy IS the genre) — 15-minute runs, one boss.',
+    '',
+    'The twist budget: satisfy the genre\'s top-3 expectations FIRST, then twist exactly ONE clause — a platformer with no tight controls is not an innovative platformer, it is a broken one.',
+    '',
+    'Verify: name 3 reference games in your genre and one sentence each of what they do best — your build either matches their core clause or deliberately breaks it for a reason you can state.'
+  ].join('\n');
+  bodies['playtesting-mindset'] = [
+    'Playtesting = watching reality disagree with your design:',
+    '',
+    'The protocol: ONE player, ONE task ("play until you die or finish"), you SILENT. No hints, no "try the button", no defending the design — every word you say invalidates the data. Watch: where they hesitate (confusion), what they try first (affordance truth), when they smile (fun truth), when they sigh (friction truth).',
+    '',
+    'What to record per session: the timestamp of first-death, first-smile, any restart caused by confusion, every question asked aloud ("how do I…?" = a design bug, not a player failure). 3 players beat 30 assumptions — the FIRST two players find 70% of the problems.',
+    '',
+    'You are the worst tester of your own game: you know the controls, the intentions, the map. When testing yourself: change ONE variable (a number, a room) and play the affected slice only (game-balance\'s 20% rule) — full replays of your own build produce comfort, not data.',
+    '',
+    'The seconds-funnel: WHERE players quit matters more than THAT they quit — instrument timestamps (session start/end, level reached) and read the funnel: a 90-second exodus points at the tutorial (tutorial-design); a wall at boss 1 points at difficulty OR at unclear telegraphs.',
+    '',
+    'Interpreting without surrendering: players are right about PROBLEMS, wrong about SOLUTIONS ("make it easier" often means "make it clearer"); fix the clarity before touching the difficulty — half of "too hard" reports die when the telegraph gets 100ms more readable.',
+    '',
+    'Verify: every design argument this week ended with "let\'s watch a player" rather than "I think" — and at least one change was reverted because a player proved you wrong.'
+  ].join('\n');
+
   /* ---- batch 4 bodies: the backend/server pack ---- */
   bodies['node-http-server'] = [
     'A zero-dependency Node server — the base every framework sits on:',
