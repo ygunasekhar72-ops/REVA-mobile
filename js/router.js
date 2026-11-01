@@ -84,9 +84,12 @@
     router.navigate = function (path, opts2) {
       opts2 = opts2 || {};
       var gen = ++currentNav;
-      var url = new URL(path, 'http://x');
-      var pathname = useHash ? (url.hash ? url.hash.slice(1) : '/') : url.pathname;
-      var query = extractQuery(useHash ? (url.hash.split('?')[1] ? '?' + url.hash.split('?')[1] : '') : url.search);
+      /* match against the path DIRECTLY — the URL construction is for the
+         address bar only, not for matching (hash mode strips the path) */
+      var cleanPath = path.split('?')[0] || '/';
+      var queryStr = path.indexOf('?') >= 0 ? '?' + path.split('?')[1] : '';
+      var query = extractQuery(queryStr);
+      var pathname = cleanPath;
 
       var match = matchRoute(routes, pathname);
       if (!match) {
