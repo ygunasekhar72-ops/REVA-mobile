@@ -11,7 +11,7 @@ Directive (user, 2026-10-29): the harness must match opencode/ZCode-class qualit
 **The authoring engines (the production system):**
 1. v2 UI full build — ~25K
 2. The IDE (phased) — ~40K
-3. Skills factory (1,000 expert skills) — ~150K
+3. Skills factory (1,000 expert skills) — ~150K — **domain coverage COMPLETE at batch 7 (2026-11-01): 140 pack skills (156 total with the original 16) across 7 packs — craft, layouts, games, engineering process, backend/servers, game design, systems architecture, device/media/AI/export; every remaining batch extends DEPTH within these domains**
 4. Tool expansion (34 → 150) — ~30K
 5. Test factory (1,000 scenarios) — ~60K
 6. Original subsystems (terminal emulator, diff engine, search) — ~100K+
