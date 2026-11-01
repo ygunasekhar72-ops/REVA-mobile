@@ -31,6 +31,7 @@
     var ROUTER = root.RVROUTER || (typeof require === 'function' && require('./router.js'));
     var BUS = root.EVENTBUS || (typeof require === 'function' && require('./eventbus.js'));
     var FETCH = root.FETCHCLIENT || (typeof require === 'function' && require('./fetchclient.js'));
+    var SCHED = root.SCHEDULER || (typeof require === 'function' && require('./scheduler.js'));
 
     var bus = BUS.createBus({ handlerErrors: 'log' });
     var scopedBus = bus.scope(opts.name || 'app');
@@ -65,6 +66,19 @@
       router: router,
       fetch: fetchClient,
       mounted: false,
+
+      /* scheduler: deferred + recurring work (goal-loop follow-ups, chores).
+         createScheduler shares the app's error policy: throws land on the bus. */
+      schedule: function (name, def, fn) {
+        if (!app.scheduler) {
+          if (!SCHED) return null;
+          app.scheduler = SCHED.createScheduler({
+            onError: function (err, taskName) { scopedBus.emit('scheduler:error', { task: taskName, error: err.message }); }
+          });
+        }
+        return app.scheduler.schedule(name, fn, def);
+      },
+      cancelScheduled: function (name) { return app.scheduler ? app.scheduler.cancel(name) : false; },
 
       /* plugin registration */
       register: function (plugin) {

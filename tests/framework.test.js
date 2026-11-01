@@ -88,6 +88,21 @@ const FW = require('../js/framework.js');
   // 11. VERSION
   assert.ok(FW.VERSION, 'version exists');
 
-  console.log('framework: 11/11 scenarios PASS (store + bus + router + fetch + plugins + lifecycle)');
+  // 12. scheduler wiring: deferred work through the app, errors on the bus
+  var app7 = FW.createApp({ name: 'sched-app' });
+  var beat = 0;
+  var when = app7.schedule('beat', { every: 60000 }, function () { beat++; });
+  assert.ok(when > 0, 'schedule returned a nextRun');
+  var schedErrors = [];
+  app7.bus.on('scheduler:error', function (e) { schedErrors.push(e.task); });
+  app7.schedule('boom', { every: 60000 }, function () { throw new Error('x'); });
+  var fired = app7.scheduler.tick(when);
+  assert.deepStrictEqual(fired, ['beat', 'boom'], 'both due tasks fired');
+  assert.strictEqual(beat, 1, 'recurring task ran');
+  assert.deepStrictEqual(schedErrors, ['boom'], 'throwing task landed on the scoped bus');
+  assert.ok(app7.cancelScheduled('boom') && !app7.cancelScheduled('boom'), 'cancel true once');
+  assert.strictEqual(app7.scheduler.pending(), 1, 'beat remains');
+
+  console.log('framework: 12/12 scenarios PASS (store + bus + router + fetch + plugins + lifecycle + scheduler)');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
