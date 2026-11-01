@@ -11,7 +11,7 @@ const P = require('../js/skillpack.js');
 
   // 1. batch size + shape (batches 1+2)
   const names = P.names;
-  assert.strictEqual(names.length, 372, 'batches 1-17 = 372 skills, got ' + names.length);
+  assert.strictEqual(names.length, 397, 'batches 1-18 = 397 skills, got ' + names.length);
   assert.strictEqual(new Set(names).size, names.length, 'slugs unique');
   names.forEach(n => {
     assert.ok(P.descs[n], 'desc present for ' + n);
