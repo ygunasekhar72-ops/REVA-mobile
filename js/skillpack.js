@@ -13,6 +13,27 @@
   'use strict';
 
   var descs = {
+    /* ---- batch 16: game mechanics + app features — 20 practical skills ---- */
+    'health-damage-system': 'health damage system hp max heal damage over time resistance vulnerability armor reduction floating number',
+    'ability-cooldown-system': 'ability cooldown system skill cast duration remaining indicator radial sweep keybind charge stack refresh',
+    'quest-system': 'quest system objective tracker accept complete fail reward chain prerequisite branch dialog trigger area collect',
+    'crafting-system': 'crafting system recipe ingredient combine result station tier quality fail chance discovered unlock tree material',
+    'day-night-cycle': 'day night cycle time system ambient light color gradient sky sun moon star field clock minute hour transition',
+    'weather-system': 'weather system rain snow wind fog particle intensity transition forecast random seed ambient sound visual effect',
+    'dialogue-tree-advanced': 'dialogue tree advanced branch condition variable state node link conversation topic subject return hub exit',
+    'procedural-dungeon-bsp': 'procedural dungeon bsp binary space partition split room corridor connect door lock key guaranteed path generate',
+    'loot-table-system': 'loot table drop rate weight chance rare epic legendary guaranteed pity counter roll dice random generation item',
+    'skill-tree-ui': 'skill tree ui node connection prerequisite unlock spend point respect reset visual branch tier path dependency',
+    'audio-manager': 'audio manager pool channel volume master sfx music bus duck ducking crossfade load decode cache play stop pause',
+    'input-rebinding': 'input rebinding remap key bind action listen wait press capture conflict resolve save persist reset default',
+    'settings-panel': 'settings panel category tab toggle slider dropdown select persist apply cancel reset default volume graphics control',
+    'loading-screen-tips': 'loading screen tip rotate random hint trick lore progress bar fake progress minimum time real load transition',
+    'tutorial-ghost-input': 'tutorial ghost input replay record finger indicator highlight zone prompt text timing auto dismiss skip button',
+    ' achievement-system': 'achievement system unlock badge trophy trophy case notification popup progress percentage secret hidden条件 condition',
+    'leaderboard-system': 'leaderboard system rank score submit retrieve paginate personal best friend compare daily weekly all time reset',
+    'daily-reward-system': 'daily reward streak calendar login bonus consecutive miss reset tier escalating reward collect claim button',
+    'matchmaking-flow': 'matchmaking flow queue search found accept countdown ready check skill rating mmr connect lobby start',
+    'tutorial-skip-respect': 'tutorial skip respect returning player experience level option never force skip all partial section remember choice',
     /* ---- batch 15: developer tooling — 20 skills for the toolchain ---- */
     'openapi-specification': 'openapi swagger specification endpoint path schema parameter response request body operation document rest',
     'changelog-writing': 'changelog writing keep a changelog semantic version added changed deprecated removed fixed security category user facing',
@@ -354,6 +375,303 @@
   };
 
   var bodies = {};
+  /* ---- batch 16 bodies: game mechanics + app features ---- */
+  bodies['health-damage-system'] = [
+    'The health and damage system — the core of every combat game:',
+    '',
+    'The model: entity.hp (current), entity.maxHp, entity.armor (damage reduction %), entity.resistances (per damage type). The damage calculation: finalDamage = baseDamage × (1 - armor/100) × typeMultiplier — armor reduces, resistance multiplies, the result is an integer (Math.max(1, Math.round(final)) — always deal at least 1 damage, never 0).',
+    '',
+    'Damage types: PHYSICAL (reduced by armor), MAGIC (reduced by resistance), TRUE (ignores armor — the rare "pure" damage for special abilities), PERCENTAGE (removes a % of max HP — the anti-tank mechanic). Each type uses a different formula — a single damage function with a type switch.',
+    '',
+    'Healing: overhealing is WASTED (hp caps at maxHp — return the actual healed amount for the UI to show "+50 (wasted 20)"); heal-over-time (HoT) = a tick timer that heals N per second for D seconds; the healing and damage systems share the same tick infrastructure.',
+    '',
+    'The floating combat text: "+15" in green above the healer, "-23" in red above the target — procedural-animation\'s spring for the float-up-and-fade motion; the text SIZE scales with the damage amount (a big hit = big text); CRITICAL hits are larger and yellow.',
+    '',
+    'The death: hp <= 0 → the entity DIES (not negative hp — clamp to 0); the death triggers: the death animation, loot drop (loot-table-system), experience award, quest update (quest-system), the corpse removal timer. The player death → the game-over screen or respawn.',
+    '',
+    'Verify: damage calculation with armor and resistance is correct; overhealing is wasted; i-frames prevent double-hits; death triggers all the hooks; floating text shows the right numbers.'
+  ].join('\n');
+  bodies['ability-cooldown-system'] = [
+    'The ability cooldown system: every ability has a cost, a cooldown, and a visual indicator:',
+    '',
+    'The model: ability = {name, cooldown (seconds), remaining (0 = ready), manaCost, charges (for multi-charge abilities), maxCharges}. The tick: remaining -= dt; when remaining <= 0, the ability is READY. Multi-charge: charges regenerate one at a time (charge 1 refreshes, then charge 2 starts its own timer).',
+    '',
+    'The visual indicator: a RADIAL SWEEP — a canvas arc or a CSS conic-gradient that fills clockwise as the cooldown expires: background: conic-gradient(var(--accent) calc(var(--progress) * 1turn), #333 0); — the progress variable updates per frame (0 = just used, 1 = ready).',
+    '',
+    'The keyboard mapping: each ability is bound to a key (Q, W, E, R for abilities; 1-6 for items); the key press → check if ready → check if enough mana → execute → start cooldown. The UI shows: READY (bright, full opacity), COOLDOWN (dimmed, radial sweep), NO MANA (blue tint), NOT LEARNED (empty slot).',
+    '',
+    'The global cooldown (GCD): after using ANY ability, a short global cooldown (0.5-1.5s) prevents spamming — the GCD is a separate timer from the ability-specific cooldown; the UI shows the GCD as a dimming sweep on ALL ability buttons simultaneously.',
+    '',
+    'The persistence: cooldowns reset on save/load (a loaded game starts with all abilities ready — the player shouldn\'t be penalized for saving); in combat, cooldowns persist across a pause/resume (the timer pauses with the game — state-machines-ui).',
+    '',
+    'Verify: the cooldown counts down; the radial sweep fills; the ability fires only when ready + enough mana; the GCD prevents spamming; multi-charge abilities regenerate one at a time.'
+  ].join('\n');
+  bodies['quest-system'] = [
+    'The quest system: the player\'s goal structure — accept, track, complete, reward:',
+    '',
+    'The data model: quest = {id, name, description, objectives: [{id, type, target, count, current, done}], rewards: {xp, gold, items}, prerequisites: [questIds], state: "locked" | "available" | "active" | "completed" | "turned-in"}. Objectives: KILL (kill 5 wolves), COLLECT (gather 3 herbs), TALK (talk to the blacksmith), REACH (reach the mountain top), DELIVER (bring the package to X).',
+    '',
+    'The lifecycle: LOCKED (prerequisites not met) → AVAILABLE (the NPC has the quest, the "!" marker shows) → ACTIVE (accepted, the "?" marker shows, objectives track) → COMPLETED (all objectives done, the "?" turns gold — return to the NPC) → TURNED-IN (rewards collected).',
+    '',
+    'The objective tracking: game events call questSystem.notify(eventType, target) — killing a wolf fires notify("kill", "wolf"); the system updates ALL active quests with matching objectives; when an objective reaches its count, it\'s marked done; when ALL objectives are done, the quest completes.',
+    '',
+    'The quest chain: quests can REQUIRE previous quests (prerequisites); a chain: "Find the map" → "Follow the map" → "Dig the treasure" — each quest unlocks the next; BRANCHING: "Side with the rebels" OR "Side with the loyalists" — the choice locks the other branch.',
+    '',
+    'The UI: the quest log (a list of active/completed quests); the TRACKER (a sidebar showing the active quest objectives — the HUD element); the MAP MARKERS (where to go for each objective — world-map-navigation).',
+    '',
+    'Verify: accept → objectives track → complete → turn in → rewards; prerequisites lock/unlock; branching works (one branch locks the other); the tracker updates in real time.'
+  ].join('\n');
+  bodies['crafting-system'] = [
+    'The crafting system: combine materials into better items:',
+    '',
+    'The recipe: {id, result: {itemId, count}, ingredients: [{itemId, count}], station: "forge" | "alchemy" | null (null = craft anywhere), craftTime (seconds, 0 = instant), discovered: false (the player must DISCOVER the recipe — by experimentation or finding a recipe book)}.',
+    '',
+    'The can-craft check: every ingredient must be available in the inventory (inventory-management\'s has-count check); the station must match (or be null); the player must have DISCOVERED the recipe (undiscovered recipes are invisible). The check is a single function that returns {ok, missing: [itemIds]}.',
+    '',
+    'The crafting action: consume the ingredients (inventory.remove for each); add the result (inventory.add); CONSUME the station time (a crafting timer with a progress bar — instant crafting skips this); a FAILURE CHANCE (for risky recipes — a 10% chance to lose the ingredients without producing the result — the risk-reward).',
+    '',
+    'The discovery system: the player can EXPERIMENT (combine any items and see what happens) or FIND recipes (recipe books, NPC teaching, experimentation); a discovered recipe shows in the crafting menu; undiscovered combinations show as "???" (the player knows something exists but not what).',
+    '',
+    'The tier system: T1 recipes use basic materials (wood + stone → axe); T2 recipes use T1 results (axe + iron → sword); T3 recipes use T2 results (sword + crystal → enchanted sword) — the tech tree progression (progression-systems).',
+    '',
+    'Verify: craft with valid ingredients → the item appears, the ingredients disappear; craft with missing ingredients → an honest error; an undiscovered recipe is invisible; the station requirement is enforced; the fail chance rolls correctly.'
+  ].join('\n');
+  bodies['day-night-cycle'] = [
+    'The day/night cycle: the world changes as time passes:',
+    '',
+    'The time system: game time runs FASTER than real time (1 real second = 1 game minute); the cycle is 24 game hours = 24 real minutes (a configurable ratio); the time of day drives: the SKY COLOR (a gradient interpolation between keyframes), the LIGHT LEVEL (ambient light intensity), the NPC SCHEDULES (shops open at 8:00, close at 18:00).',
+    '',
+    'The sky gradient: keyframes at the important times — dawn (5:00, orange/pink), noon (12:00, bright blue), dusk (18:00, red/purple), night (22:00, dark blue/black); interpolate between the keyframes with smooth transitions (the lerp between the color keyframes — the sky color IS the lerp result).',
+    '',
+    'The lighting: the ambient light level affects the game rendering — at night, the canvas darkens (a dark overlay with globalCompositeOperation: multiply or a CSS filter on the game container); light SOURCES (lanterns, fires, player torch) punch holes in the darkness (a radial gradient "cut-out" in the dark overlay).',
+    '',
+    'The NPC schedules: each NPC has a schedule keyed by time — "8:00: at the shop, 12:00: at the tavern, 18:00: walking home, 22:00: sleeping" — the NPC\'s position and state change per the schedule; the player can FOLLOW an NPC to discover their routine (the emergent gameplay).',
+    '',
+    'The gameplay effects: certain enemies appear only at night (zombies, ghosts); certain resources are harvestable only during the day (flowers close at night); the shops close; the visibility decreases (stealth-mechanics: harder to see at night — the vision cone shrinks).',
+    '',
+    'Verify: the sky color transitions smoothly through dawn/noon/dusk/night; the light level changes; NPCs follow their schedules; night-only enemies appear; the shops close.'
+  ].join('\n');
+  bodies['weather-system'] = [
+    'The weather system: the atmosphere changes the game:',
+    '',
+    'The weather types: CLEAR, CLOUDY, RAIN, STORM (rain + lightning), FOG, SNOW. Each type has: PARTICLE settings (rain drops, snowflakes, fog density), VISUAL settings (sky tint, fog distance, light modification), GAMEPLAY effects (rain = slippery ground, fog = reduced visibility, snow = footprints), AUDIO (rain sound, thunder, wind).',
+    '',
+    'The particle system: RAIN = thin elongated particles falling fast (gravity 500, wind drift), drawn as lines (not dots); SNOW = round particles falling slow with horizontal drift (sin wave — the fluttering); FOG = a full-screen gradient overlay with a noise texture (not particles); LIGHTNING = a full-screen white flash + a branching line drawn from the sky to the ground (a random jagged path).',
+    '',
+    'The transition: weather CHANGES GRADUALLY — the rain intensity ramps from 0 to 100 over 10 seconds; the sky tint fades between the current and target weather; the audio crossfades (audio-design-games\' crossfade rule). The transition is a WEATHER_FRONT (a metaphorical line moving across the map).',
+    '',
+    'The random generation: weather is SEEDED (procedural-worlds\' RNG) — a simple Markov chain: today\'s weather influences tomorrow\'s (clear → 60% clear, 30% cloudy, 10% rain; rain → 40% rain, 30% cloudy, 20% storm, 10% clear) — the weather has PATTERNS, not pure randomness.',
+    '',
+    'Verify: the weather transitions smoothly; particles match the type; the gameplay effects apply (slippery in rain, reduced visibility in fog); the audio matches; the weather follows the pattern (not pure random).'
+  ].join('\n');
+  bodies['dialogue-tree-advanced'] = [
+    'Advanced dialogue trees: branching conversations with state:',
+    '',
+    'The node types: LINE (text + speaker), CHOICE (options with conditions and consequences), SET (set a variable), IF (conditional branch), GOTO (jump to a node), END (close the conversation). The dialogue is a GRAPH of nodes connected by choices.',
+    '',
+    'The conditions: a choice is VISIBLE only if the condition passes — {text: "Tell him about the map", condition: "has_map"} — the condition checks the game state (inventory, quest flags, reputation); an INVISIBLE choice vs a DISABLED choice (grayed with a reason: "[Requires 50 gold]") — the disabled choice teaches the player what they\'re missing.',
+    '',
+    'The consequences: choosing an option can SET variables (hostility += 1), GIVE items (receive the key), START quests (quest-system\'s accept), CHANGE reputation (the faction\'s opinion of the player). The consequences are IMMEDIATE and PERSISTENT (save-systems-games).',
+    '',
+    'The hub pattern: a conversation RETURNS to a hub after each topic — the player can ask multiple questions before leaving; visited topics are marked (the "asked about" state); new topics unlock based on the conversation progress (a topic mentioned in passing becomes askable).',
+    '',
+    'The data format: a JSON object of nodes — {start: {text: "Hello.", choices: [{text: "Ask about the quest", next: "quest"}, {text: "Leave", next: "end"}]}, quest: {text: "I need help.", choices: [{text: "I\'ll help", next: "accept", set: {questAccepted: true}}]}, …} — the format is SERIALIZABLE (save-systems) and EDITABLE (a visual editor can generate it).',
+    '',
+    'Verify: branches follow the conditions; variables set in the dialogue affect the game; the hub pattern returns; the disabled choices show their requirements; the conversation state persists.'
+  ].join('\n');
+  bodies['procedural-dungeon-bsp'] = [
+    'BSP dungeon generation: guaranteed-connected rooms via binary space partitioning:',
+    '',
+    'The algorithm: (1) SPLIT: recursively divide the map into two sub-regions (alternating horizontal/vertical, at a random position between 35-65%); stop when the region is small enough (min 8×8 tiles); (2) PLACE ROOMS: one room per leaf (a random rect inside the leaf, with 1-tile padding from the walls); (3) CONNECT: for each split, connect the two children with an L-shaped corridor (the recursion unwinds, connecting siblings).',
+    '',
+    'The connection guarantee: because the BSP tree connects SIBLINGS, every room is reachable — the corridor from each split connects all rooms in that subtree; the root split connects both halves — the result is a fully connected dungeon (no isolated rooms, no flood-fill needed).',
+    '',
+    'The room types: NORMAL (empty, for random encounters), TREASURE (a chest in the center), BOSS (the largest room, at the deepest leaf), START (the first room — the player spawns here), SHOP (connected to a corridor, with an NPC).',
+    '',
+    'The door placement: where a corridor meets a room — DOORS block vision and sound (stealth-mechanics); locked doors require a key (the key is placed in a DIFFERENT room — the key-door graph is a dependency chain: the boss door needs the boss key, which is in the treasure room).',
+    '',
+    'Verify: generate 20 dungeons — all rooms are connected (flood-fill from the start reaches every room); no overlapping rooms; corridors are walkable (2 tiles wide); the boss room is the farthest from the start.'
+  ].join('\n');
+  bodies['loot-table-system'] = [
+    'The loot table system: fair random rewards with pity counters:',
+    '',
+    'The loot table: a weighted list of {item, weight, minCount, maxCount, rarity} — the drop chance = weight / totalWeight; roll for each item independently (a common item drops 80%, a rare item drops 5%) OR roll once and pick from the weighted list (one item per kill).',
+    '',
+    'The rarity tiers: COMMON (white, 60%), UNCOMMON (green, 25%), RARE (blue, 10%), EPIC (purple, 4%), LEGENDARY (orange, 1%) — the rarity determines the BORDER COLOR in the inventory (inventory-management) and the DROP SOUND (rare = a satisfying chime, common = a soft thud).',
+    '',
+    'The pity counter (the anti-frustration mechanism): if a rare item hasn\'t dropped in N kills, INCREASE its drop chance by 1% per additional kill — after 50 kills without a rare, the chance has increased by 50%; the pity counter RESETS when the item drops. The player never goes "dry" forever.',
+    '',
+    'The guaranteed drops: some items MUST drop (a quest item, a boss key) — a separate GUARANTEED list that always drops (not part of the weighted roll); these are ADDITIONAL to the random loot.',
+    '',
+    'The scaling: the loot table scales with the SOURCE (a boss has a better table than a trash mob) and with the PLAYER LEVEL (a level 20 player doesn\'t get level 1 loot — the table filters by level range).',
+    '',
+    'Verify: 1000 kills produce the expected distribution (the percentages match the weights); the pity counter triggers before 100 kills; guaranteed drops always fire; the rarity colors and sounds match.'
+  ].join('\n');
+  bodies['skill-tree-ui'] = [
+    'The skill tree UI: visual progression that shows the path:',
+    '',
+    'The structure: a directed graph — nodes (skills) connected by edges (prerequisites); each node: {id, name, description, maxLevel, currentLevel, cost, prerequisites: [nodeIds], icon, position: {x, y}}. The tree is RENDERED from the data (the positions define the layout — a manual layout for a designed tree, or a force-directed layout for a procedural tree).',
+    '',
+    'The visual states: LOCKED (grayed out, the prerequisite is not met), AVAILABLE (full color, the prerequisite IS met — the player can learn it), LEARNED (highlighted, the skill is active), MAXED (all levels invested — a golden border). The edges: ACTIVE (the prerequisite is met — a solid line) vs INACTIVE (a dashed line).',
+    '',
+    'The interaction: click an AVAILABLE node → show the tooltip (description, cost, current/max level) → click "Learn" → spend the point → the node levels up; shift+click invests the MAX points; right-click to RESPEC (refund the points — with a cost or a free respec per level).',
+    '',
+    'The rendering: an SVG or canvas rendering (the nodes and edges are positioned absolutely — the SVG paths draw the connecting lines); the pan and zoom (the tree can be larger than the screen — scroll-snap or free pan with the pointer); the tooltip follows the cursor (tooltip-popover-positioning).',
+    '',
+    'The data persistence: the tree state is {nodeId: currentLevel} — serialized in the save (save-systems-games); the respec refund calculation: total spent per node × the respec refund ratio.',
+    '',
+    'Verify: the tree renders from data; locked nodes are grayed; available nodes are clickable; learning spends a point and levels the node; the prerequisite chain prevents skipping; the respec refunds correctly.'
+  ].join('\n');
+  bodies['audio-manager'] = [
+    'The audio manager: one system for all sound — music, SFX, and voice:',
+    '',
+    'The bus architecture: the MASTER gain node → MUSIC bus → SFX bus → VOICE bus — each bus has its own volume; the user controls: master volume, music volume, SFX volume (three sliders — settings-panel); the buses route through the audio context (web-audio-synth).',
+    '',
+    'The SFX pool: pre-load and decode common sounds (jump, hit, coin) into AudioBuffers — play() creates a BufferSource from the cached buffer (no decode delay); the pool limits concurrent plays (max 8 simultaneous SFX — more than that clips and overwhelms); pitch variation ±10% prevents repetition fatigue.',
+    '',
+    'The music system: CROSSFADE between tracks (fade out the current, fade in the next — 2s overlap); LAYERS that add/remove based on the game state (a calm layer in exploration, a combat layer in battle — the layers sync to the same BPM); the music does NOT restart on layer change — the layers are aligned to the same bar.',
+    '',
+    'The ducking: when dialogue or an important sound plays, the MUSIC dips -6dB for the duration (the auto-duck — the dialogue is heard, not buried); the duck uses a gain automation (a smooth ramp, not a sudden jump).',
+    '',
+    'The caching: decoded AudioBuffers are cached by URL (a decode-once, play-many pattern); the cache is bounded (LRU — memory-management-js) — the least-recently-played sound is evicted when the cache exceeds the limit.',
+    '',
+    'Verify: multiple SFX play simultaneously without clipping; the music crossfades between tracks; the ducking lowers the music during dialogue; the volume sliders control the correct buses; the cache doesn\'t grow unbounded.'
+  ].join('\n');
+  bodies['input-rebinding'] = [
+    'Input rebinding: let the player choose their own controls:',
+    '',
+    'The binding model: ACTIONS map to KEYS — {jump: ["Space", "KeyW"], attack: ["Mouse0", "KeyJ"], dash: ["ShiftLeft"]} — each action can have MULTIPLE bindings (keyboard + gamepad); the binding is stored as a KeyboardEvent.code (the physical key — "KeyW" is the same key on QWERTY and AZERTY).',
+    '',
+    'The rebinding flow: the user clicks a binding slot → the app enters LISTEN mode ("Press a key…") → the next keydown captures the code → check for CONFLICTS (another action already uses that key) → if conflict: warn and swap, or reject; the Escape key cancels the rebind (a standard convention).',
+    '',
+    'The conflict resolution: if the key is already bound to another action — OFFER to swap (the other action gets the old key), or REJECT with a message ("Already bound to Attack"); the swap is the friendlier option (the user intended to use that key).',
+    '',
+    'The gamepad support: the Gamepad API maps gamepad buttons to the same actions — the binding shows the gamepad button name (if a gamepad is connected); the deadzone (0.15) and the sensitivity curve (game-feel-input) are SEPARATE settings from the bindings.',
+    '',
+    'The persistence: the bindings save to localStorage (localstorage-state) with a version; a "Reset to defaults" button restores the original bindings; the defaults are ALWAYS available (the user can\'t soft-lock themselves by binding every action to the same key — the reset saves them).',
+    '',
+    'Verify: rebind a key → the new key fires the action; a conflicting key is detected and swapped; the gamepad bindings work alongside the keyboard; the reset restores the defaults; the bindings persist across reload.'
+  ].join('\n');
+  bodies['settings-panel'] = [
+    'The settings panel: the user\'s control over the app — organized, persistent, safe:',
+    '',
+    'The categories: AUDIO (master, music, SFX volume sliders), GRAPHICS (quality preset, resolution scale, fullscreen, vsync), CONTROLS (key bindings — input-rebinding, sensitivity), GAMEPLAY (difficulty, language, subtitles), ACCESSIBILITY (text size, colorblind mode, screen shake toggle, reduced motion).',
+    '',
+    'The widget types: TOGGLE (on/off — a switch), SLIDER (a range with a value display — min, max, step, the current value shown next to the slider), DROPDOWN (multiple options — a select), KEY BINDING (input-rebinding\'s listen-and-capture), BUTTON (reset to defaults, export settings).',
+    '',
+    'The apply model: INSTANT APPLY (the change takes effect immediately — volume, a11y) vs APPLY ON CLOSE (the changes take effect when the panel closes — graphics quality which requires a reload); a REVERT button if the user made changes they don\'t like (the "cancel" — restore the values from when the panel opened).',
+    '',
+    'The persistence: every setting saves to localStorage IMMEDIATELY on change (not on panel close — the user might force-close the app); the settings schema has VERSIONS (version-migration) — a new setting added in v2 gets a default for v1 users.',
+    '',
+    'The accessibility: every control has a LABEL; sliders announce their value; toggles announce their state; the panel is keyboard navigable (accessibility-a11y); the screen reader announces the changes ("Volume set to 50%").',
+    '',
+    'Verify: every setting persists across reload; the apply model is correct (instant vs on-close); the reset works; the screen reader announces changes; the categories are navigable.'
+  ].join('\n');
+  bodies['loading-screen-tips'] = [
+    'The loading screen: make the wait productive and entertaining:',
+    '',
+    'The rotating tips: a random hint from a curated list — gameplay tips ("You can dash through enemy projectiles"), lore tidbits ("The ancient civilization worshipped the moon"), easter eggs (rare tips — a 1% chance of a joke). The tip changes on every load — variety prevents the "same loading screen" fatigue.',
+    '',
+    'The progress bar: REAL progress when measurable (a file count for asset loading, a percentage for a download) — the progress is the ACTUAL loaded/total ratio; FAKE progress when not measurable (a smooth animation that approaches 90% but never completes — the "creeping bar" — then jumps to 100% when the load finishes).',
+    '',
+    'The minimum display time: the loading screen shows for AT LEAST 1-2 seconds (even if the load finishes in 200ms — a flash of loading screen is jarring); the tips need time to be read — a 2s minimum display.',
+    '',
+    'The transition: the loading screen FADES OUT (300ms) and the game fades in — the same background color as the game\'s first frame (no hard cut); the fade is the polish that makes the load feel intentional.',
+    '',
+    'The tip data: a static array in the code or a JSON file (loadable — new tips can be added without a rebuild); the tip list is FILTERED by relevance (gameplay tips during gameplay loads, lore tips during story loads).',
+    '',
+    'Verify: the tips rotate (different on each load); the progress bar reflects the real or fake progress; the minimum display time is enforced; the transition is smooth (no flash).'
+  ].join('\n');
+  bodies['tutorial-ghost-input'] = [
+    'The ghost input tutorial: SHOW the input, don\'t TELL:',
+    '',
+    'The ghost indicator: a semi-transparent overlay that shows WHERE to interact — a ghost thumbprint on a touch target, a ghost cursor on a button, a ghost trail on a swipe path; the ghost PULSES (a subtle animation — a 1s breathing opacity from 0.3 to 0.6) to attract attention without being obnoxious.',
+    '',
+    'The timing: the ghost appears after a SHORT delay (2s of inaction — give the player a chance to figure it out themselves); the ghost DISMISSES on successful input (the player did it — the ghost is no longer needed); the ghost does NOT block input (the player can interact normally — the ghost is just a visual hint).',
+    '',
+    'The text prompt (the fallback): a one-line text near the ghost — "Swipe up to jump" (only if the ghost alone isn\'t clear); the text auto-dismisses with the ghost; the text is in the USER\'S LANGUAGE (i18n-essentials).',
+    '',
+    'The recording and replay (the advanced version): RECORD the developer\'s input during the tutorial design (each pointer event with a timestamp); REPLAY the recorded input as a ghost in the tutorial (the player sees the EXACT gesture) — the recording is data (a list of {type, x, y, ts}), the replay animates a ghost cursor through the sequence.',
+    '',
+    'The state machine: the tutorial is a STATE MACHINE (state-machines-ui) — each tutorial step is a state; the transition fires on the correct input; the skip button transitions to the "done" state (skipping all remaining steps).',
+    '',
+    'Verify: the ghost appears after 2s of inaction; the ghost dismisses on correct input; the text prompt shows for unclear gestures; the skip button works; the state machine tracks the tutorial progress.'
+  ].join('\n');
+  bodies[' achievement-system'] = [
+    'The achievement system: rewards for milestones — the retention mechanic:',
+    '',
+    'The model: achievement = {id, name, description, icon, condition, secret (hidden until unlocked), points, rarity}. The condition is a FUNCTION that checks the game state — "killCount >= 100", "allLevelsComplete", "playFor10Hours".',
+    '',
+    'The checking: achievements are checked on EVENTS (kill, level-complete, item-collect) — not on a timer; the event fires → all unearned achievements\' conditions are checked → any that pass are UNLOCKED; the check is CHEAP (a function per achievement — no expensive computation).',
+    '',
+    'The unlock flow: the achievement unlocks → a NOTIFICATION appears (a toast with the achievement icon and name — "Achievement Unlocked: Master Hunter") → the achievement adds to the PROFILE (the achievement list in the menu) → the POINTS add to the total score.',
+    '',
+    'The secret achievements: HIDDEN until unlocked (the description shows "??? — Keep playing to discover") — the mystery drives exploration; the HINT after partial progress ("Kill more enemies to discover this achievement"); the secret achievements are the EASTER EGGS of the achievement system.',
+    '',
+    'The persistence: the unlocked list is part of the SAVE (save-systems-games) — {achievementId: unlockTimestamp}; the timestamp enables "recently unlocked" sorting; the total points = the sum of all unlocked achievements.',
+    '',
+    'Verify: the achievement unlocks when the condition passes; the notification shows; the secret achievements are hidden until unlocked; the points accumulate; the unlocked list persists across reload.'
+  ].join('\n');
+  bodies['leaderboard-system'] = [
+    'The leaderboard system: the competitive ranking that drives replay:',
+    '',
+    'The data: entry = {playerName, score, timestamp, metadata: {level, mode}} — the leaderboard is a SORTED LIST (by score descending); the API: submit(entry) → the server validates and inserts; retrieve(page, mode) → a paginated list.',
+    '',
+    'The categories: ALL-TIME (the global ranking), DAILY (resets at midnight — date-time-mastery), WEEKLY (resets on Monday), FRIENDS (compare with connected friends), PERSONAL (the player\'s own best scores). Each category is a separate VIEW of the same data (a filter, not a separate storage).',
+    '',
+    'The anti-cheat: server-side validation — the score is IMPOSSIBLE without playing (a score of 999999999 in a 60-second run is suspicious); the submission includes a SESSION TOKEN (the server verifies the session existed); the rate limit (one submission per minute per player — rate-limiting).',
+    '',
+    'The UI: the player\'s OWN entry is HIGHLIGHTED (they always see where they rank); the entries above and below the player\'s rank are shown (the competitive context); the PAGINATION (50 per page); the rank is displayed as "#42" (the ordinal position); the score is formatted with tabular-nums (typography-systems).',
+    '',
+    'The offline behavior: the score saves locally; on reconnect, the score submits to the server (offline-first-sync\'s queue); the local leaderboard shows the offline scores until the server confirms (the pending indicator).',
+    '',
+    'Verify: the score submits and appears on the leaderboard; the personal best is highlighted; the categories (daily/weekly/all-time) are separate; the offline scores submit on reconnect; the anti-cheat rejects impossible scores.'
+  ].join('\n');
+  bodies['daily-reward-system'] = [
+    'The daily reward system: the retention mechanic that brings players back:',
+    '',
+    'The streak logic: the player logs in on consecutive days — the STREAK counter increments; a MISSED day resets the streak to 1 (not 0 — the player still showed up); the reset time is MIDNIGHT LOCAL TIME (not UTC — the player\'s timezone; date-time-mastery).',
+    '',
+    'The reward escalation: day 1: 50 coins; day 2: 100 coins; day 3: a rare item; day 5: an epic item; day 7: a LEGENDARY item + a badge; after day 7, the cycle REPEATS at a higher base (week 2: 75/150/rare/…). The escalation rewards CONSISTENCY (the longer the streak, the better the rewards).',
+    '',
+    'The claiming flow: on login, if a reward is available → a CLAIM button appears (a prominent CTA with the reward preview); the player TAPS to claim (the agency — they chose to engage); the reward animates (a coin fly-to-counter, an item card flip); the claim marks the day as collected.',
+    '',
+    'The miss forgiveness: ONE missed day per week is forgiven (the streak continues — the "grace day"); the grace day is shown as "streak protected" (the player sees the forgiveness — it feels like a gift, not a bug); the grace day recharges monthly (one per 30 days).',
+    '',
+    'The data: {streak: 5, lastClaim: "2026-11-01", graceUsed: false, totalClaims: 23} — the date comparison: today - lastClaim = 1 day → the streak continues; = 2 days → the grace day (if available); > 2 days → the streak resets.',
+    '',
+    'Verify: the streak increments on consecutive days; the rewards escalate; a missed day resets (or the grace day protects); the claim UI works; the data persists across reload; the reset is at local midnight.'
+  ].join('\n');
+  bodies['matchmaking-flow'] = [
+    'The matchmaking flow: finding a fair opponent:',
+    '',
+    'The flow: SEARCH (the player taps "Find Match") → QUEUED (the client sends a match request to the server) → FOUND (the server pairs players with similar skill) → ACCEPT (both players confirm within 30s — a ready-check) → CONNECT (the server provides the room details) → PLAY.',
+    '',
+    'The skill rating (MMR — Matchmaking Rating): each player has a numerical skill estimate (starts at 1000); after each match: winner +points, loser -points (the ELO formula: the expected win probability = 1 / (1 + 10^((opponentMMR - playerMMR) / 400))); the K-factor (how much the rating changes) is higher for new players (faster calibration) and lower for experienced players (stable ratings).',
+    '',
+    'The search expansion: the matchmaker starts with a TIGHT MMR range (±50) and EXPANDS over time (±100 after 10s, ±200 after 30s, ±500 after 60s) — the player waits longer for a FAIRER match; the UI shows the expanding range (searching… expanding skill range).',
+    'The ready-check: when a match is found, BOTH players must ACCEPT within 30 seconds — if either declines or times out, the match is cancelled and both return to the queue (the declining player gets a temporary penalty — a 30s queue ban — to prevent selective accepting).',
+    '',
+    'The UI states: the SEARCH button → a SEARCHING animation (a radar sweep, a pulsing icon) → the FOUND screen (the opponent\'s name, rating, and a VS layout) → the ACCEPT countdown (30s) → the CONNECTING screen (a spinner) → the GAME STARTS.',
+    '',
+    'Verify: the matchmaker pairs similar MMR players; the search range expands over time; the ready-check requires both players; declining has a penalty; the UI shows all states clearly.'
+  ].join('\n');
+  bodies['tutorial-skip-respect'] = [
+    'Tutorial skip respect: the returning player\'s time is valuable:',
+    '',
+    'The skip tiers: (1) SKIP ALL — a single button that dismisses the entire tutorial (the returning player or a confident player); (2) SKIP SECTION — skip the current mechanic (the player knows this one, but not the next); (3) SPEED UP — the tutorial text and animations play at 2× speed (the content is shown, but faster); (4) NEVER SHOW AGAIN — a "don\'t show tutorials" toggle in the settings (a permanent opt-out).',
+    '',
+    'The returning player detection: the player has a save from a previous version OR has played > N hours → the tutorial is SKIPPED by default (they already know how to play); a version UPGRADE may show a brief "what\'s new" (one screen, not a full tour — the delta, not the full picture).',
+    '',
+    'The skip respects the KNOWLEDGE, not the COMPLETION: skipping the "how to move" tutorial doesn\'t skip the "how to use the new dash ability" tutorial (a new mechanic still needs teaching — scope-slicing: each mechanic is a separate tutorial unit); the skip is PER-MECHANIC, not per-game.',
+    '',
+    'The never-force rule: the tutorial NEVER blocks progress — the player can always walk past the tutorial trigger, skip the popup, or ignore the hint; the tutorial is an OFFER, not a REQUIREMENT (the game must be completable if every tutorial is ignored — the accessibility-a11y principle applied to teaching).',
+    '',
+    'The skip analytics: track WHO skips and WHERE — if 80% of players skip the "how to open inventory" tutorial, it\'s too obvious (remove it); if 80% skip the "how to use the crafting station" tutorial, the station is too complex (simplify the station, not the tutorial).',
+    '',
+    'Verify: the skip button works (all, section, speed up); returning players are auto-skipped; new mechanics still teach; the skip analytics track; the game is completable without any tutorial.'
+  ].join('\n');
+
   /* ---- batch 15 bodies: developer tooling ---- */
   bodies['openapi-specification'] = [
     'OpenAPI (Swagger): the machine-readable API contract:',
