@@ -13,6 +13,27 @@
   'use strict';
 
   var descs = {
+    /* ---- batch 7: device, media, AI, export — the completion pack ---- */
+    'camera-capture': 'camera getusermedia webcam photo capture frame constraint facing mode resolution permission video track snapshot',
+    'screen-recording': 'screen recording mediarecorder capture stream canvas record webm chunks download video capture display media',
+    'video-playback-apps': 'video playback custom controls play pause seek fullscreen playbackrate buffered volume keyboard player app',
+    'geolocation-apps': 'geolocation coordinates latitude longitude watch position accuracy gps distance haversine maps location permission',
+    'device-apis': 'device api vibration battery orientation accelerometer network information online offline connection navigator hardware',
+    'notifications-push': 'notifications notification api permission request service worker push show click focus badge notify background',
+    'pdf-generation': 'pdf generate document jsdpf print window print stylesheet page break report invoice layout download pdf',
+    'image-export': 'canvas image export toblob download png jpeg quality composite watermark thumbnail generate picture save',
+    'print-stylesheets': 'print stylesheet media print page break margins hide navigation printer friendly paper size a4 layout',
+    'ai-chat-integration': 'ai chat llm api openai compatible streaming messages role system user assistant context window conversation ui',
+    'streaming-responses': 'streaming response sse server sent events fetch stream reader token by token render chunk partial text typewriter live',
+    'prompt-engineering-apps': 'prompt engineering system prompt context design instructions examples temperature max tokens roles structure ai app',
+    'voice-speech': 'speech recognition synthesis voice voice Recognition speech Synthesis tts stt microphone transcript speak utterance rate pitch',
+    'maps-without-keys': 'maps slippy map tiles leaflet lite openstreetmap tile math zoom xy latitude longitude marker geo coordinates free',
+    'search-systems': 'search system fuzzy match inverted index ranking relevance scoring filter facet highlight matches query client side',
+    'generative-art': 'generative art noise field flow particles palettes seeded random composition algorithmic creative coding canvas aesthetics',
+    'text-editors': 'text editor contenteditable undo integration caret selection overlay syntax highlight line numbers own editor build',
+    'data-import-wizards': 'import wizard csv json file mapping columns preview validation errors confirm step by step dedupe import flow',
+    'report-generation': 'report generation charts data summary pdf export document table chart image compile findings sections template',
+    'app-update-flow': 'app update service worker version banner new content available reload migration changelog notify refresh pwa update',
     /* ---- batch 6: the systems-architecture pack — bigger builds ---- */
     'entity-component-system': 'entity component system ecs architecture data oriented entities components systems query iterate game composition',
     'object-pooling': 'object pooling reuse allocations free list pool recycle bullets particles entities garbage collection pressure churn',
@@ -142,6 +163,320 @@
   };
 
   var bodies = {};
+  /* ---- batch 7 bodies: device, media, AI, export ---- */
+  bodies['camera-capture'] = [
+    'Camera access — permissions, constraints, capture:',
+    '',
+    'The gate is the PERMISSION: navigator.mediaDevices.getUserMedia({video: {facingMode: "environment", width: {ideal: 1280}}}) — MUST run from a user gesture (a "Open camera" button) and secure context; handle the three rejections distinctly: NotAllowedError (user said no → an honest message + a retry path), NotFoundError (no camera), NotReadableError (another app holds it).',
+    '',
+    'The preview: video.srcObject = stream; video.play() — muted+playsinline attributes on mobile or the OS hijacks playback. Mirror front cameras with CSS scaleX(-1) (facingMode "user").',
+    '',
+    'The capture (photo from the live feed): size a canvas to videoWidth/videoHeight, ctx.drawImage(video, 0, 0) — ONE frame, synced; for the REAR camera do not mirror; export via canvas.toBlob (image-export). Front-camera photos must be un-mirrored in the canvas (draw with ctx.scale(-1,1) reversal) or text renders flipped.',
+    '',
+    'Torch/zoom are TRACK capabilities where supported: track.applyConstraints({advanced: [{torch: true}]}) — feature-detect, degrade silently.',
+    '',
+    'Cleanup is a permission and a battery issue: stop every track on close (stream.getTracks().forEach(t => t.stop())) — a camera light left on after "close" is a one-star review.',
+    '',
+    'Verify: grant → preview live in <2s → capture → the photo matches the preview orientation → close → the camera light turns off; deny → the honest message shows.'
+  ].join('\n');
+  bodies['screen-recording'] = [
+    'Recording screens and canvases with MediaRecorder:',
+    '',
+    'Screen: navigator.mediaDevices.getDisplayMedia({video: {frameRate: 30}}) — user picks the surface; canvas-only (record the GAME itself, no permission dance): canvas.captureStream(30).',
+    '',
+    'The recorder: var rec = new MediaRecorder(stream, {mimeType: "video/webm;codecs=vp9"}); — mimeType support varies (fall through vp9 → vp8 → default); chunks: rec.ondataavailable pushes e.data; rec.onstop assembles a Blob and downloads (image-export\'s save path). rec.start(1000) gets 1-second chunks (safer than one giant blob for long sessions).',
+    '',
+    'UI contract: a REC indicator + elapsed time + a real stop button; audio optionally mixed in via a MediaStream with both tracks (getDisplayMedia({audio: true}) where supported); the stream ENDS externally (user clicks the browser\'s stop) — handle track.onended exactly like your own stop.',
+    '',
+    'Sizing reality: 1 minute of 1080p webm ≈ 5-15MB — long recordings stream chunks to memory carefully or warn; recording a hidden/scaled canvas captures its RESOLUTION, not its display size.',
+    '',
+    'In REVA builds: games get "share your run" — record canvas.captureStream during play, stop on game-over, offer the download. Secure context + user gesture to start.',
+    '',
+    'Verify: record 10s of canvas action → the webm downloads and plays; the browser\'s own stop also finalizes the file; no frames dropped visibly.'
+  ].join('\n');
+  bodies['video-playback-apps'] = [
+    'Custom video players — the controls the default player hides:',
+    '',
+    'The API surface: play()/pause() (returns promises — catch the interruption NotAllowedError: browsers block autoplay with sound), currentTime (seek), duration, buffered (TimeRanges — show the load bar), playbackRate, volume/muted, fullscreen on the CONTAINER (so YOUR controls ride along: element.requestFullscreen()).',
+    '',
+    'Custom controls: a control bar that auto-hides after 2.5s idle (pointermove/keydown resets), progress bar = click-to-seek (clickX / barWidth × duration) + drag-to-scrub (pointermove while down), keyboard: space (play/pause), arrows (±5s), f (fullscreen), m (mute) — with a focusable container so shortcuts are discoverable (accessibility-a11y).',
+    '',
+    'Mobile truths: playsinline (else iOS fullscreen-hijacks), muted+autoplay is the ONLY reliable autoplay, volume is OS-controlled on iOS (hide a volume slider there — detect and degrade), the tap-to-toggle-controls beat with a 250ms double-tap-to-seek zone feels native.',
+    '',
+    'The time format: mm:ss under an hour, h:mm:ss above (date-time-mastery\'s formatting); the progress bar shows buffered ranges as translucent overlays.',
+    '',
+    'Events to wire: timeupdate (progress — 4×/second, do not paint more), ended (next episode/replay UI), waiting/playing (the spinner ladder — async-ui-patterns), error (an honest message per code: 4 = unsupported format, 2 = network).',
+    '',
+    'Verify: seek while paused AND playing — the frame updates; keyboard-only operation works; autoplay-with-sound blocked → the muted poster + play button shows.'
+  ].join('\n');
+  bodies['geolocation-apps'] = [
+    'Location: permissions, accuracy, and the math:',
+    '',
+    'The gate: navigator.geolocation.getCurrentPosition(success, error, {enableHighAccuracy: true, timeout: 10000, maximumAge: 30000}) — user gesture first (a "find me" button); errors are THREE stories: 1 denied (a message + the manual-entry fallback), 2 unavailable, 3 timeout. NEVER auto-prompt on load (permission-storm = uninstall).',
+    '',
+    'watchPosition for continuous (navigation, running apps) — returns an id; clearWatch on leave; each fix carries coords.accuracy (meters, 68% confidence) — SHOW the accuracy (a circle on the map, "±12m"); a fix with accuracy > your threshold is "searching…" not a lie.',
+    '',
+    'The math every location app needs — Haversine distance:',
+    'function distKm(a, b) { var R = 6371, toR = Math.PI / 180;',
+    '  var dLat = (b.latitude - a.latitude) * toR, dLon = (b.longitude - a.longitude) * toR;',
+    '  var h = Math.sin(dLat/2)**2 + Math.cos(a.latitude*toR) * Math.cos(b.latitude*toR) * Math.sin(dLon/2)**2;',
+    '  return 2 * R * Math.asin(Math.sqrt(h)); }',
+    'Bearing (where to walk): atan2(sin(dLon)*cos(lat2), cos(lat1)*sin(lat2) - sin(lat1)*cos(lat2)*cos(dLon)) — normalize to 0-360.',
+    '',
+    'Coordinates are WGS84 degrees — display formats: decimal (31.7681°) or DMS for humans; NEVER store formatted strings (store numbers, format at render — date-time-mastery\'s rule, geo edition).',
+    '',
+    'Verify: accept → a fix with accuracy shown; deny → the manual fallback; distance between two known points matches a reference calculator within meters.'
+  ].join('\n');
+  bodies['device-apis'] = [
+    'The device surface — small APIs, big app-feel:',
+    '',
+    'Vibration: navigator.vibrate(30) for a tick, [30, 40, 30] patterns for alerts — HAPTICS ARE FEEDBACK (ui-hud-games\' trinity); guard with "vibrate" in navigator; never vibrate on every keypress (annoyance = permission revoked).',
+    '',
+    'Battery: navigator.getBattery() (promise) → {level, charging, addEventListener("levelchange")} — adapt honestly: below 20% + not charging → reduce frame rate/disable nonessential animation (mobile-game-design\'s thermal discipline).',
+    '',
+    'Orientation/motion: deviceorientation (alpha/beta/gamma — steering, level apps) requires permission on iOS (DeviceOrientationEvent.requestPermission() from a gesture); throttle handlers (performance-budgets) and CALIBRATE (capture the rest pose as zero).',
+    '',
+    'Network: navigator.onLine is a LIE detector only (true ≠ internet) — pair with a fetch probe (a HEAD to your origin with a 3s timeout) for "truly online"; online/offline events drive the offline-first-sync engine.',
+    '',
+    'Screen/viewport: visualViewport for keyboard-aware layouts (the resize event misses the keyboard); screen.orientation.lock("portrait") needs fullscreen first; safe-area insets via env(safe-area-inset-*) CSS (the notch).',
+    '',
+    'Feature-detect EVERYTHING (all of these vanish per-browser): typeof check → graceful path — the app never depends on a device API existing.',
+    '',
+    'Verify: each API probed with its absence simulated — the app works without it; vibration/battery/orientation verified on a real device (the emulator lies).'
+  ].join('\n');
+  bodies['notifications-push'] = [
+    'Notifications: the re-engagement channel — handled with respect:',
+    '',
+    'Permission timing: ask AFTER the first session (the "why" is established), from an explicit action, with a pre-prompt explaining the value ("Get a nudge when your build finishes?") — Notification.requestPermission() returns granted/denied/default; DENIED is forever (until settings) — never re-ask, show a "enable in settings" path instead.',
+    '',
+    'Local notifications (no server): new Notification(title, {body, icon, tag, data}) — tag DE-DUPES (same tag replaces — a build-finished notice updates in place); onclick: window.focus() + navigate to the relevant view (data carries the route); close() programmatically when the state resolves (the build finished → the "building…" notification goes away).',
+    '',
+    'Push (server-originated, survives closed app): a service worker + push subscription (PushManager.subscribe with a VAPID key) → the subscription JSON goes to YOUR server → the server pushes via web-push. This needs the SW (pwa-offline) and a real backend (the harness BYOK/backend skills); local notifications cover 80% of app needs without it.',
+    '',
+    'Badge: navigator.setAppBadge(n) (count) / clearAppBadge() — the dock/home-screen counter; pair with the unread state.',
+    '',
+    'Respect law: a notification MUST be actionable and true when shown; silent-hours respect (a local quiet-time check before show); the settings screen lists what notifications exist with per-type toggles.',
+    '',
+    'Verify: grant after the pre-prompt → a notification fires and clicking lands on the right view; same-tag re-fires replace; deny → the app never re-prompts and works fully without.'
+  ].join('\n');
+  bodies['pdf-generation'] = [
+    'PDF generation — two honest paths:',
+    '',
+    'Path 1 — PRINT CSS (zero libraries, perfect text): window.print() renders the CURRENT page through @media print styles — build a print stylesheet: hide the app chrome (nav, buttons), force white background + black text, page-break rules (.page {break-after: page}), @page {size: A4; margin: 15mm}, avoid splits inside cards (break-inside: avoid). For a report: render a hidden print-view container with exactly the report, print it. Text stays selectable/searchable — the BEST pdf text quality available.',
+    '',
+    'Path 2 — jsPDF (vendored, programmatic): fetch_asset the umd build, then: var doc = new jsPDF(); doc.text("Invoice", 20, 20); doc.setFontSize(12); doc.addImage(canvasDataUrl, "PNG", 20, 30, 170, 80); doc.save("report.pdf"); — precise geometry, tables via manual row loops (or jspdf-autotable vendored); FONTS: default helvetica only — custom fonts need embedding (weight in bytes; only for a real brand need).',
+    '',
+    'The decision: text documents/reports → print CSS; image-heavy/invoice-geometry → jsPDF; often BOTH (jsPDF for the canvas chart page, print CSS for text).',
+    '',
+    'Page-aware design: A4 = 210×297mm at 96dpi ≈ 794×1123px — design the report grid to that width and page-breaks land where intended; a print preview (render the print-view visibly once during dev) catches split-row disasters.',
+    '',
+    'Data flow: report-generation compiles the sections; this skill renders them — charts export as PNG data-URLs (image-export) and place into either path.',
+    '',
+    'Verify: the generated PDF opens in a real reader — text selects, pages break at the designed lines, images land at the right size; print CSS path tested via the browser print preview.'
+  ].join('\n');
+  bodies['image-export'] = [
+    'Canvas image export — pixels out the door:',
+    '',
+    'The core: canvas.toBlob(function (blob) { save(blob); }, "image/png") — PNG for graphics/transparency, JPEG (quality 0.85) for photos; toBlob is ASYNC and off-main-thread (toDataURL is the legacy sync twin — avoid for large canvases).',
+    '',
+    'The save: URL.createObjectURL(blob) + an <a download="name.png"> click — file-handling-browser\'s pattern; revokeObjectURL after; filenames with dates ("report-2026-11-01.png").',
+    '',
+    'Composition for export: the EXPORT canvas is often NOT the screen canvas — compose fresh: new canvas at target resolution → white/branded background (PNG transparency breaks in some viewers) → draw the chart/game frame/watermark → export. Scale up 2× for crispness (charts-canvas-impl\'s dpr rule applies to exports too).',
+    '',
+    'Watermarks/branding: draw the logo/name at low alpha in a corner — compose from an Image loaded from a data-URL or asset (CORS-clean — a tainted canvas cannot export: security-essentials\' cross-origin rule kills toBlob silently via a SecurityError).',
+    '',
+    'Formats: webp (smaller, broadly supported now), png sequences/frames for animation exports (record via MediaRecorder for video — screen-recording).',
+    '',
+    'Verify: export at 2× — crisp, not blurry; JPEG on a transparent canvas shows the fill color you chose; a cross-origin image in the composition → the SecurityError is caught with an honest message, not a silent failure.'
+  ].join('\n');
+  bodies['print-stylesheets'] = [
+    'Print stylesheets: the paper web:',
+    '',
+    'The block: @media print { nav, .sidebar, .ads, button { display: none !important; } body { background: #fff; color: #000; font-size: 12pt; } } — INVERT the dark theme (dark backgrounds waste ink and some printers band them); hide EVERYTHING interactive (buttons print as dead gray boxes).',
+    '',
+    'Page flow: @page { size: A4; margin: 15mm } ; break rules — h2 { break-after: avoid } (headings never orphan at page bottom), .card, table tr { break-inside: avoid } (rows never split), a sectioned report uses .page { break-after: page }. Links: show the URL in print (a[href]:after { content: " (" attr(href) ")"; font-size: 10pt; color: #666 }) for references, NOT for nav links.',
+    '',
+    'Colors: print-color-adjust: exact on elements whose background must survive (logos, chart fills) — otherwise browsers strip backgrounds by default (the chart that prints as white-on-white void).',
+    '',
+    'Testing: the browser print preview (Ctrl+P) IS the test — check page count, orphaned headings, split tables, and that the printable width (~700px at A4) doesn\'t reflow the layout into unrecognizability. A dedicated print-view container (render the report standalone) beats fighting the live layout.',
+    '',
+    'The UX hook: a "Print / Save as PDF" button calls window.print() with the print-view mounted (pdf-generation\'s path 1) — the user\'s printer driver completes the export.',
+    '',
+    'Verify: print preview of a data-heavy page — no split rows, no dead buttons, charts visible, ≤ sensible page count, URLs shown on references.'
+  ].join('\n');
+  bodies['ai-chat-integration'] = [
+    'Building chat apps on LLM APIs (OpenAI-compatible — the harness\'s own pattern):',
+    '',
+    'The conversation shape: messages = [{role: "system", content: <the rules>}, {role: "user"}, {role: "assistant"}, …] — the SYSTEM message sets behavior ONCE (persona + rules + output format); the conversation array IS the memory — trim/summarize old turns to fit the context window (the harness\'s compaction is the reference implementation: loop through, drop oldest whole exchanges, keep a state-of-the-world block).',
+    '',
+    'The request: POST {baseUrl}/chat/completions with {model, messages, stream: true, max_tokens} + Authorization Bearer key — keys come from USER settings (never shipped in code — security-essentials); one api.js module (api-integration) owns the call with timeout + error normalization (401 = bad key → a settings toast, 429 = rate → Retry-After, 5xx → transient retry).',
+    '',
+    'Streaming (streaming-responses covers the wire format): render token-by-token into the bubble — the UX IS the product; abortable via AbortController when the user hits stop.',
+    '',
+    'The chat UI (ui-hud + async-ui): user bubbles right, assistant left, the assistant message renders markdown (the harness renders via a sanitizing renderer — mdrender pattern), a THINKING state (streamed reasoning or a spinner), a copy button per message, and the RETRY on the last failed exchange.',
+    '',
+    'Trust boundaries: model output is UNTRUSTED text — render escaped/html:false; tool-calling patterns (if the model can act) validate every argument before executing (the harness\'s whole tool layer is the reference).',
+    '',
+    'Verify: a 6-turn conversation with streaming, stop mid-stream (the partial text stays), a 401 shows the settings path, and the context stays under the window across 30 turns (compaction works).'
+  ].join('\n');
+  bodies['streaming-responses'] = [
+    'Streaming responses — token-by-token rendering:',
+    '',
+    'SSE over fetch (the LLM standard): the body is a stream — read it with the reader:',
+    'var res = await fetch(url, {method: "POST", body, signal});',
+    'var reader = res.body.getReader(), dec = new TextDecoder(), buf = "";',
+    'while (true) {',
+    '  var r = await reader.read(); if (r.done) break;',
+    '  buf += dec.decode(r.value, {stream: true});',
+    '  var lines = buf.split("\\n"); buf = lines.pop();  // keep the partial line',
+    '  lines.forEach(function (line) { if (line.indexOf("data: ") === 0) { var j = line.slice(6); if (j !== "[DONE]") onChunk(JSON.parse(j)); } });',
+    '}',
+    'The buffer-and-split is THE protocol: chunks arrive mid-line; without the partial-line carry, JSON.parse throws randomly.',
+    '',
+    'Rendering: append deltas to a string, render on rAF (not per-chunk — chunks arrive faster than frames); markdown re-renders progressively (render the partial text each frame — the harness does exactly this); auto-scroll ONLY when the user is at the bottom (a stickiness check — yanking the scroll while the user reads upward is hostile).',
+    '',
+    'Abort: the stop button calls controller.abort() — the partial text KEEPS (mark it "(stopped)"), the reader throws AbortError (caught, not an error to the user).',
+    '',
+    'Non-LLM streams: the same reader handles any chunked response (log tails, progress payloads) — one utility, many uses.',
+    '',
+    'Verify: long streams render smoothly (no per-chunk layout thrash), stop keeps the partial, a network cut mid-stream shows an honest error with a retry, and the [DONE] sentinel ends cleanly.'
+  ].join('\n');
+  bodies['prompt-engineering-apps'] = [
+    'Prompt design for the apps YOU build on LLMs:',
+    '',
+    'The system prompt is the product: it carries (1) the ROLE ("You are a concise data analyst"), (2) the RULES (output format — "always reply with JSON {summary, items[]}"; refusals — "if data is missing, say so"), (3) the CONTEXT contract (what will be in the user message). Test it like code: a suite of inputs → assert the output parses (json_schema_check validates — the loop runs prompt → parse → retry-once-with-error → parse).',
+    '',
+    'Structure beats prose: numbered rules, explicit output schemas, few-shot EXAMPLES (2-3 input→output pairs teach format better than 200 words of description); put the schema FIRST and repeat the critical rule LAST (attention sags in the middle).',
+    '',
+    'Determinism dial: temperature 0-0.3 for extraction/classification (same input → same output), 0.7-1.0 for creative generation; max_tokens capped at the real need (the harness itself fixed a maxTokens:8 truncation bug — budget = the longest legal output × 1.3).',
+    '',
+    'Context budgeting: the window fills from the FRONT — the system prompt rides FIRST (never compacted), old conversation compacts into a state block (the harness\'s W5 pattern), large data goes in as SUMMARIES or the specific rows needed (not the whole dataset).',
+    '',
+    'Injection defense: user text and instructions NEVER concatenate into the system prompt — user content rides as the USER message (the role boundary is the wall — security-essentials applied to LLMs).',
+    '',
+    'Verify: 10 golden inputs → 10 parseable outputs; a hostile user input ("ignore your rules") does not change the format; the token spend per call is measured and bounded.'
+  ].join('\n');
+  bodies['voice-speech'] = [
+    'Voice in the browser — recognition and speech, zero servers:',
+    '',
+    'Speech RECOGNITION (speech → text): webkitSpeechRecognition (Chrome family) — continuous + interimResults for live captions; each result event carries a list with finality (isFinal) — render interim in gray, commit finals into the transcript. It requires a permission + network (Chrome processes server-side) and STOPS on silence — auto-restart with a generation guard (the restart loop must die with the mic button).',
+    '',
+    'Speech SYNTHESIS (text → voice): speechSynthesis.speak(new SpeechSynthesisUtterance(text)) — voices from speechSynthesis.getVoices() (async-populated: listen to voiceschanged); pick a voice by lang; rate/pitch adjust (0.5-2); CANCEL before speaking anew (speechSynthesis.cancel() — overlapping utterances queue into a jam); chunk long text at sentence boundaries (some engines clip long utterances).',
+    '',
+    'The voice UX: a big mic button with a LIVE state (pulsing ring), the transcript visible as it forms, barge-in (speaking stops when the mic opens), and a mute-the-TTS toggle that persists (voice apps without an off switch get muted by the OS instead).',
+    '',
+    'The assistant loop: recognition final → send to your LLM (ai-chat-integration) → stream the reply → speak the SENTENCES as they complete (sentence-split the stream, queue utterances — perceived latency halves).',
+    '',
+    'Feature-detect everything: both APIs are absent in some browsers (Firefox recognition) — the text path stays first-class (voice is an upgrade, never the only door — accessibility-a11y).',
+    '',
+    'Verify: speak a sentence → the final transcript lands; the assistant replies AND speaks; cancel mid-utterance works; the mic restart loop dies with the button.'
+  ].join('\n');
+  bodies['maps-without-keys'] = [
+    'Maps without API keys — tiles + math:',
+    '',
+    'The slippy-map math: the world is 2^zoom × 2^zoom tiles; tile (x, y) at zoom z from lat/lon: x = (lon + 180) / 360 × 2^z; y = (1 - ln(tan(lat·π/180) + sec(lat·π/180)) / π) / 2 × 2^z — pixels inside the tile = the fraction × 256. OpenStreetMap tiles are free (attribution REQUIRED: © OpenStreetMap contributors — license law, not decoration).',
+    '',
+    'The minimal viewer (no library): a container div; render the visible tile grid for the current center+zoom (only tiles intersecting the viewport — tilemap-engines\' culling); pan = recompute the tile origin; pinch/wheel = zoom toward the POINTER (keep the geo-point under the cursor fixed — the zoom-to-cursor formula: newCenter = cursorGeo - (cursorPixel - screenCenter) × scaleRatio).',
+    '',
+    'Markers and routes: project lat/lon → screen with the same math, position absolutely; polylines = projected point lists (a route from a GPX/JSON); clustering for >200 markers (grid-cluster: markers within one tile merge to a count bubble).',
+    '',
+    'Leaflet when features multiply: vendored leaflet (fetch_asset the dist) gives pan/zoom/markers/popups polished — the no-key math above is what leaflet does; use it when popups/layers/gestures are needed, the hand-rolled viewer for single-purpose embeds.',
+    '',
+    'Geo utilities: haversine distance (geolocation-apps), bounding-box containment, tile caching (offline maps = cache tiles by z/x/y — indexeddb-patterns; respect the tile server\'s usage policy on bulk downloads).',
+    '',
+    'Verify: pan/zoom smoothly at every zoom level (no gray tiles at the seams), the marker for a known coordinate lands on the right spot (cross-check one landmark), attribution visible.'
+  ].join('\n');
+  bodies['search-systems'] = [
+    'In-app search that feels instant:',
+    '',
+    'The tiers by data size: ≤200 items — filter-in-memory with highlight (enough for most apps); 200-10,000 — an inverted index (word → Set of item ids, built once, updated on change); >10,000 or fuzzy-heavy — a tiny scoring engine (the harness\'s own matchSkills: IDF weighting + stemming — the pattern works).',
+    '',
+    'The inverted index: build = tokenize each item (lowercase, split, drop stopwords, stem lightly) → index[token].add(id); query = tokenize the same way, intersect the id-Sets (rarest token first — data-structures-js), score by token coverage + field weight (title matches ×3).',
+    '',
+    'Fuzzy for typos: prefix matching handles "sea" → "search"; for real typos, a per-token Levenshtein ≤ 2 against the vocabulary (bounded: vocabulary ≤ 5k words) — or the cheap 80%: normalize (case/diacritics) + substring + prefix, and the user retypes once.',
+    '',
+    'The UX contract (search UX IS the feature): results as-you-type (debounced 150ms), the MATCH SUBSTRING highlighted (<mark>), empty-query = the default list (not an error), zero-results = spelling suggestion + a real "no matches for X" (error-handling-ux), keyboard: arrows + enter (a11y), and the count ("7 of 203").',
+    '',
+    'Performance: index build off-main-thread for >5k items (web-workers); incremental updates on data change (add/remove ids, never rebuild-all — the rebuild is the O(n) stall).',
+    '',
+    'Verify: search 5,000 items < 10ms per keystroke; typos still find; highlights land on the matched substring; keyboard-only search works.'
+  ].join('\n');
+  bodies['generative-art'] = [
+    'Generative art on canvas — the aesthetic engine:',
+    '',
+    'The seeded foundation: mulberry32 (procedural-worlds) — EVERY artwork reproducible from its seed; the seed IS the signature (display it; users collect seeds).',
+    '',
+    'The noise field (the workhorse): value noise — a grid of random values, bilinear interpolation between them, octaves summed (each ×2 frequency, ×0.5 amplitude); derive a FLOW FIELD: angle = noise(x, y) × 2π — particles stepping along the field draw the classic flow-lines: p.x += cos(angle) × step for 200-2000 steps, stroke the path with low alpha (0.05-0.15) — the layered translucent strokes ARE the look.',
+    '',
+    'Palette discipline: 3-5 colors from a harmonious scheme (color-theory-ui), pulled from a curated list (nature, retro-print, muted); background = the darkest or lightest; alpha layering replaces hard fills (the painterly depth). Random palette picks look random — curated lists look designed.',
+    '',
+    'Composition rules: golden-ratio or rule-of-thirds anchor points, a dominant element, negative space ≥ 40% (the breathing room IS the art); grids + jitter (structured randomness: place N items on a grid, jitter each ±10% — order with life).',
+    '',
+    'The export: high-res render (2-4× the display canvas — image-export), the seed + params in the corner or metadata; an ITERATION UI (seed input, reroll, param sliders) makes it a tool, not a one-off.',
+    '',
+    'Verify: 20 seeds produce 20 DISTINCTLY different pieces (no sameness); every seed replays identically; the hi-res export is crisp.'
+  ].join('\n');
+  bodies['text-editors'] = [
+    'Building text editors — the transparent-overlay architecture:',
+    '',
+    'The core pattern (the harness IDE is the reference): a transparent <textarea> over a <pre> with syntax-highlighted content, synced scroll — the textarea owns input/caret/selection (native, free), the pre paints the colors; sync scrollTop/scrollLeft on every scroll event. Font metrics MUST match exactly (same family/size/line-height, tab-width) or the layers drift.',
+    '',
+    'Undo: the textarea\'s NATIVE undo breaks on programmatic value changes — route edits through document.execCommand("insertText") where possible (preserves the native stack — the harness does this) or implement the undo-redo-engine over snapshots (before/after per edit batch, coalesced 700ms).',
+    '',
+    'Caret math: selectionStart is character-offset — line/col = count newlines before it (idecore.lineCol); scroll-to-caret: compute line × lineHeight and clamp; the autocomplete popup positions at col × charWidth (the monospace assumption — enforce monospace).',
+    '',
+    'Large files: past ~200KB the per-keystroke full re-highlight janks — debounce (80ms), highlight only the VISIBLE viewport (compute the line range from scrollTop), or virtualize (render window + gutter offsets — the real fix, more work).',
+    '',
+    'The mobile truth: IME/composition events (autocorrect, swipe typing) fire input differently — compositionstart/end must suspend re-highlighting mid-composition or the text fights the IME; test with an Android keyboard before shipping an editor.',
+    '',
+    'Verify: type fast with highlights on — zero drift between layers; undo restores across a programmatic edit; Android swipe-typing produces correct text; 500KB file scrolls without jank (virtualized or viewported).'
+  ].join('\n');
+  bodies['data-import-wizards'] = [
+    'Import wizards: turning messy user files into clean data:',
+    '',
+    'The 4-step flow: (1) PICK (file-handling-browser: input/drag-drop, size + type checked at the door), (2) PREVIEW (parse the first 20 rows VISIBLE — the user confirms the interpretation: "we detected comma-separated, 5 columns, 340 rows" — format auto-detection: try JSON.parse, then csv with , then ; then \\t — show which won), (3) MAPPING (user columns → your fields: dropdowns per field with auto-guesses preselected — date/name/amount patterns; the user OVERRIDES), (4) CONFIRM + RESULT (validation errors listed with row numbers, N imported / M skipped with reasons, an undo path — undo-redo-engine or a restore checkpoint).',
+    '',
+    'Validation at step 4 is field-level and HONEST: required missing, type wrong ("row 42: amount is not a number"), duplicates flagged (dedupe by the user-chosen key — ask, never silently drop). Skipped rows report — an import that silently drops 30 rows is a data-loss incident.',
+    '',
+    'Encoding reality: file.text() assumes UTF-8 — BOM-prefixed or Latin-1 files arrive mojibake; detect the BOM, offer an encoding dropdown in step 2 when non-UTF8 characters appear (a � visible in preview = the flag).',
+    '',
+    'Scale: parse+validate in batches with progress (data-pipeline-transform); >10k rows import to a worker; NEVER block the UI on the full parse.',
+    '',
+    'State: the wizard is RESUMABLE (each step persists — the user\'s file choice survives a reload within the session; localstorage-state for the mapping config — repeat imports reuse it).',
+    '',
+    'Verify: import a dirty file (mixed types, missing fields, dupes) — every issue reported with row numbers, the clean rows imported, the mapping remembered next time; a 20k-row file shows progress and never freezes.'
+  ].join('\n');
+  bodies['report-generation'] = [
+    'Reports: data in, a document people act on, out:',
+    '',
+    'The skeleton: TITLE + generated-at · EXECUTIVE SUMMARY (3-5 bullets — the findings, not the method) · SECTIONS per question (each: a chart, the key numbers, ONE sentence of interpretation) · DETAIL TABLES (appendix) · METHOD footnote (sources, window, caveats — honesty compounds: error-handling-ux for documents).',
+    '',
+    'The pipeline: data → aggregate (csv_stats/group-by) → charts (charts-canvas-impl renders at export resolution) → compose (an offscreen render of the full report into the print container or jsPDF pages — pdf-generation picks the path) → deliver (download/print). Every chart gets its data window IN the caption ("Oct 1 – Oct 31, n=1,204").',
+    '',
+    'Interpretation discipline: numbers ≠ findings — "Sales fell 12% WoW" is data; "Sales fell 12% WoW, driven by the EU region outage on the 14th" is a finding; the report WRITER (the agent) states the likely cause and marks it as hypothesis when unverified.',
+    '',
+    'Numbers formatting: Intl for the locale, tabular-nums in tables (typography-systems), deltas signed and colored (+green/−red with the color-blind-safe shape: arrows not color alone — accessibility-a11y).',
+    '',
+    'Repeatability: the report is a FUNCTION (data + params → document) — same inputs, same report; the params (window, filters) ride the header so the next run is reproducible (deterministic-replay\'s honesty for documents).',
+    '',
+    'Verify: generate twice with the same data — byte-comparable content; every chart\'s numbers trace to a table in the appendix; the executive summary contains NOTHING that is not in the body.'
+  ].join('\n');
+  bodies['app-update-flow'] = [
+    'App updates: the service worker handshake (pwa-offline\'s next chapter):',
+    '',
+    'The detection: the NEW service worker registers and sits in "waiting" while the old one controls the page — detect via reg.addEventListener("updatefound") + reg.installing.state changes, or simply navigator.serviceWorker.controller && reg.waiting → an update is available.',
+    '',
+    'The UX ladder: a CALM banner ("A new version is available — Refresh") — NEVER auto-reload (the user is mid-task; the harness\'s own work respects this); the Refresh click posts a message to the waiting SW: reg.waiting.postMessage({type: "SKIP_WAITING"}) (the SW self-calls self.skipWaiting()) → controllerchange fires → location.reload() ONCE (guard against the reload loop: a sessionStorage flag).',
+    '',
+    'The cache versioning drove this: the new SW activates → deletes old caches (pwa-offline) → the fresh assets serve. A BROKEN update (bad deploy) = the old SW is gone — mitigate with a rollback-ready cache name (keep v(n-1) one release).',
+    '',
+    'Version visibility: the app shows its version (a settings line, a boot toast) — bug reports without versions are guesses; the /health or manifest version flows here (health-check-endpoint\'s rule, client-side).',
+    '',
+    'Data migrations ride the same train: the schema version in storage migrates on boot BEFORE the UI renders (localstorage-state\'s ladder) — an update that loses user data is the unrecoverable kind; test the migration from EVERY shipped version.',
+    '',
+    'Verify: deploy v2 → the banner appears on the open tab (no auto-reload) → Refresh lands on v2 with fresh content; the version line shows v2; a mid-task user is never interrupted.'
+  ].join('\n');
+
   /* ---- batch 6 bodies: systems architecture ---- */
   bodies['entity-component-system'] = [
     'ECS: composition over inheritance for games — the architecture that survives feature creep:',
