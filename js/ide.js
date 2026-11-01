@@ -124,19 +124,57 @@
     });
   }
 
-  /* ---------- cross-file search panel ---------- */
+  /* ---------- cross-file search panel (searcheng-powered for large workspaces) ---------- */
+  var _searchIndex = null, _searchIndexSig = '';
+  function buildSearchIndex() {
+    var files = filesObj();
+    var sig = Object.keys(files).length + ':' + Object.keys(files).reduce(function (n, p) { return n + (files[p] || '').length; }, 0);
+    if (_searchIndex && _searchIndexSig === sig) return _searchIndex;
+    _searchIndex = window.SEARCHENG ? SEARCHENG.createIndex() : null;
+    _searchIndexSig = sig;
+    if (_searchIndex) {
+      Object.keys(files).forEach(function (p) {
+        _searchIndex.addDoc(p, { title: p.split('/').pop(), body: String(files[p] || '') });
+      });
+    }
+    return _searchIndex;
+  }
   function toggleSearch(on) {
     var p = $('#ideSearch');
     if (!p) return;
     var show = on === undefined ? p.style.display !== 'grid' : !!on;
     p.style.display = show ? 'grid' : 'none';
-    if (show) { $('#ideSearchIn').value = ''; $('#ideSearchOut').innerHTML = ''; $('#ideSearchIn').focus(); }
+    if (show) { $('#ideSearchIn').value = ''; $('#ideSearchOut').innerHTML = ''; $('#ideSearchIn').focus(); buildSearchIndex(); }
   }
   function runSearch() {
     var q = $('#ideSearchIn').value;
     var out = $('#ideSearchOut');
     if (!q.trim()) { out.innerHTML = ''; return; }
-    var hits = IDECORE.searchWorkspace(filesObj(), q, 60);
+    var files = filesObj();
+    /* use the inverted index for ranked file-level results when the workspace
+       is large (the index gives relevance ranking + fuzzy), fall back to the
+       line scan for small workspaces (faster for < 20 files) */
+    if (_searchIndex && Object.keys(files).length > 20) {
+      var docHits = SEARCHENG.search(_searchIndex, q, { fuzzy: true, limit: 20 });
+      var hits = [];
+      docHits.forEach(function (dh) {
+        var src = String(files[dh.id] || '');
+        var lines = src.split('\n');
+        var lower = q.toLowerCase();
+        for (var li = 0; li < lines.length; li++) {
+          if (lines[li].toLowerCase().indexOf(lower) >= 0) {
+            hits.push({ path: dh.id, line: li + 1, text: lines[li].trim().slice(0, 160), score: dh.score });
+            if (hits.length >= 60) break;
+          }
+        }
+      });
+      renderSearchResults(out, hits);
+      return;
+    }
+    var hits = IDECORE.searchWorkspace(files, q, 60);
+    renderSearchResults(out, hits);
+  }
+  function renderSearchResults(out, hits) {
     out.innerHTML = hits.length ? hits.map(function (h) {
       return '<button class="ide-hit" data-idehit="' + esc(h.path) + '" data-idehl="' + h.line + '"><span class="ide-hitp">' + esc(h.path) + ':' + h.line + '</span><span class="ide-hitt">' + esc(h.text) + '</span></button>';
     }).join('') : '<p class="ide-empty">no matches</p>';
