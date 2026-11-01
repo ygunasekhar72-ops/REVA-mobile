@@ -1558,6 +1558,34 @@
       var out = window.TOOLKIT.sortLines(src, a);
       return out.length > 8000 ? out.slice(0, 8000) + '…' : out;
     },
+    apply_patch: function (a) {
+      if (!a.patch) return 'Error: apply_patch needs the unified-diff patch text';
+      var r = readLike(a.path);
+      if (r.err) return r.err;
+      var ap = window.DIFFENG.applyPatch(r.src, String(a.patch), { fuzz: Math.max(0, Math.min(5, parseInt(a.fuzz, 10) || 2)) });
+      if (!ap.ok) return 'Error: ' + ap.error + ' — read the region with read_file and regenerate the patch with exact context lines';
+      var lw = libCtx(a.path);
+      if (lw && !lw.missing && lw.rel) { lw.project.files[lw.rel] = ap.result; Store.lib.put(lw.project); }
+      else if (!lw) { var s3 = WS(); s3.vfsContent[r.label] = ap.result; Store.save(); }
+      var before = r.src.split('\n').length, after = ap.result.split('\n').length;
+      return 'Patched ' + r.label + ' — file now ' + after + ' lines (' + (after > before ? '+' + (after - before) : after < before ? after - before : 'same line count') + '). Verify with read_file or run_check.';
+    },
+    diff_files: function (a) {
+      var ra = a.fileA !== undefined ? readLike(a.fileA) : null;
+      var rb = a.fileB !== undefined ? readLike(a.fileB) : null;
+      if (a.fileA !== undefined && ra.err) return ra.err;
+      if (a.fileB !== undefined && rb.err) return rb.err;
+      var A = a.fileA !== undefined ? ra.src : a.a, B = a.fileB !== undefined ? rb.src : a.b;
+      if (A === undefined || B === undefined) return 'Error: diff_files needs a/b or fileA/fileB';
+      var rows = window.DIFFENG.alignSides(String(A), String(B));
+      var out = [];
+      rows.forEach(function (row, i) {
+        var l = row.left ? row.left.op + ' ' + row.left.t : '  ';
+        var rr = row.right ? row.right.op + ' ' + row.right.t : '';
+        out.push(String(i + 1).padStart(3) + ' | ' + l.padEnd(46) + ' | ' + rr);
+      });
+      return out.slice(0, 120).join('\n') + (out.length > 120 ? '\n… (' + out.length + ' rows total)' : '');
+    },
     run_command: function (a) {
       return Console.exec(String(a.command || '')).out;
     }
@@ -1631,6 +1659,8 @@
     if (name === 'cron_describe') return { label: 'Cron · ' + String(args.expr || '').slice(0, 20), meta: 'plain english', ok: ok };
     if (name === 'list_diff') return { label: 'Set diff · A vs B', meta: 'lists', ok: ok };
     if (name === 'sort_lines') return { label: 'Sort lines', meta: args.numeric ? 'numeric' : 'alpha', ok: ok };
+    if (name === 'apply_patch') return { label: 'Patch · ' + String(args.path || '').split('/').pop(), meta: 'unified diff', ok: ok };
+    if (name === 'diff_files') return { label: 'Diff · ' + String(args.fileA || 'a').split('/').pop() + ' ↔ ' + String(args.fileB || 'b').split('/').pop(), meta: 'side-by-side', ok: ok };
     if (name === 'shell_exec') return { label: '❯ ' + String(args.command || '').slice(0, 46), meta: '', ok: ok, cmd: args.command, out: s };
     return { label: name, meta: '', ok: ok };
   }
@@ -1704,6 +1734,8 @@
     { type: 'function', function: { name: 'cron_describe', description: 'Explain a cron expression in plain English ("30 9 * * 1-5" → "at 09:30 on Monday through Friday"). Pairs with cron_next.', parameters: { type: 'object', properties: { expr: { type: 'string' } }, required: ['expr'] } } },
     { type: 'function', function: { name: 'list_diff', description: 'Set operations on two lists (text or file lines): only-in-A, only-in-B, in-both. Use to compare exports, file lists, dependency lists.', parameters: { type: 'object', properties: { a: { type: 'array' }, b: { type: 'array' }, fileA: { type: 'string' }, fileB: { type: 'string' } } } } },
     { type: 'function', function: { name: 'sort_lines', description: 'Sort/dedupe text lines: alpha, numeric, by-length, desc, dedupe, trim. Use to normalize lists, sort logs, clean output.', parameters: { type: 'object', properties: { text: { type: 'string' }, file: { type: 'string' }, numeric: { type: 'boolean' }, desc: { type: 'boolean' }, dedupe: { type: 'boolean' }, length: { type: 'boolean' } } } } },
+    { type: 'function', function: { name: 'apply_patch', description: 'Apply a unified diff patch to a file — MULTIPLE changes in one call (better than several edit_file calls for spread-out edits). Format: ---/+++ headers optional, @@ hunks with context lines. Context drift up to 2 lines is tolerated (fuzz). On failure the exact failing hunk is reported — read_file the region and regenerate with exact context.', parameters: { type: 'object', properties: { path: { type: 'string' }, patch: { type: 'string', description: 'unified diff, e.g. "@@ -2,1 +2,1 @@\\n-old line\\n+new line"' }, fuzz: { type: 'number', description: 'context drift tolerance, default 2' } }, required: ['path', 'patch'] } } },
+    { type: 'function', function: { name: 'diff_files', description: 'Side-by-side line diff of two workspace files (or a/b texts) with row numbers and +/- markers. Use to compare versions or show exactly what differs.', parameters: { type: 'object', properties: { fileA: { type: 'string' }, fileB: { type: 'string' }, a: { type: 'string' }, b: { type: 'string' } } } } },
   ];
 
   /* ---------- harness console (user terminal + run_command) ---------- */

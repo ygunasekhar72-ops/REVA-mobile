@@ -373,7 +373,7 @@
      CORE set always rides; the rest are ranked by (a) usage telemetry,
      (b) keyword overlap between the task text and the tool's name+desc,
      and filled into the remaining byte budget. */
-  var CORE_TOOLS = ['write_file', 'edit_file', 'read_file', 'list_files', 'create_directory', 'delete_file', 'todo_write', 'workspace_search', 'code_symbols', 'shell_exec', 'run_check', 'screenshot', 'interact', 'checkpoint', 'rollback', 'save_memory', 'memory_search', 'load_skill', 'web_search', 'web_read', 'http_request', 'init_project'];
+  var CORE_TOOLS = ['write_file', 'edit_file', 'read_file', 'list_files', 'create_directory', 'delete_file', 'todo_write', 'workspace_search', 'code_symbols', 'shell_exec', 'run_check', 'screenshot', 'interact', 'checkpoint', 'rollback', 'save_memory', 'memory_search', 'load_skill', 'web_search', 'web_read', 'http_request', 'init_project', 'apply_patch'];
   var SCHEMA_BUDGET = 14000; // bytes of serialized schemas per request
 
   function schemaBytes(s) { return JSON.stringify(s).length; }
