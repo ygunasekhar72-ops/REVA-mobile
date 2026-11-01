@@ -309,9 +309,12 @@
     if (skills.length) {
       var rest = skills.filter(function (k) { return active.indexOf(k.name) < 0; });
       if (rest.length) {
+        /* compact index: 140 full descs ≈ 15KB of prompt — truncate to the
+           first clause; load_skill carries the complete procedure */
         p.push('Available skills (index only — call load_skill(name) to activate one; matching skills may also auto-activate):');
         rest.forEach(function (k) {
-          p.push('- ' + k.name + (k.desc ? ': ' + k.desc : ''));
+          var d = k.desc ? String(k.desc).split(',')[0].slice(0, 70) : '';
+          p.push('- ' + k.name + (d ? ': ' + d : ''));
         });
       }
     }
@@ -456,6 +459,10 @@
   var toolHealth = window.LoopCore ? LoopCore.makeToolHealth() : {};
   /* skill-system audit surface: expose the matcher + loader (hoisted fns) */
   App.matchSkills = function (text) { return matchSkills(text); };
+  /* prompt observability: the context budget the agent actually spends */
+  App.promptStats = function () {
+    return { sysChars: sysPrompt().length, sysTok: H.tok(sysPrompt()), schemaCount: Tools.schemas.length, schemaBytes: JSON.stringify(Tools.schemas).length };
+  };
   App.autoLoadSkills = function (text, sess) { var s = sess || Store.active(); return autoLoadSkills.call(null, text, s); };
   function ensureSession() { return Store.active() || Store.newSession(); }
   App.isStreaming = function () { return !!state.streaming; };
@@ -1078,7 +1085,7 @@
           });
         });
       });
-      return Tools.schemas.concat(mcpSchemas).filter(function (t) {
+      var available = Tools.schemas.concat(mcpSchemas).filter(function (t) {
         var n = t.function.name;
         if (n === 'shell_exec') return !!window.REVAShell; // real device shell — Android builds only
         if (n.indexOf('mcp_') === 0) return mode !== 'Guard';
@@ -1087,6 +1094,17 @@
         if (mode === 'Guard') return ['delete_file', 'run_command', 'shell_exec', 'stop_server'].indexOf(n) < 0;
         return true;
       });
+      /* W6 progressive disclosure: 68 schemas ≈ 29KB/request — the CORE set
+         rides always, the rest fill the budget by usage + task keywords */
+      if (window.LoopCore && LoopCore.pickSchemas && available.length > 30) {
+        var taskText = '';
+        for (var ti = apiMsgs.length - 1; ti >= 0; ti--) {
+          if (apiMsgs[ti].role === 'user') { taskText = String(apiMsgs[ti].content || ''); break; }
+        }
+        var picked = LoopCore.pickSchemas(taskText, available, db.settings.toolUsage || {});
+        return picked.schemas;
+      }
+      return available;
     }
     /* MCP tools route to their servers via MCP.call */
     async function runMcpTool(name, args) {

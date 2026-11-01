@@ -213,6 +213,22 @@ const LoopCore = require('../js/loopcore.js');
   assert.ok(empty.indexOf('STATE OF THE WORLD') === 0 && empty.length < 300, 'empty-safe');
   function s0twCheck(s) { return s.indexOf('[ ] wire timer') > 0; }
 
-  console.log('loopcore: 10/10 scenarios PASS');
+  // 11. progressive tool disclosure: task-matched schemas within budget
+  const fakeSchemas = [];
+  ['write_file', 'edit_file', 'read_file', 'list_files', 'todo_write', 'workspace_search', 'qr_generate', 'roman_convert', 'csv_stats', 'mime_lookup', 'camera_capture', 'geolocation_apps', 'pdf_generation', 'image_export', 'ai_chat', 'streaming', 'voice', 'maps', 'search_sys', 'gen_art', 'text_edit', 'import_wiz', 'report_gen', 'app_update'].forEach(n => {
+    fakeSchemas.push({ type: 'function', function: { name: n, description: n.replace(/_/g, ' ') + ' utility for the task', parameters: { type: 'object', properties: { x: { type: 'string' } } } } });
+  });
+  const budget = 3000; // tight — forces selection
+  const p1 = LoopCore.pickSchemas('generate a qr code for my link', fakeSchemas, { qr_generate: 5 }, budget);
+  assert.ok(p1.schemas.some(s => s.function.name === 'qr_generate'), 'task-matched tool picked (usage+keyword)');
+  assert.ok(p1.schemas.some(s => s.function.name === 'write_file'), 'core always rides');
+  assert.ok(p1.used <= budget, 'budget respected (' + p1.used + ')');
+  assert.ok(p1.omitted > 0, 'the long tail is honestly omitted: ' + p1.omitted);
+  const p2 = LoopCore.pickSchemas('convert roman numerals', fakeSchemas, {}, budget);
+  assert.ok(p2.schemas.some(s => s.function.name === 'roman_convert'), 'keyword-only match works (no telemetry)');
+  const p3 = LoopCore.pickSchemas('', fakeSchemas, {}, 1e9);
+  assert.strictEqual(p3.omitted, 0, 'roomy budget keeps everything');
+
+  console.log('loopcore: 11/11 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

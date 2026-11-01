@@ -368,5 +368,55 @@
     return text.length > 1400 ? text.slice(0, 1397) + '…' : text;
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief, buildSotW: buildSotW };
+  /* ---- progressive tool disclosure: task-matched schemas within a budget ----
+     68 schemas ≈ 29KB ≈ 7K tokens per request — fatal on small windows. The
+     CORE set always rides; the rest are ranked by (a) usage telemetry,
+     (b) keyword overlap between the task text and the tool's name+desc,
+     and filled into the remaining byte budget. */
+  var CORE_TOOLS = ['write_file', 'edit_file', 'read_file', 'list_files', 'create_directory', 'delete_file', 'todo_write', 'workspace_search', 'code_symbols', 'shell_exec', 'run_check', 'screenshot', 'interact', 'checkpoint', 'rollback', 'save_memory', 'memory_search', 'load_skill', 'web_search', 'web_read', 'http_request', 'init_project'];
+  var SCHEMA_BUDGET = 14000; // bytes of serialized schemas per request
+
+  function schemaBytes(s) { return JSON.stringify(s).length; }
+  function stemLight(w) {
+    if (w.length > 4) w = w.replace(/(ing|ed)$/, '');
+    if (w.length > 3) w = w.replace(/e$/, '');
+    return w;
+  }
+  function pickSchemas(userText, schemas, usage, budget) {
+    budget = budget || SCHEMA_BUDGET;
+    var byName = {};
+    schemas.forEach(function (s) { byName[s.function.name] = s; });
+    var chosen = [], used = 0, chosenNames = {};
+    function take(name) {
+      var s = byName[name];
+      if (!s || chosenNames[name]) return;
+      var b = schemaBytes(s);
+      if (used + b > budget && chosen.length) return;
+      chosen.push(s); chosenNames[name] = 1; used += b;
+    }
+    CORE_TOOLS.forEach(take);
+    /* rank the REST: usage telemetry first, then task-keyword overlap */
+    var text = String(userText || '').toLowerCase();
+    var textToks = {};
+    (text.match(/[a-z0-9]+/g) || []).forEach(function (w) { textToks[stemLight(w)] = 1; });
+    var rest = schemas.filter(function (s) { return !chosenNames[s.function.name]; }).map(function (s) {
+      var name = s.function.name;
+      var kw = 0;
+      var toks = (name.replace(/_/g, ' ') + ' ' + (s.function.description || '')).toLowerCase().match(/[a-z0-9]+/g) || [];
+      var seenT = {};
+      toks.forEach(function (w) {
+        w = stemLight(w);
+        if (textToks[w] && !seenT[w]) { seenT[w] = 1; kw += w.length > 4 ? 2 : 1; }
+      });
+      return { name: name, s: s, score: ((usage && usage[name]) || 0) * 3 + kw };
+    }).sort(function (a, b) { return b.score - a.score; });
+    rest.forEach(function (r) { take(r.name); });
+    /* never ship a request without the core minimum even if over budget:
+       the core took precedence already — if the budget squeezed the CORE
+       (huge schemas), drop non-core that fit before core failed: handled
+       by take() ordering (core first). */
+    return { schemas: chosen, used: used, total: schemas.length, omitted: schemas.length - chosen.length };
+  }
+
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief, buildSotW: buildSotW, pickSchemas: pickSchemas };
 });
