@@ -1,31 +1,31 @@
 {
-  "date": "2026-10-31T19:20:43.507Z",
-  "pass": 18,
-  "total": 18,
+  "date": "2026-11-02T20:00:47.957Z",
+  "pass": 19,
+  "total": 19,
   "results": [
     {
       "name": "shell task: correct tool + success report",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 5
+      "ms": 9
     },
     {
       "name": "failure honesty: exit 1 reported as failure",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 4
+      "ms": 1
     },
     {
       "name": "fragmented args: write completes with full payload",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 5
+      "ms": 2
     },
     {
       "name": "empty-reply ladder: bounded, no hang, honest stop",
       "pass": true,
       "detail": "iters=6",
-      "ms": 5
+      "ms": 4
     },
     {
       "name": "Guard gating: shell_exec + MCP tools excluded in Guard mode",
@@ -67,19 +67,19 @@
       "name": "malformed args: broken JSON executes safely, run completes",
       "pass": true,
       "detail": "toolCalls=1",
-      "ms": 4
+      "ms": 2
     },
     {
       "name": "tool batch: two calls in one round both execute",
       "pass": true,
       "detail": "toolCalls=2",
-      "ms": 2
+      "ms": 1
     },
     {
       "name": "flood compaction: 54KB output compacted + SotW continuation",
       "pass": true,
       "detail": "compactions=1",
-      "ms": 3
+      "ms": 1
     },
     {
       "name": "quota honesty: 429 with quota wording fails the run loudly",
@@ -95,6 +95,12 @@
     },
     {
       "name": "edit ladder: delegated to LoopCore, recovery surfaced, no duplicate",
+      "pass": true,
+      "detail": "static check",
+      "ms": 0
+    },
+    {
+      "name": "tool schemas: zero inverted entries + boot filter guards the request",
       "pass": true,
       "detail": "static check",
       "ms": 0
