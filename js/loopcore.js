@@ -47,6 +47,48 @@
     return n;
   }
 
+  /* ===================== CONTEXT ENGINE v2 (pure decisions) =====================
+     The compaction TRIGGER moves from reactive (provider context error) to
+     proactive (projected pressure against the model's window), computed from
+     REAL usage numbers fed by the TokenMeter. These are the pure pieces;
+     app.js owns the meter and the call sites. */
+
+  /* estimateTokens(text): ~4 chars per token (code-heavy English). */
+  function estimateTokens(text) {
+    return Math.ceil(String(text || '').length / 4);
+  }
+
+  /* apiTokens(msgs): the estimated token mass of an outbound message array —
+     contents + tool_call arguments (the same mass the provider counts). */
+  function apiTokens(msgs) {
+    var n = 0;
+    (msgs || []).forEach(function (m) {
+      n += estimateTokens(m.content);
+      if (m.tool_calls) for (var j = 0; j < m.tool_calls.length; j++) {
+        n += estimateTokens(m.tool_calls[j].function.arguments || '');
+      }
+    });
+    return n;
+  }
+
+  /* proactiveCompact(projectedIn, ctxK, threshold): fire BEFORE the request
+     when the projected input would cross the pressure threshold of the
+     model's window (default 85%). Returns the decision + the numbers. */
+  function proactiveCompact(projectedIn, ctxK, threshold) {
+    var budget = Math.max(1, ctxK) * 1000;
+    var th = threshold || 0.85;
+    var pressure = projectedIn / budget;
+    return { compact: pressure >= th, pressure: pressure, budget: budget,
+             projectedIn: Math.max(0, Math.round(projectedIn || 0)) };
+  }
+
+  /* compactKeepChars(ctxK): the compaction budget as chars — the SAME ratio
+     the reactive path always used (ctxK*1400 ≈ 35% of the window), now
+     derived from the token math so both paths agree. */
+  function compactKeepChars(ctxK) {
+    return Math.max(16000, Math.round(Math.max(1, ctxK) * 1400));
+  }
+
   /* compact from the END: walk whole groups backwards until keepChars of
      recent context is retained. Returns { kept, dropped } — the caller
      re-attaches its system message and appends the continuation note.
@@ -418,5 +460,5 @@
     return { schemas: chosen, used: used, total: schemas.length, omitted: schemas.length - chosen.length };
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief, buildSotW: buildSotW, pickSchemas: pickSchemas };
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief, buildSotW: buildSotW, pickSchemas: pickSchemas, estimateTokens: estimateTokens, apiTokens: apiTokens, proactiveCompact: proactiveCompact, compactKeepChars: compactKeepChars };
 });

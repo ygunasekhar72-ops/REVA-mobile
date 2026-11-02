@@ -151,6 +151,18 @@
     } catch (e) { }
   }
 
+  /* ================= CONTEXT ENGINE v2: per-session token meters =================
+     In-memory only (never persisted — rebuilt per run from real usage).
+     pressure() projects the next request's input against the model's window;
+     when it crosses 85% the run compacts BEFORE the provider errors. */
+  var METERS = {};
+  function meterFor(sess) {
+    if (!sess || !window.PROVIDERCORE || !PROVIDERCORE.createTokenMeter) return null;
+    if (!METERS[sess.id]) METERS[sess.id] = PROVIDERCORE.createTokenMeter({ limit: Math.max(1, ctxFor(db.settings.model)) * 1000 });
+    return METERS[sess.id];
+  }
+  function meterDrop(sessId) { delete METERS[sessId]; }
+
   /* ================= skills: real progressive disclosure ================= */
   function skillSlug(nm) { return String(nm || '').replace(/[^\w.-]+/g, '-'); }
   function skillBody(nm) {
@@ -1142,10 +1154,38 @@
       if (pendingRes) { res = pendingRes; pendingRes = null; }
       else {
         var tTry = 0, cTry = 0, callDone = false;
+        /* CONTEXT ENGINE v2: PROACTIVE compaction on real token pressure —
+           fire BEFORE the provider refuses, not after. Re-baselines the meter
+           so the projection restarts from the compacted reality. */
+        var preMeter = meterFor(s);
+        if (preMeter && window.LoopCore && LoopCore.proactiveCompact && LoopCore.compactTranscript) {
+          try {
+            var preDec = LoopCore.proactiveCompact(preMeter.stats().peakIn + preMeter.stats().out, ctxFor(db.settings.model), 0.85);
+            if (preDec.compact) {
+              var preKeep = LoopCore.compactKeepChars(ctxFor(db.settings.model));
+              var preC = LoopCore.compactTranscript(apiMsgs.slice(1), preKeep);
+              if (preC.dropped >= 2) {
+                apiMsgs = [apiMsgs[0]].concat(preC.kept);
+                preMeter.add({ in: (LoopCore.apiTokens ? LoopCore.apiTokens(apiMsgs) : 0), out: 0 });
+                onReasoningFn('\n\n[context pre-compacted: projected ' + Math.round(preDec.pressure * 100) + '% of the window — ' + preC.dropped + ' older messages summarized out; the task continues with the recent thread]\n\n');
+              }
+            }
+          } catch (ePC) { /* meter/compaction failure must never kill the run */ }
+        }
         while (!callDone) {
           try {
             res = await callAI(prov);
             trackUsage(prov, res, false);
+            /* feed the session meter with REAL usage (estimates when the
+               provider omits it) — the pressure signal for the next round */
+            try {
+              var feedMeter = meterFor(s);
+              if (feedMeter) {
+                if (res && res.usage) feedMeter.add(res.usage);
+                else feedMeter.add({ in: (LoopCore.apiTokens ? LoopCore.apiTokens(apiMsgs) : 0), out: 0 });
+                if (res) feedMeter.generated(LoopCore.estimateTokens ? LoopCore.estimateTokens((res.content || '') + (res.reasoning || '')) : 0);
+              }
+            } catch (eMF) { }
             callDone = true;
           } catch (e) {
             trackUsage(prov, null, true);
@@ -2271,6 +2311,7 @@
     if (!s) { H.toast('No chat to delete'); return; }
     if (!confirm('Delete chat "' + s.title + '"?')) return;
     db.sessions = db.sessions.filter(function (x) { return x.id !== s.id; });
+    meterDrop(s.id); // context engine: meters are in-memory per session
     db.activeId = null;
     Store.save(); UI.renderHome(); refreshCtx();
     /* no separate home screen to fall back to — land on a fresh chat */

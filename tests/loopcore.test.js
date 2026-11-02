@@ -229,6 +229,28 @@ const LoopCore = require('../js/loopcore.js');
   const p3 = LoopCore.pickSchemas('', fakeSchemas, {}, 1e9);
   assert.strictEqual(p3.omitted, 0, 'roomy budget keeps everything');
 
-  console.log('loopcore: 11/11 scenarios PASS');
+  // 12. context engine v2: token estimation + proactive compaction decisions
+  assert.strictEqual(LoopCore.estimateTokens('abcd'.repeat(10)), 10, '4 chars ≈ 1 token');
+  const msgsTok = [
+    { role: 'system', content: 'abcd'.repeat(25) },
+    { role: 'user', content: 'abcd'.repeat(50) },
+    { role: 'assistant', content: '', tool_calls: [{ function: { arguments: 'abcd'.repeat(25) } } ] }
+  ];
+  assert.strictEqual(LoopCore.apiTokens(msgsTok), 100, 'contents + tool args counted');
+  assert.strictEqual(LoopCore.apiTokens([]), 0, 'empty transcript = 0');
+  assert.strictEqual(LoopCore.apiTokens(null), 0, 'null safe');
+  assert.deepStrictEqual(LoopCore.proactiveCompact(86000, 100), { compact: true, pressure: 0.86, budget: 100000, projectedIn: 86000 }, 'crossing 85% fires');
+  assert.strictEqual(LoopCore.proactiveCompact(84000, 100).compact, false, 'below threshold holds');
+  assert.strictEqual(LoopCore.proactiveCompact(0, 100).compact, false, 'fresh session holds');
+  assert.strictEqual(LoopCore.proactiveCompact(9e9, 0).compact, true, 'zero ctxK clamps to fire');
+  assert.strictEqual(LoopCore.compactKeepChars(0), 16000, 'floor clamp');
+  assert.strictEqual(LoopCore.compactKeepChars(32), 32 * 1400, 'same ratio the reactive path always used');
+  /* end-to-end: a fat transcript compacts down under the keep budget */
+  const fat = [];
+  for (var fi = 0; fi < 40; fi++) fat.push({ role: 'user', content: 'x'.repeat(2000) });
+  const fc = LoopCore.compactTranscript(fat, LoopCore.compactKeepChars(8));
+  assert.ok(fc.dropped >= 2 && fc.kept.length >= 1, 'proactive plan drops old, keeps recent');
+
+  console.log('loopcore: 12/12 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
