@@ -7711,5 +7711,368 @@
     'Verify: scroll the longest list at phone speed — zero stutter; open + close a heavy view 10 times — memory returns.'
   ].join('\n');
 
+  /* ---- batch 19 descs: the quality & platform pack ---- */
+  descs['a11y-audit'] = 'accessibility audit wcag contrast focus order alt text axe audit keyboard traps semantics audit auto';
+  descs['aria-patterns'] = 'aria patterns roles labels live regions expanded controls combobox dialog accordion widgets auto';
+  descs['keyboard-navigation'] = 'keyboard navigation tab order focus ring shortcuts skip links roving tabindex management modality auto';
+  descs['screen-reader-flow'] = 'screen reader flow nvda voiceover announcements landmarks reading order live regions testing flow auto';
+  descs['perf-budgets'] = 'performance budgets metrics lcp inp cls tbt core web vitals targets ci regression bundle size auto';
+  descs['render-priority-hints'] = 'render priority hints preload prefetch fetchpriority lcp image font display swap blocking discovery auto';
+  descs['media-performance'] = 'media performance video audio lazy loading poster srcset av1 webm bitrate adaptive streaming preload auto';
+  descs['memory-leaks'] = 'memory leaks heap snapshot detached nodes event listener cleanup timers closures allocation timeline auto';
+  descs['csp-hardening'] = 'content security policy csp nonce hash strict dynamic report only frame ancestors insecure requests auto';
+  descs['xss-csrf-defense'] = 'xss csrf defense sanitization escaping same site cookies tokens double submit injection defense auto';
+  descs['secrets-handling'] = 'secrets handling api keys environment variables rotation scope leak detection server only storage auto';
+  descs['dependency-audit'] = 'dependency audit npm audit lockfile advisories renovate dependabot supply chain pinning review auto';
+  descs['pwa-push-deep'] = 'pwa push notifications deep vapid service worker subscription permission payload actions expiry auto';
+  descs['web-share-apis'] = 'web share apis navigator share clipboard files target custom scheme picker file system access auto';
+  descs['shadow-dom-elements'] = 'shadow dom elements custom element encapsulation slots slotted composition constructable stylesheets adopted auto';
+  descs['workers-wasm'] = 'web workers wasm off main thread transferable objects shared array buffer postmessage pools threads auto';
+  descs['unit-test-strategy'] = 'unit test strategy arrange act assert coverage seams test doubles fakes stubs mocks pyramid auto';
+  descs['integration-tests'] = 'integration tests component contracts service boundaries database fixtures reset containers auto';
+  descs['e2e-playwright'] = 'e2e playwright browser automation selectors waits assertions traces fixtures parallel shards auto';
+  descs['visual-regression'] = 'visual regression screenshot diff pixel tolerance baseline review percy playwright snapshots ci auto';
+  descs['contract-tests'] = 'contract tests consumer driven pacts provider verification schema openapi backward compatibility auto';
+  descs['github-actions-patterns'] = 'github actions patterns matrix caching artifacts reusable workflows oidc environments approvals auto';
+  descs['release-automation'] = 'release automation semantic version changelog tags conventional commits pre releases channels auto';
+  descs['error-triage-pipeline'] = 'error triage pipeline grouping fingerprints release health crash free sessions sourcemap uploads reopen auto';
+  descs['rum-monitoring'] = 'rum monitoring real user metrics sampling dashboards web vitals field data session replay auto';
+
+  /* ---- batch 19 bodies: the quality & platform pack ---- */
+  bodies['a11y-audit'] = [
+    'Accessibility audit: find the barriers BEFORE your users do:',
+    '',
+    'The fast pass (every page, every state): run the keyboard-only crawl (unplug the mouse — tab through, operate every control, check the focus is always visible); check color contrast (4.5:1 body text, 3:1 large text and UI borders — the contrast checker in devtools); verify every image has alt text (meaningful for content images, alt="" for decoration); confirm form fields have LABELS (a placeholder is not a label).',
+    '',
+    'The tooling: axe-core (browser extension or npm i axe-core; axe.run(document).then(r => console.log(r.violations)) — zero violations is the gate, not the goal: automated tools catch only ~40% of issues); Lighthouse a11y score for the quick read; screen-reader smoke (see screen-reader-flow).',
+    '',
+    'The patterns the audit flags most: click handlers on divs (make it a button — free keyboard + semantics); focus lost after modals close (return focus to the trigger); icon-only buttons (needs aria-label); auto-playing carousels (WCAG: must be pausable); placeholder-only inputs.',
+    '',
+    'The REVA angle: apps built IN the harness get the audit as a skill the agent can run — the verify cycle already screenshots; contrast + tab-order checks join it.',
+    '',
+    'Verify: keyboard-only crawl completes; axe reports zero violations; contrast passes on every theme; one full task done with the screen reader on.'
+  ].join('\n');
+  bodies['aria-patterns'] = [
+    'ARIA patterns: the accessible-widgets cookbook (use the RIGHT role, not more ARIA):',
+    '',
+    'The first rule of ARIA: NO ARIA is better than BAD ARIA — a native <button> beats a div with role="button" + tabindex + keydown handlers (native = keyboard, focus, and semantics for free). Reach for ARIA when the platform widget does not exist.',
+    '',
+    'The core patterns:',
+    '1. Disclosure (show/hide): button[aria-expanded] + region[aria-hidden] — the button announces "collapsed/expanded".',
+    '2. Dialog: role="dialog" aria-modal="true" aria-labelledby=<title id>; trap Tab inside; Escape closes; focus returns to the opener.',
+    '3. Tabs: role="tablist" > button[role="tab"][aria-selected] + panel[role="tabpanel"]; arrow keys move between tabs (roving tabindex).',
+    '4. Combobox: input[role="combobox" aria-expanded aria-controls] + listbox[role="listbox"] > option[aria-selected]; aria-activedescendant tracks the highlighted option.',
+    '5. Live regions: aria-live="polite" (announcements that can wait) / "assertive" (errors) — the toast container gets aria-live so screen readers announce new toasts.',
+    '',
+    'The labelling hierarchy: aria-labelledby > aria-label > visible text; label the WHOLE widget (the dialog gets the title, the icon button gets the action).',
+    '',
+    'Verify: each custom widget announces its state ("expanded", "selected", "2 of 5"); Tab order stays inside modals; a screen reader can operate every pattern without seeing the screen.'
+  ].join('\n');
+  bodies['keyboard-navigation'] = [
+    'Keyboard navigation: the app must work unplugged from the mouse:',
+    '',
+    'The tab order: follow the DOM order, never CSS order (a grid laid out with flex can read jumbled — reorder the DOM, not tabindex); NEVER positive tabindex (tabindex="1" hijacks the natural flow); tabindex="0" adds an element to the flow; tabindex="-1" makes it focusable PROGRAMMATICALLY only (routes, panels that receive focus on navigation).',
+    '',
+    'The focus visibility: :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } — never outline: none without a replacement; the focus ring is a feature, not a bug.',
+    '',
+    'The shortcuts: single letters for power actions (/ focuses search, ? opens help, Escape closes overlays); a visible shortcut sheet; do NOT intercept browser defaults (Ctrl+T, Ctrl+W are not yours); on mobile the keyboard story is the IME — test input fields with the soft keyboard up.',
+    '',
+    'The skip link: the first focusable element jumps past the nav to main content: <a class="skip" href="#main">Skip to content</a> — visually hidden until focused.',
+    '',
+    'The roving tabindex (toolbars, grids, tab lists): one item tabindex="0", siblings tabindex="-1"; arrow keys move focus AND update the indices — one Tab stop for the whole widget.',
+    '',
+    'Verify: every task is completable keyboard-only; focus never lands off-screen (scrollIntoView on programmatic focus); Escape closes every overlay; the skip link works.'
+  ].join('\n');
+  bodies['screen-reader-flow'] = [
+    'Screen reader flow: test the way blind users experience the app:',
+    '',
+    'The setup: Windows → NVDA (free) + Chrome; macOS/iOS → VoiceOver (Cmd+F5) + Safari; Android → TalkBack. The screen reader + browser pairing MATTERS (NVDA reads Chrome best; VoiceOver reads Safari) — test the real pairing.',
+    '',
+    'The navigation vocabulary (learn these modes): NVDA arrow keys read line by line; H cycles headings (the page outline IS the navigation); Tab cycles interactive controls; D cycles landmarks (banner, main, navigation, contentinfo); F cycles form fields; K cycles links. If your headings are all styled divs, H-mode finds NOTHING — use real h1-h3 in order.',
+    '',
+    'The announcements: dynamic content needs live regions (aria-live="polite" on the container — new chat messages, toasts, search result counts announce themselves); route changes announce the new page title (focus the h1 or update document.title); loading states announce "loading" then "loaded".',
+    '',
+    'The flow test (do this once per release): eyes closed, complete the core task by ear — every announcement makes sense in order; no "button button button" deserts; errors read out; the focus lands where the action is after modals open and close.',
+    '',
+    'Verify: the heading outline is logical (h1 → h2, no skips); landmarks present (one main, one nav); live announcements fire for async changes; a full task completes eyes-closed.'
+  ].join('\n');
+  bodies['perf-budgets'] = [
+    'Performance budgets: numbers in CI, not vibes:',
+    '',
+    'The metrics that matter (Core Web Vitals): LCP < 2.5s (largest contentful paint — the hero image or headline), INP < 200ms (interaction to next paint — replaced FID; measures EVERY tap delay), CLS < 0.1 (layout shift — images without dimensions, late fonts, injected banners). Budget these three FIRST; lab TBT (total blocking time) < 200ms as the dev proxy for INP.',
+    '',
+    'The budget file (CI-enforced): size-limit or bundlesize with entries per artifact: initial JS < 170KB gzip, per-route chunk < 90KB, CSS < 45KB, total images per page < 900KB. The check runs on every PR — a budget breach FAILS the build, the same way a test failure does.',
+    '',
+    'The field data: lab numbers (Lighthouse) are synthetic — real users on real phones decide; CrUX or your own RUM (see rum-monitoring) is the truth; track the 75th percentile (p75) per device class.',
+    '',
+    'The regression workflow: budget breach → the PR shows the delta (which chunk grew, by how much) → either fix it or consciously RAISE the budget with a written reason (silent creep is how apps die).',
+    '',
+    'Verify: budgets live in CI and fail on breach; LCP/INP/CLS tracked in the field at p75; the bundle delta is visible on every PR.'
+  ].join('\n');
+
+  bodies['render-priority-hints'] = [
+    'Render priority hints: what the browser MUST download before first paint:',
+    '',
+    'The render blockers: CSS in <head> blocks ALL rendering until loaded; synchronous <script> blocks the parser. The fix order: (1) minify + preload only the CSS actually needed for first paint (inline the critical ~14KB, load the rest async via media="print" onload swap); (2) every script gets defer (order-preserving) or async (independent) — sync scripts are a code smell; (3) module scripts defer by default.',
+    '',
+    'The priority hints: <link rel="preload" as="font" crossorigin> for the 1-2 fonts above the fold (fonts are discovered LATE — after CSS — and swap late); font-display: swap keeps text visible while fonts load; fetchpriority="high" on the LCP image, "low" on below-fold images.',
+    '',
+    'The waterfall rules of thumb: total requests before first paint should fit on one hand; every 100KB of blocking JS costs ~100-300ms on a mid-range phone; the LCP image must be discoverable in the HTML (no background-image URLs buried in CSS, no JS-injected <img> — the preload scanner cannot see them).',
+    '',
+    'The measurement: devtools Performance panel — record a load on Slow 4G throttling; the LCP marker tells you the exact resource; the waterfall shows what delayed it.',
+    '',
+    'Verify: zero synchronous scripts; critical CSS inline + the rest async; LCP resource preloaded with fetchpriority; first paint under 1.8s on throttled mid-tier.'
+  ].join('\n');
+  bodies['media-performance'] = [
+    'Media performance: images and video are 70%+ of page weight:',
+    '',
+    'The image pipeline: responsive srcset ALWAYS (the phone does not need the 2x desktop image): srcset="img-400.webp 400w, img-800.webp 800w" sizes="(max-width: 600px) 100vw, 50vw"; format modern-first (<picture> with AVIF → WebP → JPEG fallback); lazy-load everything below the fold (loading="lazy") but NEVER the LCP image (lazy = delayed LCP); explicit width/height on every img (kills CLS).',
+    '',
+    'The video rules: never autoplay with sound; preload="none" + poster for below-fold video; the poster image is a compressed still, not frame zero; adaptive streaming (HLS/DASH) for anything over ~30s; muted+playsinline+autoplay for background loops (the mobile requirements — iOS refuses autoplay without them).',
+    '',
+    'The audio: load on user intent (click → new Audio(url)); sounds in games are tiny (see the sfx tool — procedural WAV beats downloaded samples for UI sounds); pool AudioContext nodes — creating one per click leaks on mobile Safari.',
+    '',
+    'The codec cheat sheet: AVIF (smallest, modern browsers), WebP (universal now), JPEG (fallback), MP4/H.264 (universal video), WebM/VP9 (smaller, modern), AV1 (smallest, encode is slow).',
+    '',
+    'Verify: page weight per template known and under budget; no layout shift from media; video never autoplays with sound; the LCP image is eager + high priority.'
+  ].join('\n');
+  bodies['memory-leaks'] = [
+    'Memory leaks: the app that starts fast and dies slow:',
+    '',
+    'The usual suspects (ranked by how often they bite): (1) forgotten event listeners — a component removed but its window/document listeners stay (every on() needs an off() in destroy); (2) timers — setInterval that never clears (the callback closes over a DOM tree = the whole tree leaks); (3) detached DOM held by JS — a variable captures node, the node is removed from the DOM, the tree lives forever in the heap; (4) unbounded caches/maps — the memoization that never evicts; (5) closures capturing big scopes (a small handler defined inside a big function keeps the big scope alive).',
+    '',
+    'The diagnosis: devtools Memory → heap snapshot → take one, do the suspect action 10 times, take another, compare — look for DETACHED entries (HTMLDivElement with a red/yellow background = detached but referenced) and growing arrays/maps; the Allocation instrumentation timeline shows allocations that never free.',
+    '',
+    'The prevention patterns: an explicit destroy() per component (listeners, timers, observers — symmetric create/cleanup); AbortController for everything async (abort() removes fetch + listener churn together); WeakMap/WeakRef for caches keyed by objects you do not own; cap every cache (LRU, max entries).',
+    '',
+    'The mobile reality: iOS Safari kills tabs over ~1-2GB and webviews are tighter; test the long session (30 min of normal use) — the leak that survives a 5-minute test kills the 30-minute one.',
+    '',
+    'Verify: heap snapshots before/after the stress loop grow less than 10%; every component destroy frees its listeners; zero detached-node growth in the timeline.'
+  ].join('\n');
+  bodies['csp-hardening'] = [
+    'Content Security Policy: the browser-enforced backstop against injection:',
+    '',
+    'The starting policy (strict, workable): default-src \'self\'; script-src \'self\' \'nonce-R4nd0m\'; style-src \'self\' \'nonce-R4nd0m\'; img-src \'self\' data: https:; object-src \'none\'; base-uri \'self\'; frame-ancestors \'self\'. No \'unsafe-inline\' (inline scripts/styles need the per-response nonce), no \'unsafe-eval\' (kills eval AND new Function — REVA\'s lint tool runs in a sandboxed frame with its own policy).',
+    '',
+    'The nonce mechanics: the server generates a random nonce per response, puts it in the CSP header AND on every legitimate <script nonce=...>; injected scripts (no nonce) simply do not run — this is the XSS kill-switch. For fully static sites, hash-based: script-src \'sha256-<hash of exact inline script>\'.',
+    '',
+    'The rollout ladder (never big-bang): Content-Security-Policy-Report-Only first (same policy + report-uri/report-to endpoint) — violations log for 2 weeks, nothing breaks; fix every report; then flip to enforcing; keep the report endpoint live forever.',
+    '',
+    'The gotchas: third-party tags (analytics, chat widgets) are the reason policies rot — audit them; require-trusted-types-for \'script\' prevents DOM-XSS sink injections (innerHTML with script strings) — adopt after the basics; frame-ancestors \'none\' for pages that must not be framed (clickjacking).',
+    '',
+    'Verify: report-only ran clean for 2 weeks; enforcing header live; zero \'unsafe-inline\' in script-src; a planted inline script does NOT execute (test it).'
+  ].join('\n');
+  bodies['xss-csrf-defense'] = [
+    'XSS + CSRF defense: the two attacks every web app must survive:',
+    '',
+    'XSS (injected code runs in YOUR origin): defense is OUTPUT ENCODING at the sink, not input filtering — text goes through textContent (never innerHTML); HTML context → escape and < > & "; attribute context → quote every attribute; URL context → allowlist the scheme (javascript: is the trap); the modern belt-and-suspenders: Trusted Types (see csp-hardening) + a sanitizer (DOMPurify) for the one place user HTML is truly allowed. React/Vue escape by default — the holes are dangerouslySetInnerHTML / v-html.',
+    '',
+    'CSRF (another site makes the user\'s browser send a request to YOURS — cookies ride along automatically): SameSite=Lax or Strict on every cookie (Lax covers most: cross-site POSTs lose the cookie); state-changing endpoints require a token the attacker cannot read (double-submit cookie: random token in cookie + matching header/X-CSRF-Token, compare on the server); never allow GET to mutate state (that is how img-tag CSRF worked).',
+    '',
+    'The combined reality check: XSS defeats CSRF tokens (the injected script reads them) — so XSS defense is the priority; CSRF defense protects you the day XSS slips through.',
+    '',
+    'The test: plant <img src=x onerror=alert(1)> and " onmouseover=alert(1) in EVERY text field → nothing executes, everything displays literally; craft a cross-site form POSTing to a state-change endpoint → 401/403.',
+    '',
+    'Verify: zero innerHTML sinks for user data (grep proves it); cookies SameSite; mutating endpoints reject tokenless requests; the planted payloads render inert.'
+  ].join('\n');
+  bodies['secrets-handling'] = [
+    'Secrets handling: keys live on servers, never in bundles:',
+    '',
+    'The iron rule: anything shipped to the browser (or the phone APK) is PUBLIC — minification is not encryption; strings survive in the bundle. API keys in client code = leaked keys (scanning GitHub is automated; the leak window is minutes).',
+    '',
+    'The architecture: the client calls YOUR backend; the backend holds the secret and calls the third party (the proxy pattern — REVA\'s own nvidia-proxy is exactly this: the key lives server-side, the app sends nothing sensitive); for pure-static deploys, use edge functions or serverless functions as that thin proxy; some APIs support scoped/referrer-restricted keys — still treat them as public.',
+    '',
+    'The storage ladder (server-side): environment variables (12-factor) for runtime injection → a secrets manager (vault/aws secrets) for production rotation → NEVER a committed .env (commit .env.example with fake values instead; .gitignore the real one).',
+    '',
+    'The hygiene: scope every key (least privilege: read-only where possible, referrer/IP restrictions where offered); rotate on a schedule AND immediately after any suspected exposure; rotate = issue new + deploy + revoke old (in that order); secret scanning in CI (gitleaks/trufflehog) catches the commit before it teaches the internet your key.',
+    '',
+    'Verify: grep the built bundle for every key id/secret prefix — zero hits; a leaked-and-rotated key is dead within an hour (test the rotation path); CI secret scanning blocks the commit.'
+  ].join('\n');
+  bodies['dependency-audit'] = [
+    'Dependency audit: your supply chain is your attack surface:',
+    '',
+    'The standing checks: npm audit (advisory DB; npm audit fix --dry-run first — read what it would change); lockfile committed (package-lock.json IS the supply-chain contract — reproducible installs); Dependabot or Renovate weekly (small frequent upgrades beat annual terror upgrades); CI fails on HIGH/CRITICAL advisories.',
+    '',
+    'The supply-chain discipline: pin versions + verify integrity (the lockfile holds integrity hashes — installs fail on tamper); review NEW dependencies before adoption (weekly downloads, last publish date, does it do what 50 lines of your own could — the left-pad lesson; the event-stream lesson: a popular package was handed to a malicious maintainer); restrict postinstall scripts (.npmrc: ignore-scripts=true where feasible — install scripts are the malware highway).',
+    '',
+    'The pruning: every quarter, depcheck or knip finds the dependencies nothing imports; unused deps are risk with zero benefit; bundle-read (size-limit) shows what a dep costs your users.',
+    '',
+    'The upgrade protocol: minor/patch weekly (automated), major monthly (changelog read, deprecation check, tests green in a branch), framework majors on a scheduled weekend with a rollback tag.',
+    '',
+    'Verify: zero high/critical advisories at merge time; lockfile always committed; new deps pass a written review note; the quarterly prune report shows removals.'
+  ].join('\n');
+  bodies['pwa-push-deep'] = [
+    'PWA push notifications: the whole pipeline, end to end:',
+    '',
+    'The pipeline: the SERVICE WORKER receives the push (even with the app closed); the push SERVICE (FCM for Android/Chrome, APNs via Web Push for iOS 16.4+) delivers it; your SERVER authenticates with VAPID keys (generate once: npx web-push generate-vapid-keys — public key ships to the client, private key NEVER leaves the server).',
+    '',
+    'The client flow: (1) Notification.requestPermission() — ONLY from a user gesture (a button tap saying why: "Get session reminders"); (2) registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: <urlBase64 public key> }) — userVisibleOnly is mandatory; (3) POST the subscription object to your server (store it — it is per-browser, per-device); (4) the SW shows something for every push: self.registration.showNotification(title, { body, icon, data: { url } }) + a notificationclick handler that focuses/opens the right view.',
+    '',
+    'The server flow: web-push.sendNotification(subscription, JSON payload) per stored subscription; handle 404/410 (subscription expired — DELETE it; pruning dead subscriptions is routine maintenance); payload size limit ~4KB — send the ID, let the client fetch the content.',
+    '',
+    'The iOS specifics: needs the app added to the home screen (installed PWA), 16.4+, and the manifest has no gotchas if installed — test on a real iPhone, not desktop Safari.',
+    '',
+    'Verify: subscribe from a gesture; a server-triggered push arrives with the app CLOSED; tapping focuses the right view; expired subscriptions get pruned on 410.'
+  ].join('\n');
+  bodies['web-share-apis'] = [
+    'Web share APIs: native-feeling integration without the app store:',
+    '',
+    'The outbound share: navigator.share({ title, text, url, files }) — opens the OS share sheet (the SAME sheet native apps use); MUST be called from a user gesture; feature-detect (if (!navigator.share) fall back to clipboard + toast); share FILES with navigator.canShare({ files }) — the path for sharing a canvas-rendered image: canvas.toBlob → new File([blob], \'score.png\', { type: \'image/png\' }).',
+    '',
+    'The inbound share (your app AS a share target): the manifest declares "share_target": { action: "/share", method: "POST", enctype: "multipart/form-data", params: { files: [{ name: "image", accept: ["image/*"] }] } } — the OS lists your PWA in the share sheet; the SW handles the POST (request.formData()) and redirects to the app view with the data; GET variant for text/urls.',
+    '',
+    'The clipboard pair: navigator.clipboard.writeText/readText (secure context + permission); writing rich content needs ClipboardItem with text/html blobs; the read is a permission prompt — never read on load, read on paste intent.',
+    '',
+    'The file access: showOpenFilePicker/showSaveFilePicker (desktop Chromium only — the REVA RevaFS lesson: SAF on Android, webkitdirectory fallback elsewhere); drag-drop + paste events are the universal paths.',
+    '',
+    'Verify: the share sheet opens with all fields; files share with the right MIME; the app appears as a share TARGET after install; clipboard flows prompt politely, never silently.'
+  ].join('\n');
+  bodies['shadow-dom-elements'] = [
+    'Shadow DOM elements: framework-free custom elements that survive framework churn:',
+    '',
+    'The anatomy: class MyCard extends HTMLElement { static get observedAttributes() { return [\'title\']; } attributeChangedCallback(n, o, v) {} connectedCallback() {} disconnectedCallback() {} } + customElements.define(\'my-card\', MyCard). The lifecycle IS the contract: connected = mount, disconnected = destroy (put your listener cleanup here — the leak lesson), attributeChanged = reactive attrs.',
+    '',
+    'Shadow DOM: this.attachShadow({ mode: \'open\' }) gives style encapsulation (page CSS cannot leak in, component CSS cannot leak out); the price: document-level theming needs CSS custom properties (they pierce the shadow boundary — var(--accent) works inside); slot children: <slot name="footer"> distributes light-DOM content — slots are the composition mechanism.',
+    '',
+    'The attribute/property split: attributes are STRINGS in HTML (<my-card title="Hi">); properties are JS values (el.data = {...obj} — an object CANNOT ride an attribute); the convention: reflect simple values as attributes, expose complex ones as properties + events.',
+    '',
+    'The events: dispatch CustomEvent(\'change\', { bubbles: true, composed: true, detail: {...} }) — composed lets it cross the shadow boundary (without it the host never hears).',
+    '',
+    'When NOT to: heavy app state/reactivity wants a framework; components shine for design-system widgets, embeddable widgets, and long-lived code that must outlive framework migrations.',
+    '',
+    'Verify: the element works from plain HTML with zero framework; styles do not leak either direction; events composed; disconnectedCallback frees everything.'
+  ].join('\n');
+
+  bodies['workers-wasm'] = [
+    'Web workers + WASM: real parallelism and heavy compute off the main thread:',
+    '',
+    'The main-thread law: anything over ~16ms of compute (the frame budget) belongs in a worker — JSON parsing of big payloads, image processing, physics steps, diff/merge of large files. While the main thread blocks, taps drop and INP dies.',
+    '',
+    'The worker patterns: dedicated worker per concern (new Worker(\'engine.js\'), module workers with type: \'module\'); message passing with structured clone — transferables avoid the copy: postMessage(buffer, [buffer]) moves an ArrayBuffer in O(1) (the ownership handoff — the sender loses it); a small RPC layer makes workers ergonomic: wrap postMessage in a Promise keyed by an id, the worker replies with the same id (REVA\'s agent exec uses the same marker pattern over its native channel).',
+    '',
+    'The pool: navigator.hardwareConcurrency (cap 2-4 on mobile) workers processing a shared task queue — one long-lived pool beats worker churn (workers cost startup: parse + instantiate, ~10-50ms each).',
+    '',
+    'The WASM pair: compile heavy kernels to wasm (see the grammar forge — the same web-tree-sitter runtime runs IN a worker); SharedArrayBuffer + Atomics for true shared memory — but ONLY in a cross-origin-isolated context (COOP: same-origin; COEP: require-corp headers — plan for this BEFORE the day you need it).',
+    '',
+    'Verify: the longest main-thread task on the slowest target < 50ms; workers pool sized to hardwareConcurrency; transferables used for buffers > 1MB; a kill-switch keeps the app working if workers fail.'
+  ].join('\n');
+  bodies['unit-test-strategy'] = [
+    'Unit test strategy: tests that survive refactors:',
+    '',
+    'The shape: Arrange-Act-Assert with ONE behavior per test; the name states the behavior, not the method — order_total_applies_volume_discount, not testCalc4 (a failing name should tell you what BROKE in the app\'s language).',
+    '',
+    'The test doubles ladder (use the lightest tool that works): a FAKE is a working lightweight implementation (in-memory store) — prefer it; a STUB returns canned answers — fine for inputs; a MOCK asserts interactions — use sparingly (mocks glue tests to implementation; over-mocked suites fail on every refactor and get deleted — deleted tests protect nothing). The spice rule: never mock what you own cheaply to run for real (a real sqlite in tmp beats a fake DB driver).',
+    '',
+    'The seams: tests go through the PUBLIC API of the unit, not internals (refactor-private functions freely, tests hold); when code is untestable, the fix is a SEAM (inject the clock, the rng, the fetch — dependency injection at the constructor/config edge: REVA\'s scheduler injects now() — deterministic time tests without sleep()).',
+    '',
+    'The coverage rule: coverage is a smoke detector, not a goal — 100% coverage of trivial getters while the money-path merge logic has 2 tests is self-deception; aim coverage AT the complex branches (error paths, boundaries: empty, one, many, huge, unicode, concurrent).',
+    '',
+    'Verify: every test name reads as a behavior; new bug fixes arrive WITH a regression test (the bug can never silently return); the suite runs in seconds and never flakes (randomness seeded, time injected).'
+  ].join('\n');
+  bodies['integration-tests'] = [
+    'Integration tests: where the units meet and the lies die:',
+    '',
+    'The scope: two or more real pieces together — API route + real database, service + message queue, frontend form + mocked network at the HTTP boundary (not mocked INTERNALS — that is unit testing again). The bugs integration tests catch are the unit tests\' blind spot: serialization shape mismatches, transaction boundaries, missing indexes, case-sensitivity of sort orders.',
+    '',
+    'The database discipline: real engine, throwaway instance (docker per test run or an ephemeral schema per suite); every test seeds its own fixtures and the suite RESETS between tests (truncate or transaction-rollback per test — never test order dependence: a suite that breaks when run alone is lying to you); the migrations run as part of the setup — tests verify the migration path too.',
+    '',
+    'The contract moment: the frontend test hits a stub SERVER at the HTTP layer (msw-style handlers) — the stub serves the SAME schema the backend test suite asserts, and the contract test suite (see contract-tests) keeps the two honest.',
+    '',
+    'The speed: integration suites are minutes, not seconds — keep them parallel-safe (unique DB/schema per worker), and never let a slow suite strangle the feedback loop: push-to-main integration, fast unit on every commit.',
+    '',
+    'Verify: tests run against a real engine in CI; each test seeds and cleans its own state; the suite passes in any order and in parallel; one honest end-to-end DB write/read per critical entity.'
+  ].join('\n');
+  bodies['e2e-playwright'] = [
+    'E2E with Playwright: the few tests that walk the real app:',
+    '',
+    'The selection rule: E2E is EXPENSIVE (slow, flaky-prone) — pick the journeys, not the features: login → core action → the money path → logout. 10-20 golden journeys cover the risk; 500 E2E tests are a maintenance debt that gets disabled and forgotten.',
+    '',
+    'The stability kit: selectors by ROLE and accessible name (getByRole(\'button\', { name: \'Checkout\' })) — resilient AND a11y-enforcing (see aria-patterns); auto-waiting replaces sleep (Playwright waits for actionable — the toBeVisible/toBeEnabled assertions ARE the waits); network stubbing per test for third parties, real for your own APIs in the smoke tier.',
+    '',
+    'The flake protocol: a flaky test is a BUG — either in the app (a race the test exposed: good test!) or in the test (time/animation dependence: fix with fake timers or reduced-motion); retries mask flakes — run CI with retries=1 and TRIAGE every retry that fired; traces on failure (playwright trace: on) give the full DOM/network/screenshot story for the failing run.',
+    '',
+    'The structure: fixtures for auth state (storageState saves the login ONCE, every test starts logged in); parallel shards in CI; the mobile viewports (iPhone/Pixel profiles) for responsive truth — the REVA-class apps live and die on the phone viewport.',
+    '',
+    'Verify: golden journeys green on every PR; zero sleeps anywhere; flake rate under 1% and every flake triaged; failure traces attached in CI artifacts.'
+  ].join('\n');
+  bodies['visual-regression'] = [
+    'Visual regression: pixels are behavior too:',
+    '',
+    'The mechanism: render the component/page → screenshot → diff against the accepted baseline → over-threshold = fail. The tolerance game: exact-pixel diffs flake on antialiasing — set a small pixel-float tolerance (Playwright toHaveScreenshot({ maxDiffPixelRatio: 0.01 })) and STABILIZE the inputs (fake timers, no animations: reduced motion or animations: \'disabled\', deterministic fonts).',
+    '',
+    'The baselines are CODE-REVIEWED ARTIFACTS: committed to the repo (or a service like Percy/Chromatic); a PR that changes visuals shows the DIFF IMAGE in review — the reviewer approves pixels the same way they approve code; updating a baseline is a conscious act (git add the new png with a reason in the message).',
+    '',
+    'The scope discipline: screenshot the COMPONENT states (default, hover, focus, error, loading, empty) and the key PAGES at 2-3 viewports (phone 390px, tablet, desktop) — screenshotting every page every PR is a slow suite nobody runs; themes count (dark mode is its own baseline set).',
+    '',
+    'The CI plumbing: consistent rendering needs consistent environments (same browser build, same platform — run in the SAME docker image; fonts and subpixel rendering differ across OSes and WILL flake cross-platform).',
+    '',
+    'Verify: intentional visual changes show diff images in review; cross-OS flakes eliminated by a pinned docker image; theme + state matrices covered for the design-system components.'
+  ].join('\n');
+  bodies['contract-tests'] = [
+    'Contract tests: two teams, one agreement, zero surprises:',
+    '',
+    'The problem they solve: the frontend mocks the API, the backend implements it, and integration day reveals the field was renamed. A CONTRACT test asserts the AGREEMENT, not the implementation: consumer side — every request my code makes, and what fields I require from the response; provider side — replay every consumer expectation against the real service.',
+    '',
+    'The pact pattern: the consumer test suite generates a pact file (a JSON of interactions: given X → request R → response with fields F); the pact is published; the provider CI fetches it and REPLAYS each interaction against the real app, verifying status + field types (not exact values — a replayable stub server + real state setup); a provider change that breaks a consumer expectation FAILS the provider build before anything ships.',
+    '',
+    'The schema flavor: OpenAPI/JSON Schema as the shared truth — validate responses against the schema in BOTH the backend tests and the frontend mock server (one schema, two enforcements); breaking-change detection = diff the schema versions semantically (removed/renamed fields = breaking; added optional fields = safe).',
+    '',
+    'The versioning rule: add-optional-then-migrate for breaking changes (v2 fields added, consumers migrate, v1 fields deprecated with a sunset date, then removed) — the contract suite proves every phase of the ladder.',
+    '',
+    'Verify: every breaking schema change fails a contract suite somewhere; pacts replay in provider CI on every PR; consumers never hit a renamed field in production first.'
+  ].join('\n');
+  bodies['github-actions-patterns'] = [
+    'GitHub Actions patterns: CI that is fast, cached, and boring:',
+    '',
+    'The pipeline shape: on every PR — lint + typecheck + unit (parallel jobs, fail fast, under 5 minutes); on merge — the full suite: integration + E2E shards + build artifact; on tag — release. Jobs declare needs: so failures gate deploys, never just annotate.',
+    '',
+    'The speed levers: actions/cache keyed on the lockfile hash (node_modules, gradle, pip — the cache key MUST include the lockfile or you cache stale dep trees); concurrency groups cancel superseded runs (concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }); matrix strategy for the version/OS grid you ACTUALLY support (3 node versions × 1 OS, not 3×3 because the matrix looked cool); artifacts uploaded only on failure (traces, screenshots) with short retention.',
+    '',
+    'The security: pin actions to full SHA (actions/checkout@<sha> — tags are mutable); use OIDC for cloud auth instead of long-lived access keys (permissions: id-token: write + the cloud role trusts the repo); secrets via environments with required reviewers for deploys; never curl | bash from untrusted inputs in a privileged job.',
+    '',
+    'The reusable unit: workflow_call reusable workflows for the org-wide pipeline (one place to fix lint for 20 repos); composite actions for repeated steps.',
+    '',
+    'Verify: PR feedback under 5 min; caches hit (the log proves it); no unpinned action tags; deploys run through a protected environment.'
+  ].join('\n');
+  bodies['release-automation'] = [
+    'Release automation: shipping is a command, not a ceremony:',
+    '',
+    'The versioning spine: semantic versioning + conventional commits (feat:, fix:, breaking → the commit TYPES carry the version decision); semantic-release or release-please derives the next version from the commit log, generates the changelog, tags, and publishes — zero manual version edits, zero forgotten changelogs.',
+    '',
+    'The release pipeline: tag/merge to main → CI builds the artifact (the REVA pattern: the APK builds in CI, the release attaches app-release-<version>.apk, signed with the repo secret keystore) → GitHub Release with the changelog body → the artifact hash published beside it.',
+    '',
+    'The pre-release channels: beta/alpha pre-releases (1.5.0-beta.1) let real users hit the new build before the stable tag; the mobile reality: keep the APK install-over-previous (same signing key — the REVA keystore lesson) and test the UPGRADE path, not just the fresh install (the stale-WebView-cache trap: pm clear before judging a fresh-UI release).',
+    '',
+    'The rollback story: every release has a known-good previous artifact one click away; databases migrate FORWARD with additive-only steps (expand → migrate → contract), so the previous app version still runs against the migrated schema during rollback.',
+    '',
+    'Verify: a release is one merge/tag away with zero manual steps; the changelog matches reality; the previous version is always installable; upgrade-from-previous tested on a real device before the stable tag.'
+  ].join('\n');
+  bodies['error-triage-pipeline'] = [
+    'Error triage pipeline: every crash reported, none repeated silently:',
+    '',
+    'The pipeline: the SDK (Sentry-style) catches unhandled rejections/errors + console.error, attaches breadcrumbs (the last 20 events: navigations, taps, network calls), and ships with release + context (userId, session, app version). The RELEASE health dashboard: crash-free sessions % per version — the number that decides whether a rollout continues or halts.',
+    '',
+    'The source maps: minified stack traces are useless — upload source maps per release (the CI step) or error triage means decoding hex offsets by hand; version the maps WITH the release (a map mismatch = garbage frames).',
+    '',
+    'The grouping discipline: grouping by stack fingerprint → one issue per root cause with affected-user counts (triage by users affected, not event count — one user in a loop makes noise); fingerprint deliberately when the auto-group fails (fingerprint: [\'checkout-declined\']); resolve-with-release so fixed issues reopen if the error RETURNS in a later version (the regression alarm).',
+    '',
+    'The privacy: never send PII or message content (scrub beforeSend); sample in high-volume (100% of crashes, 10% of handled errors); the local-first reality (REVA): errors queue offline and flush later.',
+    '',
+    'Verify: a planted crash appears with full context in under a minute; stacks are symbolicated; the crash-free rate gates the rollout; a fixed error that returns reopens its issue.'
+  ].join('\n');
+  bodies['rum-monitoring'] = [
+    'RUM monitoring: field data from real users beats every lab benchmark:',
+    '',
+    'The metrics: Core Web Vitals in the FIELD (LCP, INP, CLS at p75 per device class — lab numbers tell you what CAN be slow, field numbers tell you what IS); custom business signals alongside (checkout completion time, search latency, time-to-first-content) — performance only matters insofar as users finish tasks.',
+    '',
+    'The collection: the web-vitals library reports at the right moments (onLCP/onINP/onCLS with attribution — the attribution tells you WHICH element/image/handler owned the bad metric); sendBeacon on pagehide (the data survives the tab closing); sample deliberately (100% on canary, 10% steady-state) and tag every event with release version + device class + connection type (navigator.connection.effectiveType).',
+    '',
+    'The dashboards: p75 per release version — regressions show as a step change the day a version rolls out; segment by device tier (the mid-range Android truth hides under an iPhone-shaped average); alert on the RATE of change, not absolute values (a 200ms INP jump on a stable baseline = something shipped).',
+    '',
+    'The loop: field regression → attribution (which element) → reproduce in the lab with the same device class + throttling → fix → confirm the field metric recovers next release. Field data closes the loop the lab opens.',
+    '',
+    'Verify: vitals visible per release at p75 with attribution; the mid-tier device segment exists; a planted slow interaction is visible in the dashboard within the hour.'
+  ].join('\n');
+
   return { descs: descs, bodies: bodies, names: Object.keys(bodies) };
 });

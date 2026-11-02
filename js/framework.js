@@ -32,6 +32,7 @@
     var BUS = root.EVENTBUS || (typeof require === 'function' && require('./eventbus.js'));
     var FETCH = root.FETCHCLIENT || (typeof require === 'function' && require('./fetchclient.js'));
     var SCHED = root.SCHEDULER || (typeof require === 'function' && require('./scheduler.js'));
+    var I18N = root.I18N || (typeof require === 'function' && require('./i18n.js'));
 
     var bus = BUS.createBus({ handlerErrors: 'log' });
     var scopedBus = bus.scope(opts.name || 'app');
@@ -58,6 +59,15 @@
       });
     }
 
+    var i18n = null;
+    if (I18N && opts.i18n) {
+      i18n = I18N.createI18n({
+        locale: opts.i18n.locale || 'en',
+        fallback: opts.i18n.fallback || 'en',
+        catalogs: opts.i18n.catalogs || {}
+      });
+    }
+
     var app = {
       name: opts.name || 'app',
       bus: scopedBus,
@@ -79,6 +89,13 @@
         return app.scheduler.schedule(name, fn, def);
       },
       cancelScheduled: function (name) { return app.scheduler ? app.scheduler.cancel(name) : false; },
+
+      /* i18n: catalogs from opts.i18n {locale, fallback, catalogs}. Without
+         the engine, t() is the identity (honest pass-through, no crashes). */
+      t: function (key, params) { return i18n ? i18n.t(key, params) : key; },
+      plural: function (key, count, params) { return i18n ? i18n.plural(key, count, params) : key; },
+      setLocale: function (loc) { if (i18n) i18n.setLocale(loc); },
+      getLocale: function () { return i18n ? i18n.getLocale() : (opts.i18n && opts.i18n.locale) || 'en'; },
 
       /* plugin registration */
       register: function (plugin) {

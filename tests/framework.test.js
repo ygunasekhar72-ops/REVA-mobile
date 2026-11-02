@@ -103,6 +103,20 @@ const FW = require('../js/framework.js');
   assert.ok(app7.cancelScheduled('boom') && !app7.cancelScheduled('boom'), 'cancel true once');
   assert.strictEqual(app7.scheduler.pending(), 1, 'beat remains');
 
-  console.log('framework: 12/12 scenarios PASS (store + bus + router + fetch + plugins + lifecycle + scheduler)');
+  // 13. i18n wiring: t/plural through the app, identity pass-through without config
+  var app8 = FW.createApp({
+    name: 'i18n-app',
+    i18n: { catalogs: { en: { 'greet.hi': 'Hello {name}!', 'box.items': { one: '{n} box', other: '{n} boxes' } } } }
+  });
+  assert.strictEqual(app8.t('greet.hi', { name: 'REVA' }), 'Hello REVA!', 't through the app');
+  assert.strictEqual(app8.plural('box.items', 1), '1 box', 'plural one through the app');
+  assert.strictEqual(app8.plural('box.items', 3), '3 boxes', 'plural other through the app');
+  assert.strictEqual(app8.t('missing.key'), 'missing.key', 'miss returns the key');
+  app8.setLocale('es'); // no es catalog -> chain falls back to en
+  assert.strictEqual(app8.t('greet.hi', { name: 'A' }), 'Hello A!', 'fallback chain after setLocale');
+  var app9 = FW.createApp({ name: 'no-i18n-app' });
+  assert.strictEqual(app9.t('anything'), 'anything', 'identity pass-through without i18n config');
+
+  console.log('framework: 13/13 scenarios PASS (store + bus + router + fetch + plugins + lifecycle + scheduler + i18n)');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
