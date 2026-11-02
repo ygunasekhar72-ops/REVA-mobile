@@ -508,6 +508,12 @@
     if (!s || state.streaming) return;
     s.resumeHint = false;
     var brief = window.LoopCore ? LoopCore.resumeBrief(s.runSnap) : '';
+    /* RunState v2: restore the token meter so pressure continuity survives
+       the restart (fresh app boot = fresh METERS; the snapshot is the truth) */
+    if (s.runSnap && s.runSnap.v === 2 && s.runSnap.meter) {
+      var rm = meterFor(s);
+      if (rm) { try { rm.fromJSON(s.runSnap.meter); } catch (eRM) { } }
+    }
     s.runSnap = null;
     Store.save(); UI.renderChat(s);
     send('Continue your task — pick up EXACTLY where you stopped (check your todo list and the files you already wrote). Do not restart or repeat completed work.' + (brief ? '\n\n' + brief : ''), true);
@@ -1449,9 +1455,18 @@
           info._oldC = oldContent;
           toolResults.push(info);
           addToolRow(info, result);
-          /* L6 RunState: persist the applied round incrementally — a kill
-             mid-run resumes with an honest brief instead of amnesia */
-          if (window.LoopCore) { s.runSnap = LoopCore.snapshotRun(toolResults); Store.save(); }
+          /* L6 RunState v2: persist the applied round incrementally — a kill
+             mid-run resumes with an honest brief AND its token meter (the
+             resumed run keeps its proactive-compaction pressure accounting) */
+          if (window.LoopCore) {
+            var snapMeter = meterFor(s);
+            s.runSnap = LoopCore.snapshotRun(toolResults, {
+              meter: snapMeter ? snapMeter.toJSON() : null,
+              iters: iters,
+              model: db.settings.model
+            });
+            Store.save();
+          }
           var toolResultCount2 = apiMsgs.filter(function (m) { return m.role === 'tool'; }).length;
           apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(result).slice(0, toolResultCount2 > 5 ? 600 : 4000) });
           /* L2a VISION TOOL-RESULTS: after run_check/screenshot, a vision-capable

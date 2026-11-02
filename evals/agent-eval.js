@@ -233,8 +233,9 @@ async function main() {
     const app = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
     const core = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'loopcore.js'), 'utf8');
     record('RunState: mid-run snapshot persisted + resume brief carried',
-      app.indexOf('LoopCore.snapshotRun(toolResults)') >= 0 &&
+      app.indexOf('LoopCore.snapshotRun(toolResults,') >= 0 &&
       app.indexOf('LoopCore.resumeBrief(s.runSnap)') >= 0 &&
+      app.indexOf('rm.fromJSON(s.runSnap.meter)') >= 0 &&
       core.indexOf('function resumeBrief') >= 0, 'static check', 0);
   }
 

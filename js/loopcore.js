@@ -331,7 +331,7 @@
 
   function snapshotRow(info) {
     var a = (info && info.args) || {};
-    var where = a.path || a.cmd || a.query || a.title || '';
+    var where = a.path || a.command || a.cmd || a.query || a.title || '';
     return {
       t: String((info && info.name) || '?').slice(0, 40),
       p: String(where).slice(0, 120),
@@ -339,30 +339,53 @@
       o: String((info && info.out) || '').slice(0, 160)
     };
   }
-  function snapshotRun(toolResults) {
-    return {
-      v: 1,
+  /* snapshotRun(toolResults, extra): v2 carries the FULL run context — the
+     tool rows PLUS the token meter (pressure continuity across a process
+     death: the resumed run keeps its proactive-compaction accounting),
+     iteration count and model. v1 snapshots (persisted from older builds)
+     stay valid through validRunState. */
+  function snapshotRun(toolResults, extra) {
+    extra = extra || {};
+    var snap = {
+      v: 2,
       at: Date.now(),
       rows: (toolResults || []).slice(-SNAPSHOT_CAP).map(snapshotRow)
     };
+    if (extra.meter && extra.meter.v === 1) snap.meter = extra.meter;
+    if (extra.iters != null) snap.iters = Math.max(0, Math.round(Number(extra.iters) || 0));
+    if (extra.model) snap.model = String(extra.model).slice(0, 80);
+    return snap;
   }
   function validRunState(st) {
-    if (!st || st.v !== 1 || !Array.isArray(st.rows)) return null;
+    if (!st || !Array.isArray(st.rows) || (st.v !== 1 && st.v !== 2)) return null;
     var rows = st.rows.filter(function (r) {
       return r && typeof r.t === 'string';
     }).map(function (r) {
       return { t: String(r.t).slice(0, 40), p: String(r.p || '').slice(0, 120), ok: !!r.ok, o: String(r.o || '').slice(0, 160) };
     });
-    return rows.length ? { v: 1, at: Number(st.at) || 0, rows: rows } : null;
+    var out = { v: st.v, at: Number(st.at) || 0, rows: rows };
+    if (st.v === 2) {
+      if (st.meter && st.meter.v === 1) out.meter = st.meter;
+      if (st.iters != null) out.iters = Math.max(0, Math.round(Number(st.iters) || 0));
+      if (st.model) out.model = String(st.model).slice(0, 80);
+    }
+    return (rows.length || out.meter) ? out : null;
   }
-  /* the resume prompt's honest brief of what the dead round already did */
+  /* the resume prompt's honest brief of what the dead round already did —
+     v2 adds the context line so the model (and the meter) resume informed */
   function resumeBrief(st) {
     var v = validRunState(st);
     if (!v) return '';
     var lines = v.rows.map(function (r) {
       return '- ' + r.t + ' ' + r.p + (r.ok ? ' — ok' : ' — FAILED (react to this)');
     });
-    return 'Mid-round work already applied before the interruption (' + v.rows.length + ' tool calls):\n' + lines.join('\n');
+    var brief = 'Mid-round work already applied before the interruption (' + v.rows.length + ' tool calls):\n' + lines.join('\n');
+    if (v.meter && v.meter.stats) {
+      var ms = v.meter.stats;
+      var pct = v.meter.limit ? Math.min(100, Math.round(((ms.peakIn || 0) / v.meter.limit) * 100)) : 0;
+      brief += '\n- Context: ~' + Math.round((ms.in || 0) / 1000) + 'k in / ' + Math.round((ms.out || 0) / 1000) + 'k out, peak ' + Math.round((ms.peakIn || 0) / 1000) + 'k (' + pct + '% of the window seen)';
+    }
+    return brief;
   }
 
   /* ---- W5 STATE-OF-THE-WORLD: the compaction replacement block ----

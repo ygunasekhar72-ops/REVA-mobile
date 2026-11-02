@@ -4,6 +4,7 @@
 'use strict';
 const assert = require('assert');
 const LoopCore = require('../js/loopcore.js');
+const PC = require('../js/providercore.js'); /* TokenMeter for RunState v2 */
 
 (async () => {
   // 1. context-exhaustion classification — real provider messages
@@ -174,7 +175,7 @@ const LoopCore = require('../js/loopcore.js');
   const many = [];
   for (let i = 0; i < 50; i++) many.push({ name: 'write_file', args: { path: 'f' + i + '.js' }, ok: true, out: 'ok' });
   const snap = LoopCore.snapshotRun(many);
-  assert.strictEqual(snap.v, 1, 'envelope version');
+  assert.strictEqual(snap.v, 2, 'envelope version (v2 since RunState v2)');
   assert.strictEqual(snap.rows.length, 40, 'snapshot capped at 40 rows');
   assert.strictEqual(snap.rows[39].p, 'f49.js', 'capped keeps the MOST RECENT rows');
   const big = LoopCore.snapshotRun([{ name: 'write_file', args: { path: 'x'.repeat(300) }, ok: false, out: 'z'.repeat(500) }]);
@@ -251,6 +252,40 @@ const LoopCore = require('../js/loopcore.js');
   const fc = LoopCore.compactTranscript(fat, LoopCore.compactKeepChars(8));
   assert.ok(fc.dropped >= 2 && fc.kept.length >= 1, 'proactive plan drops old, keeps recent');
 
-  console.log('loopcore: 12/12 scenarios PASS');
+  // 13. RunState v2: full-run snapshots with meter continuity, v1 compat
+  const meterA = PC.createTokenMeter({ limit: 100000 });
+  meterA.add({ in: 42000, out: 3000, cached: 12000, reasoning: 800 });
+  meterA.generated(1200);
+  const snap2 = LoopCore.snapshotRun(
+    [{ name: 'write_file', args: { path: 'app.js' }, ok: true, out: 'written' }, { name: 'shell_exec', args: { command: 'npm test' }, ok: false, out: '1 failed' }],
+    { meter: meterA.toJSON(), iters: 7, model: 'nvidia/nemotron-550b' }
+  );
+  assert.strictEqual(snap2.v, 2, 'v2 snapshot');
+  assert.strictEqual(snap2.iters, 7, 'iters captured');
+  assert.strictEqual(snap2.model, 'nvidia/nemotron-550b', 'model captured');
+  const valid2 = LoopCore.validRunState(snap2);
+  assert.ok(valid2 && valid2.v === 2 && valid2.meter && valid2.meter.v === 1, 'v2 validates with meter');
+  assert.strictEqual(valid2.iters, 7, 'iters survives validation');
+  /* the brief carries the context line so the resumed model knows the pressure */
+  const brief2 = LoopCore.resumeBrief(snap2);
+  assert.ok(/- write_file app\.js — ok/.test(brief2), 'tool rows in brief');
+  assert.ok(/- shell_exec npm test — FAILED \(react to this\)/.test(brief2), 'failure flagged');
+  assert.ok(/Context: ~42k in \/ 3k out, peak 42k \(42% of the window seen\)/.test(brief2), 'pressure line: ' + (brief2.match(/Context: .*/) || [''])[0]);
+  /* the restored meter reproduces the exact pressure */
+  const meterB = PC.createTokenMeter({});
+  meterB.fromJSON(valid2.meter);
+  assert.strictEqual(meterB.pressure(), meterA.pressure(), 'pressure continuity across snapshot');
+  /* v1 snapshot (older build) still validates and briefs — without the context line */
+  const snap1 = { v: 1, at: 123, rows: [{ t: 'read_file', p: 'x.js', ok: true, o: '' }] };
+  const valid1 = LoopCore.validRunState(snap1);
+  assert.ok(valid1 && valid1.v === 1 && !valid1.meter, 'v1 compat');
+  assert.ok(LoopCore.resumeBrief(snap1).indexOf('Context:') < 0, 'v1 brief has no context line');
+  /* hostile rows are sanitized; empty rows with a meter stay valid (the meter IS the state) */
+  const snapEmpty = LoopCore.snapshotRun([], { meter: meterA.toJSON() });
+  assert.ok(LoopCore.validRunState(snapEmpty), 'meter-only snapshot valid');
+  assert.strictEqual(LoopCore.validRunState({ v: 2, rows: 'nope' }), null, 'non-array rows rejected');
+  assert.strictEqual(LoopCore.validRunState({ v: 3, rows: [] }), null, 'unknown version rejected');
+
+  console.log('loopcore: 13/13 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
