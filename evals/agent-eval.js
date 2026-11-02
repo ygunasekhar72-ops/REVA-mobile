@@ -250,6 +250,18 @@ async function main() {
       tools.indexOf('[recovered:') >= 0 && core.indexOf('function editLadder') >= 0 && !localLadder, 'static check', 0);
   }
 
+  // 16b. tool schemas: every entry must be type:'function' — one inverted
+  //      schema (json_schema_check shipped as type:'object') 400'd the WHOLE
+  //      request on strict gateways (NVIDIA serde) whenever it was picked
+  {
+    const fs = require('fs');
+    const tools = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'tools.js'), 'utf8');
+    const app = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
+    const inverted = tools.match(/type:\s*'object',\s*function:\s*\{\s*name:/g) || [];
+    record('tool schemas: zero inverted entries + boot filter guards the request',
+      inverted.length === 0 && app.indexOf("t.type !== 'function'") >= 0, 'static check', 0);
+  }
+
   // 17. repo-map budget (L3): context-scaled budget + degradation renderer
   {
     const fs = require('fs');

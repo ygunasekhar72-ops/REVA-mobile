@@ -1107,6 +1107,7 @@
         });
       });
       var available = Tools.schemas.concat(mcpSchemas).filter(function (t) {
+        if (t.type !== 'function') return false; // a malformed schema must never poison the request (NVIDIA 400s the whole call)
         var n = t.function.name;
         if (n === 'shell_exec') return !!window.REVAShell; // real device shell — Android builds only
         if (n.indexOf('mcp_') === 0) return mode !== 'Guard';
