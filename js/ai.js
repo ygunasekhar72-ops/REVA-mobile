@@ -3,34 +3,15 @@
    model's thinking stream (NVIDIA reasoning_content / gpt-oss reasoning) and
    toolCalls the accumulated OpenAI-style function calls. */
 (function () {
-  /* MULTI-KEY ENDURANCE: a provider accepts several API keys separated by
-     commas/newlines. keyFor() returns the active one (runtime cursor), so a
-     long run survives per-key quota walls by rotating to the next key. */
-  function keyList(p) {
-    return String(p.key || '').split(/[,\n;]+/).map(function (k) { return k.trim(); }).filter(Boolean);
-  }
-  function keyFor(p) {
-    var list = keyList(p);
-    if (!list.length) return '';
-    return list[Math.min(p._keyIdx || 0, list.length - 1)];
-  }
-  function rotateKey(p) {
-    var list = keyList(p);
-    var next = (p._keyIdx || 0) + 1;
-    if (next >= list.length) { p._keyIdx = 0; return false; }
-    p._keyIdx = next;
-    return true;
-  }
-  function isQuotaError(e) {
-    return /http 429|http 402|quota|insufficient|billing|limit reached|monthly limit|credit/i.test(String((e && e.message) || e || ''));
-  }
-  /* transient = worth an automatic retry on the SAME provider: server blips
-     and network drops should never end a long run on their own */
-  function isTransientError(e) {
-    var m = String((e && e.message) || e || '');
-    if (isQuotaError(m)) return false;
-    return /http 5\d\d|failed to fetch|networkerror|network error|timeout|timed out|socket|load failed|econn/i.test(m);
-  }
+  /* PROVIDER CORE: the pure kernel (keys, classifiers, SSE parsing, tool-call
+     merging, retry/budget decisions) lives in providercore.js — ai.js keeps
+     the side-ful parts (fetch, timers, abort) and delegates the decisions. */
+  var PC = (typeof window !== 'undefined' && window.PROVIDERCORE) ||
+           (typeof require === 'function' && require('./providercore.js'));
+  /* multi-key endurance: keyList/keyFor/rotateKey + error classification are
+     kernel functions — aliased here so the surface and call sites are stable */
+  var keyList = PC.keyList, keyFor = PC.keyFor, rotateKey = PC.rotateKey;
+  var isQuotaError = PC.isQuotaError, isTransientError = PC.isTransientError;
   function headers(p) {
     var h = { 'Content-Type': 'application/json' };
     var k = keyFor(p);
@@ -38,12 +19,9 @@
     return h;
   }
   function baseUrl(p) {
-    var u = (p.base || '').replace(/\/+$/, '');
-    // users often paste the full endpoint — normalize to the API root
-    u = u.replace(/\/chat\/completions$/, '').replace(/\/models$/, '');
-    // scheme/charset/credential sanity (local providers like Ollama are allowed)
-    u = H.assertEndpointUrl(u);
-    return u;
+    // users often paste the full endpoint — normalize to the API root, then
+    // the scheme/charset/credential gate (local providers like Ollama allowed)
+    return PC.normalizeBaseUrl(p.base, H.assertEndpointUrl);
   }
 
   /* --- offline demo provider: streams a canned, helpful reply --- */
@@ -111,85 +89,24 @@
         continue;
       }
       clearTimeout(timer);
-      /* 429/503 — NVIDIA free-tier windows are ~per-minute. The ONLY thing
-         that works is WAITING OUT THE WINDOW: honor Retry-After, else wait
-         a full minute, up to 3 times (≈3 min patience). Fast ladders just
-         hammer the limit and surface "(empty reply)" errors. */
-      if (res.status === 429 || res.status === 503) {
-        if (attempt >= 3) return res;
-        var ra = parseInt(res.headers.get('retry-after') || '0', 10);
-        var waitMs = ra > 0 ? ra * 1000 : 60000;
-        await sleep(waitMs, init.signal);
-        continue;
-      }
+      /* 429/503 rate windows (NVIDIA free-tier ~per-minute): the ONLY thing
+         that works is WAITING OUT THE WINDOW — the kernel decides (Retry-After
+         honored, else a full minute, up to 3 waits ≈ 3 min patience). */
+      var rd = PC.retryDecision(res.status, attempt, res.headers.get('retry-after') || '0');
+      if (rd) { await sleep(rd.wait, init.signal); continue; }
       return res;
     }
   }
 
-  function buildBody(opts) {
-    var body = {
-      model: opts.model,
-      messages: opts.messages,
-      stream: !!opts.stream,
-      max_tokens: (opts.maxTokens || 16) * 1024
-    };
-    if (opts.tools && opts.tools.length) {
-      body.tools = opts.tools;
-      body.tool_choice = 'auto';
-    }
-    if (opts.effort && !opts.provider.noEffort) {
-      body.reasoning_effort = ({ Low: 'low', High: 'medium', Max: 'high' })[opts.effort] || 'medium';
-    }
-    return body;
-  }
-
-  /* accumulate streaming tool_call fragments by index */
-  function mergeToolCall(acc, tc) {
-    var i = tc.index || 0;
-    acc[i] = acc[i] || { id: '', type: 'function', function: { name: '', arguments: '' } };
-    if (tc.id) acc[i].id = tc.id;
-    if (tc.function) {
-      if (tc.function.name) acc[i].function.name += tc.function.name;
-      if (tc.function.arguments) acc[i].function.arguments += tc.function.arguments;
-    }
-    return acc;
-  }
-  function cleanToolCalls(acc) {
-    var arr = acc.filter(Boolean).map(function (t) {
-      try { JSON.parse(t.function.arguments); } catch (e) { t.function.arguments = '{}'; }
-      return t;
-    });
-    return arr.length ? arr : null;
-  }
-
-  /* some providers (e.g. minimax) leak tool calls as TEXT inside content
-     instead of the tool_calls field. Detect and lift them out. */
-  function liftTextToolCalls(content, acc) {
-    if (!content) return null;
-    // minimax's textual protocol often has no closing tag — match to one or EOL
-    var re = /(?:\]<\][a-z0-9._-]*\[>\[)?<tool_call>\s*(?:name=["']([\w.-]+)["']\s*>?)?\s*([\s\S]*?)(?:<\/tool_call>|$)/gi;
-    var m, calls = [], out = content, idx = 0;
-    while ((m = re.exec(content)) !== null) {
-      if (m[0].indexOf('<tool_call>') < 0) continue;
-      var name = m[1], argsRaw = m[2].trim();
-      if (!argsRaw) continue;
-      if (!name) {
-        try {
-          var j = JSON.parse(argsRaw);
-          name = j.name || j.function || j.function_name;
-          if (j.arguments && typeof j.arguments !== 'string') argsRaw = JSON.stringify(j.arguments);
-          if (typeof j.arguments === 'string') argsRaw = j.arguments;
-        } catch (e) {}
-      }
-      if (!name) continue;
-      try { JSON.parse(argsRaw); } catch (e) { argsRaw = '{}'; }
-      calls.push({ id: 'call-txt-' + (idx++), type: 'function', function: { name: name, arguments: argsRaw } });
-      out = out.split(m[0]).join('');
-    }
-    if (!calls.length) return null;
-    if (acc) acc.out = out.trim();
-    return calls;
-  }
+  /* kernel aliases: body building, effort-rejection learning, tool-call
+     fragment accumulation, and textual-protocol lifting (the kernel versions
+     are node-tested — see tests/providercore.test.js) */
+  var buildBody = PC.buildBody;
+  var isEffortRejection = PC.isEffortRejection;
+  var mergeToolCall = PC.mergeToolCall;
+  var cleanToolCalls = PC.cleanToolCalls;
+  /* returns { calls, content } or null — content is pre-stripped */
+  var liftTextToolCalls = PC.liftTextToolCalls;
 
   /* --- chat completion, streaming or not --- */
   async function chat(opts) {
@@ -230,7 +147,7 @@
       // if this endpoint rejects the reasoning_effort parameter, remember and retry without it
       if (!res.ok && res.status === 400 && opts.effort && !opts.provider.noEffort) {
         var errText = await res.text().catch(function () { return ''; });
-        if (/reasoning_effort|unrecognized|unexpected|unknown field|unsupported/i.test(errText)) {
+        if (isEffortRejection(errText)) {
           opts.provider.noEffort = true;
           var body2 = buildBody(opts);
           body2.max_tokens = maxTok;
@@ -243,11 +160,8 @@
 
       if (!res.ok) {
         var t = await res.text().catch(function () { return ''; });
-        var hint = '';
-        if (res.status === 401 || res.status === 403) hint = ' — check your API key';
-        if (res.status === 404) hint = ' — check the base URL and model name';
-        if (res.status === 429) hint = ' — rate limit or quota reached';
-        throw new Error('HTTP ' + res.status + hint + (t ? '\n' + t.slice(0, 220) : ''));
+        var cls = PC.classifyHttp(res.status, t);
+        throw new Error('HTTP ' + res.status + cls.hint + (t ? '\n' + t.slice(0, 220) : ''));
       }
 
       if (!opts.stream) {
@@ -258,16 +172,16 @@
         var reas0 = m.reasoning_content || m.reasoning || '';
         if (reas0) onReasoning(reas0);
         var lifted0 = liftTextToolCalls(content0);
-        if (lifted0) content0 = content0.replace(/(?:\]<\][a-z0-9._-]*\[>\[)?<tool_call>[\s\S]*?<\/tool_call>/gi, '').trim();
+        if (lifted0) content0 = lifted0.content;
         if (content0) onDelta(content0);
         var tc0 = (m.tool_calls && m.tool_calls.length) ? cleanToolCalls(m.tool_calls.slice()) : null;
-        if (!tc0 && lifted0) tc0 = lifted0;
+        if (!tc0 && lifted0) tc0 = lifted0.calls;
         if (opts.onToolCall && tc0) {
           for (var q = 0; q < tc0.length; q++) opts.onToolCall(tc0[q].function.name, (tc0[q].function.arguments || '').length);
         }
-        if (fin0 === 'length' && !content0 && !tc0 && budgetTry < 2) { maxTok *= 2; continue; }
-        var u0 = j.usage || null;
-        result = { content: content0, reasoning: reas0, toolCalls: tc0, finishReason: fin0, usage: u0 ? { in: u0.prompt_tokens || 0, out: u0.completion_tokens || 0 } : null };
+        var bl0 = PC.budgetLadder(maxTok, fin0, content0, tc0, budgetTry);
+        if (bl0.double) { maxTok = bl0.next; continue; }
+        result = { content: content0, reasoning: reas0, toolCalls: tc0, finishReason: fin0, usage: PC.normalizeUsage(j.usage) };
       } else {
         var reader = res.body.getReader();
         var dec = new TextDecoder();
@@ -303,43 +217,36 @@
           while ((idx = buf.indexOf('\n')) >= 0) {
             var line = buf.slice(0, idx).trim();
             buf = buf.slice(idx + 1);
-            if (!line.startsWith('data:')) continue;
-            var d = line.slice(5).trim();
-            if (d === '[DONE]') continue;
-            try {
-              var jr = JSON.parse(d);
-              var ch0 = jr.choices && jr.choices[0];
-              var delta = ch0 && ch0.delta;
-              if (ch0 && ch0.finish_reason) finS = ch0.finish_reason;
-              if (jr.usage) streamUsage = jr.usage;
-              if (!delta) continue;
-              var piece = delta.content;
-              if (piece) { full += piece; onDelta(piece); }
-              var reas = delta.reasoning_content || delta.reasoning;
-              if (reas) { reasoning += reas; onReasoning(reas); }
-              if (delta.tool_calls) {
-                for (var k = 0; k < delta.tool_calls.length; k++) {
-                  mergeToolCall(tcAcc, delta.tool_calls[k]);
-                  var t2 = delta.tool_calls[k];
-                  var ix = t2.index || 0;
-                  if (opts.onToolCall && tcAcc[ix]) {
-                    opts.onToolCall(tcAcc[ix].function.name, (tcAcc[ix].function.arguments || '').length);
-                  }
+            /* the kernel parses the SSE event (content / reasoning / tool
+               calls / finish / usage) and tolerates keepalive + partial JSON */
+            var ev = PC.parseSseLine(line);
+            if (!ev) continue;
+            if (ev.finishReason) finS = ev.finishReason;
+            if (ev.usage) streamUsage = ev.usage;
+            if (ev.content) { full += ev.content; onDelta(ev.content); }
+            if (ev.reasoning) { reasoning += ev.reasoning; onReasoning(ev.reasoning); }
+            if (ev.toolCall) {
+              for (var k = 0; k < ev.toolCall.length; k++) {
+                mergeToolCall(tcAcc, ev.toolCall[k]);
+                var t2 = ev.toolCall[k];
+                var ix = t2.index || 0;
+                if (opts.onToolCall && tcAcc[ix]) {
+                  opts.onToolCall(tcAcc[ix].function.name, (tcAcc[ix].function.arguments || '').length);
                 }
               }
-            } catch (e) { /* keepalive or partial json — ignore */ }
+            }
           }
         }
         if (wdog) clearInterval(wdog);
-        var acc2 = {};
-        var lifted = liftTextToolCalls(full, acc2);
+        var lifted = liftTextToolCalls(full);
         if (lifted) {
           // re-render the content without the textual protocol block
-          full = acc2.out || '';
+          full = lifted.content;
           if (opts.onDeltaClean && full) opts.onDeltaClean(full);
         }
-        if (finS === 'length' && !full && !tcAcc.length && budgetTry < 2) { maxTok *= 2; continue; }
-        result = { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) || lifted, finishReason: finS, usage: streamUsage ? { in: streamUsage.prompt_tokens || 0, out: streamUsage.completion_tokens || 0 } : null };
+        var blS = PC.budgetLadder(maxTok, finS, full, tcAcc.length, budgetTry);
+        if (blS.double) { maxTok = blS.next; continue; }
+        result = { content: full, reasoning: reasoning, toolCalls: cleanToolCalls(tcAcc) || (lifted && lifted.calls), finishReason: finS, usage: streamUsage };
       }
     }
     return result || { content: '', reasoning: '', toolCalls: null };
