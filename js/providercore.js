@@ -197,6 +197,325 @@
     return { in: u.prompt_tokens || 0, out: u.completion_tokens || 0 };
   }
 
+  /* =====================  FAMILY ADAPTERS (v2 block 2)  =====================
+     Native protocols translated to/from the SAME normalized event shape the
+     OpenAI path uses: {content, reasoning, toolCall[], finishReason, usage}.
+     The agent loop never learns a second protocol — the kernel translates. */
+
+  /* detectFamily(p): which protocol does this provider speak? Explicit
+     p.family wins; then the well-known host names; else OpenAI-compatible
+     (the default that already works everywhere). */
+  function detectFamily(p) {
+    if (p && p.family) return String(p.family);
+    var b = String((p && p.base) || '');
+    if (/anthropic/i.test(b)) return 'anthropic';
+    if (/generativelanguage|gemini/i.test(b)) return 'gemini';
+    return 'openai';
+  }
+
+  /* --- ANTHROPIC (Messages API, 2023-06-01) --- */
+  var ANTHROPIC_STOP = { end_turn: 'stop', stop_sequence: 'stop', max_tokens: 'length', tool_use: 'tool_calls', refusal: 'stop' };
+
+  /* mapMessagesToAnthropic(openaiMsgs) → {system, messages}: system content
+     lifts out to the top-level param; assistant tool_calls become tool_use
+     blocks; role:'tool' results become user tool_result blocks. */
+  function mapMessagesToAnthropic(msgs) {
+    var system = [], out = [];
+    (msgs || []).forEach(function (m) {
+      if (m.role === 'system') { system.push(m.content); return; }
+      if (m.role === 'tool') {
+        out.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: m.tool_call_id || '', content: String(m.content == null ? '' : m.content) }] });
+        return;
+      }
+      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length) {
+        var blocks = [];
+        if (m.content) blocks.push({ type: 'text', text: String(m.content) });
+        m.tool_calls.forEach(function (tc) {
+          var input = {};
+          try { input = JSON.parse(tc.function.arguments || '{}'); } catch (e) {}
+          blocks.push({ type: 'tool_use', id: tc.id || 'call_0', name: tc.function.name, input: input });
+        });
+        out.push({ role: 'assistant', content: blocks });
+        return;
+      }
+      out.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content == null ? '' : m.content) });
+    });
+    return { system: system.join('\n\n'), messages: out };
+  }
+
+  /* mapToolsToAnthropic: OpenAI {type:function, function:{name,description,
+     parameters}} → native {name, description, input_schema}. */
+  function mapToolsToAnthropic(tools) {
+    return (tools || []).map(function (t) {
+      var f = (t && t.function) || t;
+      return { name: f.name, description: f.description || '', input_schema: f.parameters || { type: 'object', properties: {} } };
+    });
+  }
+
+  /* parseAnthropicLine(line): one SSE data line → normalized event(s).
+     Tool blocks emit OpenAI-SHAPED fragments (index-keyed) so ai.js's
+     existing mergeToolCall accumulates them unchanged. */
+  function parseAnthropicLine(line) {
+    if (!line || line.indexOf('data:') !== 0) return null;
+    var d = line.slice(5).trim();
+    if (!d || d === '[DONE]') return null;
+    var j;
+    try { j = JSON.parse(d); } catch (e) { return null; }
+    var type = j.type;
+    if (type === 'content_block_delta' && j.delta) {
+      if (j.delta.type === 'text_delta' && j.delta.text) return { content: j.delta.text };
+      if (j.delta.type === 'thinking_delta' && j.delta.thinking) return { reasoning: j.delta.thinking };
+      if (j.delta.type === 'input_json_delta' && j.delta.partial_json) {
+        return { toolCall: [{ index: j.index || 0, function: { arguments: j.delta.partial_json } }] };
+      }
+      return null;
+    }
+    if (type === 'content_block_start' && j.content_block && j.content_block.type === 'tool_use') {
+      return { toolCall: [{ index: j.index || 0, id: j.content_block.id || 'call_0', function: { name: j.content_block.name || '' } }] };
+    }
+    if (type === 'message_start' && j.message && j.message.usage) {
+      return { usage: { in: j.message.usage.input_tokens || 0, out: j.message.usage.output_tokens || 0 } };
+    }
+    if (type === 'message_delta') {
+      var ev = {};
+      if (j.delta && j.delta.stop_reason) ev.finishReason = ANTHROPIC_STOP[j.delta.stop_reason] || j.delta.stop_reason;
+      if (j.usage && j.usage.output_tokens != null) ev.usage = { out: j.usage.output_tokens };
+      return (ev.finishReason || ev.usage) ? ev : null;
+    }
+    return null; /* ping, message_stop, content_block_stop, unknown */
+  }
+
+  /* parseAnthropicResponse(j): the non-stream Messages reply → the same
+     triple the OpenAI sync path produces. */
+  function parseAnthropicResponse(j) {
+    var content = '', reasoning = '', calls = [];
+    ((j && j.content) || []).forEach(function (b) {
+      if (b.type === 'text') content += b.text || '';
+      else if (b.type === 'thinking') reasoning += b.thinking || '';
+      else if (b.type === 'tool_use') {
+        calls.push({ id: b.id || 'call_0', type: 'function', function: { name: b.name || '', arguments: JSON.stringify(b.input || {}) } });
+      }
+    });
+    return {
+      content: content,
+      reasoning: reasoning,
+      toolCalls: calls.length ? calls : null,
+      finishReason: ANTHROPIC_STOP[(j && j.stop_reason)] || (j && j.stop_reason) || '',
+      usage: (j && j.usage) ? { in: j.usage.input_tokens || 0, out: j.usage.output_tokens || 0 } : null
+    };
+  }
+
+  /* --- GEMINI (generativelanguage, v1beta generateContent) --- */
+  var GEMINI_STOP = { STOP: 'stop', MAX_TOKENS: 'length', SAFETY: 'safety', RECITATION: 'safety', MALFORMED_FUNCTION_CALL: 'stop' };
+
+  /* mapMessagesToGemini(openaiMsgs) → {systemInstruction, contents}: system
+     lifts to systemInstruction; assistant → role 'model'; tool results need
+     the function NAME (Gemini has no tool_call ids) — resolved by scanning
+     the prior assistant tool_calls for the matching id. */
+  function mapMessagesToGemini(msgs) {
+    var sys = [], contents = [];
+    (msgs || []).forEach(function (m) { if (m.role === 'system') sys.push(m.content); });
+    (msgs || []).forEach(function (m) {
+      if (m.role === 'system') return;
+      if (m.role === 'tool') {
+        var name = 'unknown';
+        for (var i = contents.length - 1; i >= 0; i--) {
+          var c = contents[i];
+          if (c.role !== 'model' || !c.parts) continue;
+          var hit = null;
+          (c.parts || []).forEach(function (p) {
+            if (p.functionCall && p.functionCall._id && p.functionCall._id === m.tool_call_id) hit = p.functionCall;
+          });
+          if (hit) { name = hit.name; break; }
+        }
+        contents.push({ role: 'user', parts: [{ functionResponse: { name: name, response: { result: String(m.content == null ? '' : m.content) } } }] });
+        return;
+      }
+      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length) {
+        var parts = [];
+        if (m.content) parts.push({ text: String(m.content) });
+        m.tool_calls.forEach(function (tc) {
+          var args = {};
+          try { args = JSON.parse(tc.function.arguments || '{}'); } catch (e) {}
+          parts.push({ functionCall: { _id: tc.id || 'call_0', name: tc.function.name, args: args } });
+        });
+        contents.push({ role: 'model', parts: parts });
+        return;
+      }
+      contents.push({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: String(m.content == null ? '' : m.content) }] });
+    });
+    /* strip the private _id markers before the body ships */
+    contents.forEach(function (c) {
+      (c.parts || []).forEach(function (p) { if (p.functionCall) delete p.functionCall._id; });
+    });
+    return { systemInstruction: sys.length ? { parts: [{ text: sys.join('\n\n') }] } : null, contents: contents };
+  }
+
+  /* mapToolsToGemini: OpenAI function tools → {functionDeclarations:[…]}. */
+  function mapToolsToGemini(tools) {
+    var decls = (tools || []).map(function (t) {
+      var f = (t && t.function) || t;
+      return { name: f.name, description: f.description || '', parameters: f.parameters || { type: 'object', properties: {} } };
+    });
+    return decls.length ? [{ functionDeclarations: decls }] : [];
+  }
+
+  /* parseGeminiLine(line): one SSE data line → normalized event. */
+  function parseGeminiLine(line) {
+    if (!line || line.indexOf('data:') !== 0) return null;
+    var d = line.slice(5).trim();
+    if (!d || d === '[DONE]') return null;
+    var j;
+    try { j = JSON.parse(d); } catch (e) { return null; }
+    var cand = j.candidates && j.candidates[0];
+    var ev = {};
+    if (j.usageMetadata) {
+      ev.usage = { in: j.usageMetadata.promptTokenCount || 0, out: j.usageMetadata.candidatesTokenCount || 0 };
+    }
+    if (cand && cand.finishReason) ev.finishReason = GEMINI_STOP[cand.finishReason] || cand.finishReason.toLowerCase();
+    if (cand && cand.content && cand.content.parts) {
+      cand.content.parts.forEach(function (p) {
+        if (p.text && !p.thought) ev.content = (ev.content || '') + p.text;
+        else if (p.text && p.thought) ev.reasoning = (ev.reasoning || '') + p.text;
+        if (p.functionCall) {
+          if (!ev.toolCall) ev.toolCall = [];
+          ev.toolCall.push({
+            index: ev.toolCall.length,
+            id: 'gfc-' + ev.toolCall.length,
+            function: { name: p.functionCall.name || '', arguments: JSON.stringify(p.functionCall.args || {}) }
+          });
+        }
+      });
+    }
+    return (ev.content || ev.reasoning || ev.toolCall || ev.finishReason || ev.usage) ? ev : null;
+  }
+
+  /* parseGeminiResponse(j): non-stream generateContent reply → triple. */
+  function parseGeminiResponse(j) {
+    var ev = parseGeminiLine('data: ' + JSON.stringify(j));
+    if (!ev) return { content: '', reasoning: '', toolCalls: null, finishReason: '', usage: null };
+    return {
+      content: ev.content || '',
+      reasoning: ev.reasoning || '',
+      toolCalls: ev.toolCall ? cleanToolCalls(ev.toolCall) : null,
+      finishReason: ev.finishReason || '',
+      usage: ev.usage || null
+    };
+  }
+
+  /* =====================  FAMILY DISPATCH (ai.js calls these)  ===================== */
+
+  /* familyEndpoint(family, base, kind): kind 'chat' | 'models'. Bases are
+     already normalized + gated by the caller (ai.js owns assertEndpointUrl). */
+  function familyEndpoint(family, base, kind, model) {
+    var b = String(base || '').replace(/\/+$/, '');
+    if (family === 'anthropic') {
+      var root = /\/v1$/.test(b) ? b : b + '/v1';
+      return kind === 'chat' ? root + '/messages' : root + '/models';
+    }
+    if (family === 'gemini') {
+      var g = /\/v1(beta)?$/.test(b) ? b : b + '/v1beta';
+      if (kind === 'models') return g + '/models';
+      return g + '/models/' + encodeURIComponent(model || '') + ':generateContent';
+    }
+    return kind === 'chat' ? b + '/chat/completions' : b + '/models';
+  }
+  /* streamEndpoint: gemini streams via :streamGenerateContent?alt=sse */
+  function streamEndpoint(family, base, model) {
+    if (family === 'gemini') {
+      var g = String(base || '').replace(/\/+$/, '');
+      if (!/\/v1(beta)?$/.test(g)) g += '/v1beta';
+      return g + '/models/' + encodeURIComponent(model || '') + ':streamGenerateContent?alt=sse';
+    }
+    return familyEndpoint(family, base, 'chat', model);
+  }
+
+  /* familyHeaders: anthropic = x-api-key + version pin (NO bearer);
+     gemini = x-goog-api-key; openai = bearer (unchanged). */
+  function familyHeaders(family, p) {
+    var k = keyFor(p) || '';
+    if (family === 'anthropic') {
+      return { 'Content-Type': 'application/json', 'x-api-key': k, 'anthropic-version': '2023-06-01' };
+    }
+    if (family === 'gemini') {
+      return { 'Content-Type': 'application/json', 'x-goog-api-key': k };
+    }
+    var h = { 'Content-Type': 'application/json' };
+    if (k) h['Authorization'] = 'Bearer ' + k;
+    return h;
+  }
+
+  /* buildFamilyBody(family, opts, maxTok): maxTok is the BUDGET (tokens,
+     already scaled) so the ladder can re-build with a doubled value. */
+  function buildFamilyBody(family, opts, maxTok) {
+    if (family === 'anthropic') {
+      var mm = mapMessagesToAnthropic(opts.messages);
+      var body = {
+        model: opts.model,
+        max_tokens: maxTok,
+        messages: mm.messages,
+        stream: !!opts.stream
+      };
+      if (mm.system) body.system = mm.system;
+      var tools = mapToolsToAnthropic(opts.tools);
+      if (tools.length) { body.tools = tools; body.tool_choice = { type: 'auto' }; }
+      return body;
+    }
+    if (family === 'gemini') {
+      var gm = mapMessagesToGemini(opts.messages);
+      var gbody = { contents: gm.contents, generationConfig: { maxOutputTokens: maxTok } };
+      if (gm.systemInstruction) gbody.systemInstruction = gm.systemInstruction;
+      var gtools = mapToolsToGemini(opts.tools);
+      if (gtools.length) gbody.tools = gtools;
+      return gbody;
+    }
+    var ob = buildBody(opts);
+    ob.max_tokens = maxTok;
+    return ob;
+  }
+
+  /* parseStreamLine(family, line): one SSE line → normalized event (null to
+     skip). OpenAI keeps parseSseLine; families translate. */
+  function parseStreamLine(family, line) {
+    if (family === 'anthropic') return parseAnthropicLine(line);
+    if (family === 'gemini') return parseGeminiLine(line);
+    return parseSseLine(line);
+  }
+
+  /* parseFamilyResponse(family, j): non-stream reply → {content, reasoning,
+     toolCalls, finishReason, usage}. */
+  function parseFamilyResponse(family, j) {
+    if (family === 'anthropic') return parseAnthropicResponse(j);
+    if (family === 'gemini') return parseGeminiResponse(j);
+    var m = (j && j.choices && j.choices[0] && j.choices[0].message) || {};
+    var fin = (j && j.choices && j.choices[0] && j.choices[0].finish_reason) || '';
+    return {
+      content: m.content || '',
+      reasoning: m.reasoning_content || m.reasoning || '',
+      toolCalls: (m.tool_calls && m.tool_calls.length) ? cleanToolCalls(m.tool_calls.slice()) : null,
+      finishReason: fin,
+      usage: (j && j.usage) ? normalizeUsage(j.usage) : null
+    };
+  }
+
+  /* buildProbeBody(family, model): the cheapest possible live ping. */
+  function buildProbeBody(family, model) {
+    if (family === 'anthropic') return { model: model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] };
+    if (family === 'gemini') return { contents: [{ role: 'user', parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 1 } };
+    return { model: model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false };
+  }
+
+  /* familyModels(j): the /models reply → sorted id list (per family). */
+  function familyModels(family, j) {
+    if (family === 'gemini') {
+      return ((j && j.models) || [])
+        .filter(function (m) { return !(m.supportedGenerationMethods || []).length || m.supportedGenerationMethods.indexOf('generateContent') >= 0; })
+        .map(function (m) { return String(m.name || '').replace(/^models\//, ''); })
+        .filter(Boolean).sort();
+    }
+    return ((j && (j.data || j.models)) || []).map(function (m) { return m.id || m.name; }).filter(Boolean).sort();
+  }
+
   return {
     keyList: keyList, keyFor: keyFor, rotateKey: rotateKey,
     isQuotaError: isQuotaError, isTransientError: isTransientError,
@@ -206,6 +525,23 @@
     mergeToolCall: mergeToolCall, cleanToolCalls: cleanToolCalls,
     parseSseLine: parseSseLine,
     liftTextToolCalls: liftTextToolCalls, stripTextToolCalls: stripTextToolCalls,
-    normalizeUsage: normalizeUsage
+    normalizeUsage: normalizeUsage,
+    detectFamily: detectFamily,
+    mapMessagesToAnthropic: mapMessagesToAnthropic,
+    mapToolsToAnthropic: mapToolsToAnthropic,
+    parseAnthropicLine: parseAnthropicLine,
+    parseAnthropicResponse: parseAnthropicResponse,
+    mapMessagesToGemini: mapMessagesToGemini,
+    mapToolsToGemini: mapToolsToGemini,
+    parseGeminiLine: parseGeminiLine,
+    parseGeminiResponse: parseGeminiResponse,
+    familyEndpoint: familyEndpoint,
+    streamEndpoint: streamEndpoint,
+    familyHeaders: familyHeaders,
+    buildFamilyBody: buildFamilyBody,
+    parseStreamLine: parseStreamLine,
+    parseFamilyResponse: parseFamilyResponse,
+    buildProbeBody: buildProbeBody,
+    familyModels: familyModels
   };
 });

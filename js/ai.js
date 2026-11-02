@@ -12,12 +12,6 @@
      kernel functions — aliased here so the surface and call sites are stable */
   var keyList = PC.keyList, keyFor = PC.keyFor, rotateKey = PC.rotateKey;
   var isQuotaError = PC.isQuotaError, isTransientError = PC.isTransientError;
-  function headers(p) {
-    var h = { 'Content-Type': 'application/json' };
-    var k = keyFor(p);
-    if (k) h['Authorization'] = 'Bearer ' + k;
-    return h;
-  }
   function baseUrl(p) {
     // users often paste the full endpoint — normalize to the API root, then
     // the scheme/charset/credential gate (local providers like Ollama allowed)
@@ -48,14 +42,13 @@
     });
   }
 
-  /* --- list models from {base}/models --- */
+  /* --- list models (family-aware: {data} for openai/anthropic, {models} for gemini) --- */
   async function listModels(p) {
     if (p.type === 'echo') return p.models.slice();
-    var res = await fetchWithRetry(baseUrl(p) + '/models', { headers: headers(p) });
+    var family = PC.detectFamily(p);
+    var res = await fetchWithRetry(PC.familyEndpoint(family, baseUrl(p), 'models'), { headers: PC.familyHeaders(family, p) });
     if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + (await res.text().catch(function () { return ''; })).slice(0, 160));
-    var j = await res.json();
-    var arr = (j.data || j.models || []).map(function (m) { return m.id || m.name; }).filter(Boolean);
-    return arr.sort();
+    return PC.familyModels(family, await res.json());
   }
 
   /* transient rate limits (429/503) are common on shared endpoints — back off
@@ -98,10 +91,9 @@
     }
   }
 
-  /* kernel aliases: body building, effort-rejection learning, tool-call
-     fragment accumulation, and textual-protocol lifting (the kernel versions
-     are node-tested — see tests/providercore.test.js) */
-  var buildBody = PC.buildBody;
+  /* kernel aliases: effort-rejection learning, tool-call fragment
+     accumulation, and textual-protocol lifting (the kernel versions are
+     node-tested — see tests/providercore.test.js) */
   var isEffortRejection = PC.isEffortRejection;
   var mergeToolCall = PC.mergeToolCall;
   var cleanToolCalls = PC.cleanToolCalls;
@@ -121,6 +113,13 @@
       return echoResult(lastUser, onDelta, onReasoning, signal);
     }
 
+    /* FAMILY DISPATCH: openai-compatible (the default), Anthropic Messages,
+       or Gemini generateContent — the kernel translates, the loop is shared. */
+    var family = PC.detectFamily(p);
+    var chatUrl = opts.stream ? PC.streamEndpoint(family, baseUrl(p), opts.model)
+                              : PC.familyEndpoint(family, baseUrl(p), 'chat', opts.model);
+    var hdrs = PC.familyHeaders(family, p);
+
     /* BUDGET-AWARE REQUEST LOOP — the permanent "(empty reply)" fix.
        Reasoning models spend max_tokens on thinking FIRST; when the budget
        runs out the response ends with finish_reason:'length' and NO
@@ -136,24 +135,24 @@
     if (signal) { if (signal.aborted) linkAbort(); else signal.addEventListener('abort', linkAbort); }
     var fetchSignal = ctrl0 ? ctrl0.signal : signal;
     for (var budgetTry = 0; budgetTry < 3 && !result; budgetTry++) {
-      var body0 = buildBody(opts);
-      body0.max_tokens = maxTok;
+      var body0 = PC.buildFamilyBody(family, opts, maxTok);
       if (budgetTry > 0 && opts.onReasoning) {
         onReasoning('\n\n[token budget raised to ' + Math.round(maxTok / 1024) + 'K — the previous round ended mid-reasoning]\n\n');
       }
-      var res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
-        method: 'POST', headers: headers(p), body: JSON.stringify(body0), signal: fetchSignal
+      var res = await fetchWithRetry(chatUrl, {
+        method: 'POST', headers: hdrs, body: JSON.stringify(body0), signal: fetchSignal
       });
-      // if this endpoint rejects the reasoning_effort parameter, remember and retry without it
-      if (!res.ok && res.status === 400 && opts.effort && !opts.provider.noEffort) {
+      // if this endpoint rejects the reasoning_effort parameter (openai
+      // family only — families have their own thinking controls), remember
+      // and retry without it
+      if (family === 'openai' && !res.ok && res.status === 400 && opts.effort && !opts.provider.noEffort) {
         var errText = await res.text().catch(function () { return ''; });
         if (isEffortRejection(errText)) {
           opts.provider.noEffort = true;
-          var body2 = buildBody(opts);
-          body2.max_tokens = maxTok;
+          var body2 = PC.buildFamilyBody(family, opts, maxTok);
           delete body2.reasoning_effort;
-          res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
-            method: 'POST', headers: headers(p), body: JSON.stringify(body2), signal: fetchSignal
+          res = await fetchWithRetry(chatUrl, {
+            method: 'POST', headers: hdrs, body: JSON.stringify(body2), signal: fetchSignal
           });
         }
       }
@@ -166,22 +165,22 @@
 
       if (!opts.stream) {
         var j = await res.json();
-        var m = (j.choices && j.choices[0] && j.choices[0].message) || {};
-        var fin0 = (j.choices && j.choices[0] && j.choices[0].finish_reason) || '';
-        var content0 = m.content || '';
-        var reas0 = m.reasoning_content || m.reasoning || '';
+        var pr = PC.parseFamilyResponse(family, j);
+        var fin0 = pr.finishReason;
+        var content0 = pr.content;
+        var reas0 = pr.reasoning;
         if (reas0) onReasoning(reas0);
         var lifted0 = liftTextToolCalls(content0);
         if (lifted0) content0 = lifted0.content;
         if (content0) onDelta(content0);
-        var tc0 = (m.tool_calls && m.tool_calls.length) ? cleanToolCalls(m.tool_calls.slice()) : null;
+        var tc0 = pr.toolCalls;
         if (!tc0 && lifted0) tc0 = lifted0.calls;
         if (opts.onToolCall && tc0) {
           for (var q = 0; q < tc0.length; q++) opts.onToolCall(tc0[q].function.name, (tc0[q].function.arguments || '').length);
         }
         var bl0 = PC.budgetLadder(maxTok, fin0, content0, tc0, budgetTry);
         if (bl0.double) { maxTok = bl0.next; continue; }
-        result = { content: content0, reasoning: reas0, toolCalls: tc0, finishReason: fin0, usage: PC.normalizeUsage(j.usage) };
+        result = { content: content0, reasoning: reas0, toolCalls: tc0, finishReason: fin0, usage: pr.usage };
       } else {
         var reader = res.body.getReader();
         var dec = new TextDecoder();
@@ -218,11 +217,12 @@
             var line = buf.slice(0, idx).trim();
             buf = buf.slice(idx + 1);
             /* the kernel parses the SSE event (content / reasoning / tool
-               calls / finish / usage) and tolerates keepalive + partial JSON */
-            var ev = PC.parseSseLine(line);
+               calls / finish / usage) and tolerates keepalive + partial JSON.
+               Usage events MERGE: anthropic splits in/out across two events. */
+            var ev = PC.parseStreamLine(family, line);
             if (!ev) continue;
             if (ev.finishReason) finS = ev.finishReason;
-            if (ev.usage) streamUsage = ev.usage;
+            if (ev.usage) streamUsage = Object.assign({}, streamUsage || {}, ev.usage);
             if (ev.content) { full += ev.content; onDelta(ev.content); }
             if (ev.reasoning) { reasoning += ev.reasoning; onReasoning(ev.reasoning); }
             if (ev.toolCall) {
@@ -254,12 +254,13 @@
 
   /* --- model verification: does this model actually serve chat on this endpoint? --- */
   async function probeModel(p, model) {
+    var family = PC.detectFamily(p);
     var ctrl = ('AbortController' in window) ? new AbortController() : null;
     var to = ctrl ? setTimeout(function () { ctrl.abort(); }, 20000) : null;
     try {
-      var res = await fetchWithRetry(baseUrl(p) + '/chat/completions', {
-        method: 'POST', headers: headers(p),
-        body: JSON.stringify({ model: model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, stream: false }),
+      var res = await fetchWithRetry(PC.familyEndpoint(family, baseUrl(p), 'chat', model), {
+        method: 'POST', headers: PC.familyHeaders(family, p),
+        body: JSON.stringify(PC.buildProbeBody(family, model)),
         signal: ctrl ? ctrl.signal : undefined
       }, { retries: 1 });
       if (res.ok) return 'ok';

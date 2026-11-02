@@ -119,6 +119,88 @@ const PC = require('../js/providercore.js');
   assert.deepStrictEqual(PC.normalizeUsage({ prompt_tokens: 10, completion_tokens: 3 }), { in: 10, out: 3 }, 'openai usage');
   assert.strictEqual(PC.normalizeUsage(null), null, 'no usage = null');
 
-  console.log('providercore: 13/13 scenario groups PASS (kernel of the provider layer)');
+  // 14. detectFamily: explicit > host-name > openai default
+  assert.strictEqual(PC.detectFamily({ base: 'https://api.anthropic.com/v1' }), 'anthropic', 'anthropic host');
+  assert.strictEqual(PC.detectFamily({ base: 'https://generativelanguage.googleapis.com' }), 'gemini', 'gemini host');
+  assert.strictEqual(PC.detectFamily({ base: 'https://api.x.com/v1' }), 'openai', 'default openai');
+  assert.strictEqual(PC.detectFamily({ family: 'gemini', base: 'https://x' }), 'gemini', 'explicit wins');
+
+  // 15. Anthropic message/tool mapping (the OpenAI transcript → Messages API)
+  const am = PC.mapMessagesToAnthropic([
+    { role: 'system', content: 'be terse' },
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'checking', tool_calls: [{ id: 't1', function: { name: 'rf', arguments: '{"p":1}' } }] },
+    { role: 'tool', tool_call_id: 't1', content: 'file data' }
+  ]);
+  assert.strictEqual(am.system, 'be terse', 'system lifted to top-level');
+  assert.deepStrictEqual(am.messages[0], { role: 'user', content: 'hi' }, 'plain user');
+  assert.deepStrictEqual(am.messages[1].content[1], { type: 'tool_use', id: 't1', name: 'rf', input: { p: 1 } }, 'tool_calls → tool_use blocks');
+  assert.deepStrictEqual(am.messages[2].content[0], { type: 'tool_result', tool_use_id: 't1', content: 'file data' }, 'tool role → user tool_result');
+  assert.deepStrictEqual(PC.mapToolsToAnthropic([{ type: 'function', function: { name: 'rf', description: 'd', parameters: { type: 'object' } } }]),
+    [{ name: 'rf', description: 'd', input_schema: { type: 'object' } }], 'tools → input_schema');
+
+  // 16. Anthropic SSE + response parsing (real wire shapes)
+  assert.deepStrictEqual(PC.parseAnthropicLine('data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"he"}}'), { content: 'he' }, 'text delta');
+  assert.deepStrictEqual(PC.parseAnthropicLine('data: {"type":"content_block_delta","index":2,"delta":{"type":"thinking_delta","thinking":"hmm"}}'), { reasoning: 'hmm' }, 'thinking delta');
+  assert.deepStrictEqual(PC.parseAnthropicLine('data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu_1","name":"rf"}}'),
+    { toolCall: [{ index: 1, id: 'tu_1', function: { name: 'rf' } }] }, 'tool block start (mergeToolCall-compatible)');
+  assert.deepStrictEqual(PC.parseAnthropicLine('data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"a\\":"}}'),
+    { toolCall: [{ index: 1, function: { arguments: '{"a":' } }] }, 'args fragment (index-keyed)');
+  assert.deepStrictEqual(PC.parseAnthropicLine('data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":42}}'),
+    { finishReason: 'tool_calls', usage: { out: 42 } }, 'stop_reason mapped + partial usage');
+  assert.strictEqual(PC.parseAnthropicLine('data: {"type":"ping"}'), null, 'ping ignored');
+  assert.deepStrictEqual(PC.parseAnthropicLine('data: {"type":"message_start","message":{"usage":{"input_tokens":100}}}'), { usage: { in: 100, out: 0 } }, 'message_start usage');
+  const ar = PC.parseAnthropicResponse({ content: [{ type: 'text', text: 'a' }, { type: 'tool_use', id: 'tu', name: 'rf', input: { x: 1 } }], stop_reason: 'max_tokens', usage: { input_tokens: 9, output_tokens: 3 } });
+  assert.strictEqual(ar.content, 'a', 'response text');
+  assert.strictEqual(ar.toolCalls[0].function.arguments, '{"x":1}', 'tool_use → openai shape');
+  assert.strictEqual(ar.finishReason, 'length', 'stop_reason mapped');
+  assert.deepStrictEqual(ar.usage, { in: 9, out: 3 }, 'usage');
+
+  // 17. Gemini mapping + SSE + response
+  const gm = PC.mapMessagesToGemini([
+    { role: 'system', content: 'be terse' },
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', tool_calls: [{ id: 't1', function: { name: 'rf', arguments: '{"p":1}' } }] },
+    { role: 'tool', tool_call_id: 't1', content: 'file data' }
+  ]);
+  assert.strictEqual(gm.systemInstruction.parts[0].text, 'be terse', 'systemInstruction');
+  assert.deepStrictEqual(gm.contents[1].parts[0].functionCall, { name: 'rf', args: { p: 1 } }, 'tool_calls → functionCall (no _id leaks)');
+  assert.strictEqual(gm.contents[2].parts[0].functionResponse.name, 'rf', 'tool result name RESOLVED from the prior call id');
+  assert.deepStrictEqual(PC.mapToolsToGemini([{ type: 'function', function: { name: 'rf', description: 'd', parameters: { type: 'object' } } }]),
+    [{ functionDeclarations: [{ name: 'rf', description: 'd', parameters: { type: 'object' } }] }], 'tools → functionDeclarations');
+  const gWire = { candidates: [{ content: { parts: [{ text: 'he' }, { functionCall: { name: 'rf', args: { p: 1 } } }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 7, candidatesTokenCount: 2 } };
+  const gEv = PC.parseGeminiLine('data: ' + JSON.stringify(gWire));
+  assert.strictEqual(gEv.content, 'he', 'gemini text part');
+  assert.strictEqual(gEv.toolCall[0].function.name, 'rf', 'gemini functionCall → openai fragment');
+  assert.strictEqual(gEv.toolCall[0].function.arguments, '{"p":1}', 'args stringified');
+  assert.strictEqual(gEv.finishReason, 'stop', 'STOP mapped');
+  assert.deepStrictEqual(gEv.usage, { in: 7, out: 2 }, 'usageMetadata');
+  const gr = PC.parseGeminiResponse({ candidates: [{ content: { parts: [{ text: 'a' }] }, finishReason: 'MAX_TOKENS' }], usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 3 } });
+  assert.strictEqual(gr.finishReason, 'length', 'MAX_TOKENS mapped');
+  assert.strictEqual(gr.content, 'a', 'response text');
+
+  // 18. Family dispatch surface: endpoints, headers, bodies, probe, models
+  assert.strictEqual(PC.familyEndpoint('anthropic', 'https://api.anthropic.com', 'chat'), 'https://api.anthropic.com/v1/messages', 'v1 injected');
+  assert.strictEqual(PC.familyEndpoint('anthropic', 'https://api.anthropic.com/v1/', 'chat'), 'https://api.anthropic.com/v1/messages', 'v1 respected + slash trimmed');
+  assert.strictEqual(PC.streamEndpoint('gemini', 'https://generativelanguage.googleapis.com', 'gemini-2.0-flash'),
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse', 'gemini stream endpoint');
+  assert.strictEqual(PC.familyEndpoint('openai', 'https://api.x.com/v1', 'chat'), 'https://api.x.com/v1/chat/completions', 'openai unchanged');
+  assert.deepStrictEqual(PC.familyHeaders('anthropic', { key: 'k' }), { 'Content-Type': 'application/json', 'x-api-key': 'k', 'anthropic-version': '2023-06-01' }, 'anthropic headers (no bearer)');
+  assert.deepStrictEqual(PC.familyHeaders('gemini', { key: 'k' }), { 'Content-Type': 'application/json', 'x-goog-api-key': 'k' }, 'gemini header');
+  assert.deepStrictEqual(PC.familyHeaders('openai', { key: 'k' }), { 'Content-Type': 'application/json', Authorization: 'Bearer k' }, 'openai header unchanged');
+  const fab = PC.buildFamilyBody('anthropic', { model: 'claude-x', messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }], tools: [{ type: 'function', function: { name: 't', description: '', parameters: {} } }], stream: true }, 65536);
+  assert.strictEqual(fab.max_tokens, 65536, 'anthropic budget lands as max_tokens');
+  assert.strictEqual(fab.system, 's', 'anthropic system param');
+  assert.strictEqual(fab.tool_choice.type, 'auto', 'anthropic tool_choice');
+  const fgb = PC.buildFamilyBody('gemini', { model: 'g', messages: [{ role: 'user', content: 'u' }] }, 4096);
+  assert.deepStrictEqual(fgb.generationConfig, { maxOutputTokens: 4096 }, 'gemini budget in generationConfig');
+  const fob = PC.buildFamilyBody('openai', { model: 'm', messages: [] }, 4096);
+  assert.strictEqual(fob.max_tokens, 4096, 'openai budget unchanged');
+  assert.deepStrictEqual(PC.buildProbeBody('anthropic', 'c1'), { model: 'c1', max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] }, 'anthropic probe (max_tokens REQUIRED)');
+  assert.deepStrictEqual(PC.buildProbeBody('gemini', 'g1').generationConfig, { maxOutputTokens: 1 }, 'gemini probe');
+  assert.deepStrictEqual(PC.familyModels('gemini', { models: [{ name: 'models/gemini-2', supportedGenerationMethods: ['generateContent'] }, { name: 'models/e', supportedGenerationMethods: ['embedContent'] }] }), ['gemini-2'], 'gemini models filtered');
+  assert.deepStrictEqual(PC.familyModels('anthropic', { data: [{ id: 'claude-b' }, { id: 'claude-a' }] }), ['claude-a', 'claude-b'], 'anthropic models like openai');
+
+  console.log('providercore: 18/18 scenario groups PASS (kernel + family adapters)');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
