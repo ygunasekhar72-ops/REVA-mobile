@@ -1296,6 +1296,21 @@
       if (!marks.length) return 'No TODO/FIXME/HACK/XXX/BUG markers found' + (a.dir ? ' under ' + a.dir : '') + '.';
       return marks.map(function (m) { return m.path + ':' + m.line + ' [' + m.tag + '] ' + m.text.replace(/^\W*(TODO|FIXME|HACK|XXX|BUG)\b[:\s]*/, ''); }).join('\n');
     },
+    test_gen: function (a) {
+      if (!a || !a.path) return 'Error: path required';
+      var r = readLike(a.path);
+      if (r.err) return r.err;
+      var TF = window.TESTFACTORY;
+      if (!TF) return 'Error: test factory engine not loaded';
+      var plan = TF.planTests(r.src);
+      if (!plan.length) return 'No exportable contract detected in ' + r.label + ' (no module.exports, no exports.x, no top-level function/class declarations). Nothing to scaffold.';
+      var rel = a.path.replace(/^workspace\//, '');
+      var suite = TF.renderSuite(plan, { relPath: rel, label: rel.split('/').pop().replace(/\.js$/, '') });
+      var head = 'Test scaffold for ' + r.label + ' — ' + plan.length + ' contract target(s):\n' +
+        plan.map(function (p) { return '- ' + p.name + ' [' + p.kind + ']' + (p.methods && p.methods.length ? ' methods: ' + p.methods.join(', ') : ''); }).join('\n') +
+        '\n\nWrite this to tests/ with write_file (adjust the require path if the module lives outside js/), deepen the placeholders into real behavior cases, then run it. The scaffold asserts the CONTRACT (existence/type) — deepening is where proof comes from.\n\n' + suite;
+      return head;
+    },
     word_count: function (a) {
       var s = WS(), out = [], tot = { lines: 0, words: 0, chars: 0 };
       function tally(label, text) {
@@ -1663,6 +1678,7 @@
     if (name === 'text_stats') return { label: 'Stats · ' + String(args.file || 'text').split('/').pop(), meta: 'readability', ok: ok };
     if (name === 'diff_words') return { label: 'Word diff · ' + String(args.fileA || 'texts').split('/').pop(), meta: 'jsdiff', ok: ok };
     if (name === 'cron_next') return { label: 'Cron · ' + String(args.expr || '').slice(0, 24), meta: 'next runs', ok: ok };
+    if (name === 'test_gen') return { label: 'Test factory · ' + String(args.path || '').split('/').pop(), meta: 'scaffold', ok: ok };
     if (name === 'csv_generate') return { label: 'CSV · ' + String(args.path || (Array.isArray(args.rows) ? args.rows.length + ' rows' : 'json')), meta: 'generated', ok: ok };
     if (name === 'json_schema_check') return { label: 'Schema check', meta: 'validate', ok: ok };
     if (name === 'color_convert') return { label: 'Color · ' + String(args.color || ''), meta: 'contrast', ok: ok };
@@ -1728,6 +1744,7 @@
     { type: 'function', function: { name: 'json_query', description: 'Extract data from JSON by path (e.g. "users[2].name", "config.timeouts") with ops: get | keys | len | type. Works on inline json or a workspace file. Use instead of reading whole JSON files when you need one value.', parameters: { type: 'object', properties: { json: { type: 'string', description: 'inline JSON text' }, file: { type: 'string', description: 'workspace/lib path' }, path: { type: 'string' }, op: { type: 'string', description: 'get (default) | keys | len | type' } } } } },
     { type: 'function', function: { name: 'csv_parse', description: 'Parse CSV text or a workspace .csv file (quoted fields, escaped quotes, CRLF all handled). Returns headers + row objects. Use to turn data files into JSON the app can embed or transform.', parameters: { type: 'object', properties: { file: { type: 'string' }, text: { type: 'string' }, delimiter: { type: 'string', description: 'default ","' }, output: { type: 'string', description: 'objects (default) | raw | headers' } } } } },
     { type: 'function', function: { name: 'todo_scan', description: 'Scan the whole workspace for TODO/FIXME/HACK/XXX/BUG markers with file:line. Run before declaring a task finished, or when the user asks what work remains.', parameters: { type: 'object', properties: { dir: { type: 'string', description: 'limit to a subfolder' } } } } },
+    { type: 'function', function: { name: 'test_gen', description: 'Generate a unit-test scaffold for a JS module: detects the export contract (module.exports map, single export, exports.x, function/class/prototype methods) and renders a runnable node test file with honest contract checks. Write the output to tests/, deepen the placeholders, run it.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'module file to scaffold tests for' } }, required: ['path'] } } },
     { type: 'function', function: { name: 'word_count', description: 'Lines/words/chars for one file (path) or every workspace file with a TOTAL. Use to report project size honestly or check a file is not empty.', parameters: { type: 'object', properties: { path: { type: 'string' } } } } },
     { type: 'function', function: { name: 'init_project', description: 'Scaffold a real starter project in one call: kind=static (index.html + style.css + app.js), kind=game (canvas game loop with resize + keyboard), kind=node (package.json + index.js), kind=python (main.py + requirements.txt). ALWAYS use this to start a new app/site/game instead of writing boilerplate from scratch — then build out from these working entry points.', parameters: { type: 'object', properties: { kind: { type: 'string', description: 'static | game | node | python' }, name: { type: 'string', description: 'project name (becomes the folder slug)' } }, required: ['kind', 'name'] } } },
     { type: 'function', function: { name: 'format_json', description: 'Validate + pretty-print or minify a JSON file in place. Reports the exact parse error when invalid. Use after hand-building JSON config files.', parameters: { type: 'object', properties: { path: { type: 'string' }, mode: { type: 'string', description: 'pretty (default) | minify' }, indent: { type: 'number' } }, required: ['path'] } } },
