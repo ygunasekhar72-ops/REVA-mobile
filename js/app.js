@@ -470,6 +470,19 @@
   /* ================= chat ================= */
   function openChat() { H.push('ov-chat'); }
   App = window.App || {};
+  /* PERMISSION CORE: the app owns the policy instance from BOOT (inert until
+     rules are added — launch default). Guard mode hardens exec to 'ask' and
+     hard-denies the destructive set; other modes ride the plain defaults. */
+  if (window.PERMCORE) {
+    App.policy = PERMCORE.createPolicy(db.settings.mode === 'Guard'
+      ? { defaults: { exec: 'ask' } }
+      : {});
+    if (db.settings.mode === 'Guard') {
+      ['delete_file', 'run_command', 'shell_exec', 'stop_server'].forEach(function (t) {
+        App.policy.addRule({ tool: t, decision: 'deny' });
+      });
+    }
+  }
   /* L1: per-tool watchdog health (consecutive-timeout counters + wedges) */
   var toolHealth = window.LoopCore ? LoopCore.makeToolHealth() : {};
   /* skill-system audit surface: expose the matcher + loader (hoisted fns) */

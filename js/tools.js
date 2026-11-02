@@ -1852,6 +1852,13 @@
         fn = function (a) { return mcpRun(toolName, a); };
       }
       if (!fn) return 'Error: unknown tool ' + toolName;
+      /* PERMISSION CORE seam: a deny decision stops the tool BEFORE it runs.
+         Inert by launch default (zero rules = everything allowed); rules come
+         from the app (mode hardening, user policy) via App.policy. */
+      if (window.App && App.policy) {
+        var verdict = App.policy.decide(toolName, args);
+        if (verdict.decision === 'deny') return 'Error: permission denied — ' + toolName + (verdict.via ? ' (' + verdict.via + ')' : '') + '. The active policy blocks this call; ask the user or use an allowed alternative.';
+      }
       var call = function () { return fn(args); };
       /* L1 watchdog: budgeted tools (network/iframe) get the unified
          watchdog + circuit breaker from loopcore; local file ops stay
