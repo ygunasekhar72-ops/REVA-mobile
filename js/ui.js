@@ -173,7 +173,7 @@
         return '<button class="mcard' + (m === db.settings.model ? ' sel' : '') + (off ? ' moff' : '') + '" data-model="' + H.esc(m) + '">' +
           '<span class="mrow"><span class="rad"></span><span class="rtxt"><b>' + H.esc(m) + '</b><small>' + H.esc(prov.name) + (off ? ' · disabled' : '') + '</small></span></span>' +
           '<span class="mmeta"><span>' + (window.App && App.ctxFor ? App.ctxFor(m) : db.settings.ctxK) + 'k ctx</span>' + (window.App && App.modelVision && App.modelVision(m) ? '<span>Vision</span>' : '') + badge + '</span>' +
-          '<i data-lucide="' + (off ? 'eye-off' : 'eye') + '" class="chev" style="width:16px;height:16px;cursor:pointer" data-mtoggle="' + H.esc(m) + '" data-mprov="' + p.id + '" aria-label="Enable or disable"></i></button>';
+          '<i data-lucide="' + (off ? 'eye-off' : 'eye') + '" class="chev" style="width:16px;height:16px;cursor:pointer" data-mtoggle="' + H.esc(m) + '" data-mprov="' + prov.id + '" aria-label="Enable or disable"></i></button>';
       }).join('') :
       '<div class="lockban"><i data-lucide="info"></i><span>No models yet — open the provider and press "Fetch models", or add one manually below.</span></div>';
 
