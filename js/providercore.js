@@ -147,7 +147,7 @@
     var ev = {};
     var ch0 = jr.choices && jr.choices[0];
     if (ch0 && ch0.finish_reason) ev.finishReason = ch0.finish_reason;
-    if (jr.usage) ev.usage = { in: jr.usage.prompt_tokens || 0, out: jr.usage.completion_tokens || 0 };
+    if (jr.usage) ev.usage = normalizeUsage(jr.usage);
     var delta = ch0 && ch0.delta;
     if (!delta) return (ev.finishReason || ev.usage) ? ev : null;
     if (delta.content) ev.content = delta.content;
@@ -191,10 +191,66 @@
     return String(content || '').replace(/(?:\]<\][a-z0-9._-]*\[>\[)?<tool_call>[\s\S]*?(?:<\/tool_call>|$)/gi, '').trim();
   }
 
-  /* normalizeUsage(j): OpenAI usage (sync) or stream usage → {in, out}. */
+  /* normalizeUsage(u): any family's usage object → {in, out} + optional
+     cached / reasoning token fields (attached ONLY when the source carries
+     them — partial stream events stay partial so callers can merge). */
   function normalizeUsage(u) {
     if (!u) return null;
-    return { in: u.prompt_tokens || 0, out: u.completion_tokens || 0 };
+    var out = { in: u.prompt_tokens || u.input_tokens || u.promptTokenCount || 0,
+                out: u.completion_tokens || u.output_tokens || u.candidatesTokenCount || 0 };
+    var cached = (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) ||
+                 u.cache_read_input_tokens || u.cachedContentTokenCount || 0;
+    var reasoning = (u.completion_tokens_details && u.completion_tokens_details.reasoning_tokens) ||
+                    u.thoughtsTokenCount || 0;
+    if (cached) out.cached = cached;
+    if (reasoning) out.reasoning = reasoning;
+    return out;
+  }
+
+  /* estimateTokens(text): the honest fallback when a provider omits usage —
+     ~4 chars per token for code-heavy English (same heuristic util uses). */
+  function estimateTokens(text) {
+    return Math.ceil(String(text || '').length / 4);
+  }
+
+  /* --- TokenMeter: session-scoped context accounting. add(usage) per chat
+     call; pressure() projects the NEXT request's input (last observed input
+     + everything generated since — the transcript carries forward) against
+     the context budget. This is the number the compaction engine consumes. */
+  function createTokenMeter(opts) {
+    opts = opts || {};
+    var limit = opts.limit || 0;
+    var stats = { calls: 0, in: 0, out: 0, cached: 0, reasoning: 0, peakIn: 0 };
+    var lastIn = 0, outSince = 0;
+    function add(u) {
+      if (u) {
+        stats.calls++;
+        stats.in += u.in || 0;
+        stats.out += u.out || 0;
+        stats.cached += u.cached || 0;
+        stats.reasoning += u.reasoning || 0;
+        if ((u.in || 0) > stats.peakIn) stats.peakIn = u.in || 0;
+        lastIn = u.in || lastIn;
+        outSince = u.out || 0; /* the output just generated rides forward into the next input */
+      }
+      return stats;
+    }
+    function generated(tokens) { outSince += tokens || 0; } /* non-usage output */
+    function pressure() {
+      if (!limit) return 0;
+      return Math.min(1, (lastIn + outSince) / limit);
+    }
+    function toJSON() { return { v: 1, limit: limit, stats: stats, lastIn: lastIn, outSince: outSince }; }
+    function fromJSON(s) {
+      if (!s || s.v !== 1) return;
+      limit = s.limit || 0;
+      Object.keys(stats).forEach(function (k) { stats[k] = (s.stats && s.stats[k]) || 0; });
+      lastIn = s.lastIn || 0;
+      outSince = s.outSince || 0;
+    }
+    return { add: add, generated: generated, pressure: pressure,
+             stats: function () { return Object.assign({}, stats); },
+             toJSON: toJSON, fromJSON: fromJSON };
   }
 
   /* =====================  FAMILY ADAPTERS (v2 block 2)  =====================
@@ -274,7 +330,7 @@
       return { toolCall: [{ index: j.index || 0, id: j.content_block.id || 'call_0', function: { name: j.content_block.name || '' } }] };
     }
     if (type === 'message_start' && j.message && j.message.usage) {
-      return { usage: { in: j.message.usage.input_tokens || 0, out: j.message.usage.output_tokens || 0 } };
+      return { usage: normalizeUsage(j.message.usage) };
     }
     if (type === 'message_delta') {
       var ev = {};
@@ -301,7 +357,7 @@
       reasoning: reasoning,
       toolCalls: calls.length ? calls : null,
       finishReason: ANTHROPIC_STOP[(j && j.stop_reason)] || (j && j.stop_reason) || '',
-      usage: (j && j.usage) ? { in: j.usage.input_tokens || 0, out: j.usage.output_tokens || 0 } : null
+      usage: normalizeUsage(j && j.usage)
     };
   }
 
@@ -370,7 +426,7 @@
     var cand = j.candidates && j.candidates[0];
     var ev = {};
     if (j.usageMetadata) {
-      ev.usage = { in: j.usageMetadata.promptTokenCount || 0, out: j.usageMetadata.candidatesTokenCount || 0 };
+      ev.usage = normalizeUsage(j.usageMetadata);
     }
     if (cand && cand.finishReason) ev.finishReason = GEMINI_STOP[cand.finishReason] || cand.finishReason.toLowerCase();
     if (cand && cand.content && cand.content.parts) {
@@ -456,9 +512,20 @@
         messages: mm.messages,
         stream: !!opts.stream
       };
-      if (mm.system) body.system = mm.system;
+      /* prompt caching (opt-in via opts.cache): the SYSTEM prompt is the
+         big static prefix — mark it + the tool set as ephemeral breakpoints
+         (2 of the 4 allowed; the response reports cache_read savings). */
+      if (mm.system) {
+        body.system = opts.cache
+          ? [{ type: 'text', text: mm.system, cache_control: { type: 'ephemeral' } }]
+          : mm.system;
+      }
       var tools = mapToolsToAnthropic(opts.tools);
-      if (tools.length) { body.tools = tools; body.tool_choice = { type: 'auto' }; }
+      if (tools.length) {
+        if (opts.cache && tools.length) tools[tools.length - 1].cache_control = { type: 'ephemeral' };
+        body.tools = tools;
+        body.tool_choice = { type: 'auto' };
+      }
       return body;
     }
     if (family === 'gemini') {
@@ -525,7 +592,8 @@
     mergeToolCall: mergeToolCall, cleanToolCalls: cleanToolCalls,
     parseSseLine: parseSseLine,
     liftTextToolCalls: liftTextToolCalls, stripTextToolCalls: stripTextToolCalls,
-    normalizeUsage: normalizeUsage,
+    normalizeUsage: normalizeUsage, estimateTokens: estimateTokens,
+    createTokenMeter: createTokenMeter,
     detectFamily: detectFamily,
     mapMessagesToAnthropic: mapMessagesToAnthropic,
     mapToolsToAnthropic: mapToolsToAnthropic,

@@ -134,7 +134,10 @@
       u.reqs++;
       if (isErr) { u.errs++; }
       else if (res) {
-        if (res.usage) { u.inTok += res.usage.in || 0; u.outTok += res.usage.out || 0; }
+        if (res.usage) {
+          u.inTok += res.usage.in || 0; u.outTok += res.usage.out || 0;
+          if (res.usage.cached) u.cachedTok = (u.cachedTok || 0) + res.usage.cached; /* provider cache savings */
+        }
         else {
           u.outTok += H.tok((res.content || '') + (res.reasoning || ''));
           var vis = visibleMessages();

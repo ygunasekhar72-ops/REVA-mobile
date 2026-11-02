@@ -201,6 +201,53 @@ const PC = require('../js/providercore.js');
   assert.deepStrictEqual(PC.familyModels('gemini', { models: [{ name: 'models/gemini-2', supportedGenerationMethods: ['generateContent'] }, { name: 'models/e', supportedGenerationMethods: ['embedContent'] }] }), ['gemini-2'], 'gemini models filtered');
   assert.deepStrictEqual(PC.familyModels('anthropic', { data: [{ id: 'claude-b' }, { id: 'claude-a' }] }), ['claude-a', 'claude-b'], 'anthropic models like openai');
 
-  console.log('providercore: 18/18 scenario groups PASS (kernel + family adapters)');
+  // 19. usage v2: cached/reasoning fields per family, attached only when present
+  assert.deepStrictEqual(PC.normalizeUsage({ prompt_tokens: 10, completion_tokens: 3 }), { in: 10, out: 3 }, 'plain openai usage unchanged');
+  assert.deepStrictEqual(PC.normalizeUsage({ prompt_tokens: 100, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 80 }, completion_tokens_details: { reasoning_tokens: 2 } }),
+    { in: 100, out: 5, cached: 80, reasoning: 2 }, 'openai cached+reasoning details');
+  assert.deepStrictEqual(PC.normalizeUsage({ input_tokens: 50, output_tokens: 4, cache_read_input_tokens: 40 }),
+    { in: 50, out: 4, cached: 40 }, 'anthropic cache_read');
+  assert.deepStrictEqual(PC.normalizeUsage({ promptTokenCount: 30, candidatesTokenCount: 2, thoughtsTokenCount: 9, cachedContentTokenCount: 20 }),
+    { in: 30, out: 2, cached: 20, reasoning: 9 }, 'gemini thoughts+cached');
+  const msw = PC.parseAnthropicLine('data: {"type":"message_start","message":{"usage":{"input_tokens":100,"cache_read_input_tokens":90}}}');
+  assert.strictEqual(msw.usage.cached, 90, 'anthropic stream start carries cache');
+  const gsse = PC.parseGeminiLine('data: ' + JSON.stringify({ candidates: [{ content: { parts: [{ text: 'x' }] } }], usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 1, thoughtsTokenCount: 3 } }));
+  assert.strictEqual(gsse.usage.reasoning, 3, 'gemini stream carries thoughts');
+
+  // 20. TokenMeter: accounting + pressure projection + round-trip
+  const meter = PC.createTokenMeter({ limit: 100000 });
+  meter.add({ in: 10000, out: 500 });
+  meter.generated(800); /* streamed output not reported via usage */
+  assert.deepStrictEqual(meter.stats(), { calls: 1, in: 10000, out: 500, cached: 0, reasoning: 0, peakIn: 10000 }, 'stats accumulate');
+  assert.ok(Math.abs(meter.pressure() - 11300 / 100000) < 1e-9, 'pressure = lastIn + outSince over limit');
+  meter.add({ in: 11500, out: 2000, cached: 8000, reasoning: 300 });
+  assert.strictEqual(meter.stats().calls, 2, 'second call counted');
+  assert.strictEqual(meter.stats().cached, 8000, 'cache savings tracked');
+  assert.ok(Math.abs(meter.pressure() - 13500 / 100000) < 1e-9, 'outSince resets on add');
+  assert.strictEqual(PC.createTokenMeter({}).pressure(), 0, 'no limit = zero pressure');
+  meter.add(null);
+  assert.strictEqual(meter.stats().calls, 2, 'null usage is a no-op');
+  const snap = meter.toJSON();
+  const meter2 = PC.createTokenMeter({});
+  meter2.fromJSON(snap);
+  assert.deepStrictEqual(meter2.stats(), meter.stats(), 'meter round-trips');
+  assert.strictEqual(meter2.pressure(), meter.pressure(), 'pressure survives the round-trip');
+  meter2.fromJSON({ v: 2 }); /* wrong version: ignored, no crash */
+  assert.strictEqual(meter2.stats().calls, 2, 'bad snapshot rejected');
+
+  // 21. Anthropic prompt caching: opt-in breakpoints, default unchanged
+  const plainBody = PC.buildFamilyBody('anthropic', { model: 'c', messages: [{ role: 'system', content: 'SYS' }, { role: 'user', content: 'u' }], tools: [{ type: 'function', function: { name: 'a' } }, { type: 'function', function: { name: 'b' } }] }, 1024);
+  assert.strictEqual(plainBody.system, 'SYS', 'no cache: system is a plain string');
+  assert.ok(!plainBody.tools[1].cache_control, 'no cache: tools unmarked');
+  const cacheBody = PC.buildFamilyBody('anthropic', { model: 'c', cache: true, messages: [{ role: 'system', content: 'SYS' }, { role: 'user', content: 'u' }], tools: [{ type: 'function', function: { name: 'a' } }, { type: 'function', function: { name: 'b' } }] }, 1024);
+  assert.deepStrictEqual(cacheBody.system, [{ type: 'text', text: 'SYS', cache_control: { type: 'ephemeral' } }], 'cache: system block with ephemeral breakpoint');
+  assert.deepStrictEqual(cacheBody.tools[1].cache_control, { type: 'ephemeral' }, 'cache: LAST tool marked');
+  assert.ok(!cacheBody.tools[0].cache_control, 'cache: earlier tools unmarked (1 breakpoint on tools)');
+
+  // 22. estimateTokens: the honest fallback
+  assert.strictEqual(PC.estimateTokens('abcd'.repeat(10)), 10, '4 chars ≈ 1 token');
+  assert.strictEqual(PC.estimateTokens(''), 0, 'empty = 0');
+
+  console.log('providercore: 22/22 scenario groups PASS (kernel + families + token accounting + caching)');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
