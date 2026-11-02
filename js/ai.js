@@ -77,7 +77,11 @@
       } catch (e) {
         clearTimeout(timer);
         if (init.signal && init.signal.aborted) throw e; // user stop — propagate
-        if (attempt >= retries) throw e;
+        if (attempt >= retries) {
+          /* coded transport failure: the ladders route on e.failure.code */
+          if (e && !e.failure) { try { e.failure = PC.networkFailure(e); } catch (eNF) { } }
+          throw e;
+        }
         await sleep(1000 * Math.pow(2, attempt) + attempt * 250, init.signal);
         continue;
       }
@@ -160,7 +164,9 @@
       if (!res.ok) {
         var t = await res.text().catch(function () { return ''; });
         var cls = PC.classifyHttp(res.status, t);
-        throw new Error('HTTP ' + res.status + cls.hint + (t ? '\n' + t.slice(0, 220) : ''));
+        var err = new Error('HTTP ' + res.status + cls.hint + (t ? '\n' + t.slice(0, 220) : ''));
+        err.failure = PC.classifyHttpFailure(res.status, t, res.headers.get('retry-after') || '0');
+        throw err;
       }
 
       if (!opts.stream) {

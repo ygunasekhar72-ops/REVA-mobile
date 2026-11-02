@@ -33,17 +33,11 @@
     return true;
   }
 
-  /* --- error classification (the failure ladder's routing decisions) --- */
+  /* --- error classification (the failure ladder's routing decisions) ---
+     QUOTA_RE / TRANSIENT_RE remain as the fallback vocabulary for raw error
+     messages that arrive without a coded failure attached. */
   var QUOTA_RE = /http 429|http 402|quota|insufficient|billing|limit reached|monthly limit|credit/i;
   var TRANSIENT_RE = /http 5\d\d|failed to fetch|networkerror|network error|timeout|timed out|socket|load failed|econn/i;
-  function isQuotaError(e) {
-    return QUOTA_RE.test(String((e && e.message) || e || ''));
-  }
-  function isTransientError(e) {
-    var m = String((e && e.message) || e || '');
-    if (isQuotaError(m)) return false;
-    return TRANSIENT_RE.test(m);
-  }
 
   /* classifyHttp(status, bodyText): the status → human hint map that chat()
      and probeModel() both need. kind drives the ladder: 'auth' | 'notfound'
@@ -583,7 +577,67 @@
     return ((j && (j.data || j.models)) || []).map(function (m) { return m.id || m.name; }).filter(Boolean).sort();
   }
 
+  /* =====================  TYPED FAILURE CODES (dsh lesson)  =====================
+     Routing on CODES, not provider text. classifyFailure maps anything a
+     request can produce to a frozen { code, message, status?, retryAfterMs? }.
+     The ladders (retry, quota rotation, fallback) derive from these codes. */
+  var CODES = ['QUOTA', 'AUTH', 'NOT_FOUND', 'RATE_LIMIT', 'CONTEXT_WINDOW_EXCEEDED',
+               'EMPTY_RESPONSE', 'TIMEOUT', 'ABORTED', 'SERVER', 'NETWORK', 'REJECT', 'UNKNOWN'];
+
+  /* classifyHttpFailure(status, bodyText, retryAfterSec): the HTTP → code map */
+  function classifyHttpFailure(status, bodyText, retryAfterSec) {
+    var t = String(bodyText || '');
+    var f = { code: 'UNKNOWN', message: t.slice(0, 220), status: status };
+    if (status === 401 || status === 403) f.code = 'AUTH';
+    else if (status === 402) f.code = 'QUOTA';
+    else if (status === 404) f.code = 'NOT_FOUND';
+    else if (status === 429) { f.code = 'RATE_LIMIT'; if (parseInt(retryAfterSec || '0', 10) > 0) f.retryAfterMs = parseInt(retryAfterSec, 10) * 1000; }
+    else if (status === 400) {
+      f.code = 'REJECT';
+      if (isContextWindowExceededText(t)) f.code = 'CONTEXT_WINDOW_EXCEEDED';
+    } else if (status >= 500) f.code = 'SERVER';
+    return Object.freeze(f);
+  }
+
+  /* isContextWindowExceededText: the provider wordings for a full window
+     (same vocabulary loopcore.classifier uses — kept in sync here so the
+     kernel can tag REJECT bodies at the boundary). */
+  function isContextWindowExceededText(t) {
+    return /maximum context length|prompt is too long|context length exceeded|input token count|too many tokens|context_window_exceeded/i.test(String(t || ''));
+  }
+
+  /* networkFailure(err): thrown fetch/transport errors → a coded failure */
+  function networkFailure(err) {
+    var m = String((err && err.message) || err || '');
+    var code = 'NETWORK';
+    if (/abort/i.test(m)) code = 'ABORTED';
+    else if (/timeout|timed out/i.test(m)) code = 'TIMEOUT';
+    return Object.freeze({ code: code, message: m.slice(0, 220) });
+  }
+
+  /* the ladder classifiers now derive from codes (behavior preserved):
+     quota = billing-class; transient = worth a same-provider retry */
+  function isQuotaError(e) {
+    var f = (e && e.failure) || null;
+    if (f) return f.code === 'QUOTA' || f.code === 'RATE_LIMIT';
+    return QUOTA_RE.test(String((e && e.message) || e || ''));
+  }
+  function isTransientError(e) {
+    var f = (e && e.failure) || null;
+    if (f) {
+      if (isQuotaError(e)) return false;
+      return f.code === 'SERVER' || f.code === 'NETWORK' || f.code === 'TIMEOUT' || f.code === 'RATE_LIMIT';
+    }
+    var m = String((e && e.message) || e || '');
+    if (isQuotaError(m)) return false;
+    return TRANSIENT_RE.test(m);
+  }
+
   return {
+    CODES: CODES,
+    classifyHttpFailure: classifyHttpFailure,
+    networkFailure: networkFailure,
+    isContextWindowExceededText: isContextWindowExceededText,
     keyList: keyList, keyFor: keyFor, rotateKey: rotateKey,
     isQuotaError: isQuotaError, isTransientError: isTransientError,
     classifyHttp: classifyHttp, normalizeBaseUrl: normalizeBaseUrl,

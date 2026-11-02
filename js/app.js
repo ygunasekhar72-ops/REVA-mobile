@@ -1165,6 +1165,9 @@
 
     var apiMsgs = apiMessages();
     var toolResults = [], failed = null, stopped = false, usedFallback = false, fbName = '', iters = 0, res = null, pendingRes = null, quotaPaused = false, capPaused = false;
+    /* REPEAT-TOOL GUARD: signatures (name + raw args) of every attempted
+       call this run — LoopCore.repeatGuard detects identical-call streaks */
+    var callSigs = [];
     var nsTried = false, streamRetries = 0, nudges = 0;
     startHb();
 
@@ -1382,6 +1385,12 @@
             infoP.name = tcP.function.name; infoP.args = argsP;
             return fireHook('PreToolUse', { name: tcP.function.name, args: argsP }, tcP.function.name).then(function (blocked) {
               if (blocked) return 'BLOCKED: a PreToolUse hook vetoed this tool call. Tell the user and continue without it.';
+              if (window.LoopCore && LoopCore.repeatGuard) {
+                var sigP = tcP.function.name + ' ' + String(tcP.function.arguments || '{}');
+                callSigs.push(sigP);
+                var vG = LoopCore.repeatGuard(callSigs, tcP.function.name, tcP.function.arguments || '{}');
+                if (vG.action === 'block') return vG.message;
+              }
               return Promise.resolve(Tools.run(tcP.function.name, argsP)).catch(function (er) { return 'Error: ' + (er && er.message || er); });
             }).then(function (rP) {
               if (!infoP.meta) infoP = Tools.brief(tcP.function.name, argsP, rP);
@@ -1407,6 +1416,13 @@
           info.name = tc.function.name; info.args = args;
           setStatus(info.label + '…');
           var hookBlocked = await fireHook('PreToolUse', { name: tc.function.name, args: args }, tc.function.name);
+          var guardBlocked = null;
+          if (!hookBlocked && window.LoopCore && LoopCore.repeatGuard) {
+            var sigG = tc.function.name + ' ' + String(tc.function.arguments || '{}');
+            callSigs.push(sigG);
+            var vG2 = LoopCore.repeatGuard(callSigs, tc.function.name, tc.function.arguments || '{}');
+            if (vG2.action === 'block') guardBlocked = vG2.message;
+          }
           beginToolRow(tc.function.name, args);
           var result, ex = null;
           var oldContent = null; // captured BEFORE the write for diff stats
@@ -1415,6 +1431,9 @@
           }
           if (hookBlocked) {
             result = 'BLOCKED: a PreToolUse hook vetoed this tool call. Tell the user and continue without it.';
+            info.ok = false;
+          } else if (guardBlocked) {
+            result = guardBlocked;
             info.ok = false;
           } else if (tc.function.name === 'web_search' && window.WebSearch) {
             var wsR = await LoopCore.withBudget(function () { return WebSearch.search(String(args.query || '')); }, 'web_search', toolHealth);

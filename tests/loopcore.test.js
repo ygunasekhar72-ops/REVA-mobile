@@ -286,6 +286,22 @@ const PC = require('../js/providercore.js'); /* TokenMeter for RunState v2 */
   assert.strictEqual(LoopCore.validRunState({ v: 2, rows: 'nope' }), null, 'non-array rows rejected');
   assert.strictEqual(LoopCore.validRunState({ v: 3, rows: [] }), null, 'unknown version rejected');
 
-  console.log('loopcore: 13/13 scenarios PASS');
+  // 14. repeat-tool guard: identical-call streaks are reminded then blocked
+  var hist = [];
+  assert.strictEqual(LoopCore.repeatGuard(hist, 'read_file', '{"path":"a.js"}').action, 'allow', 'first call allows');
+  hist.push('read_file {"path":"a.js"}');
+  assert.strictEqual(LoopCore.repeatGuard(hist, 'read_file', '{"path":"a.js"}').action, 'remind', '2nd identical reminds');
+  hist.push('read_file {"path":"a.js"}');
+  const blocked = LoopCore.repeatGuard(hist, 'read_file', '{"path":"a.js"}');
+  assert.strictEqual(blocked.action, 'block', '3rd identical blocks');
+  assert.ok(/change your approach/.test(blocked.message) && /already ran 2 times/.test(blocked.message), 'guard message is honest');
+  hist.push('read_file {"path":"a.js"}');
+  assert.strictEqual(LoopCore.repeatGuard(hist, 'read_file', '{"path":"a.js"}').action, 'block', 'streak persists while repeated');
+  /* a different call resets the streak */
+  assert.strictEqual(LoopCore.repeatGuard(['read_file {"path":"a.js"}', 'read_file {"path":"a.js"}'], 'read_file', '{"path":"b.js"}').action, 'allow', 'different args reset');
+  assert.strictEqual(LoopCore.repeatGuard(['read_file {"path":"a.js"}'], 'write_file', '{"path":"a.js"}').action, 'allow', 'different tool resets');
+  assert.strictEqual(LoopCore.repeatGuard([], 'x', '{}').action, 'allow', 'empty history allows');
+
+  console.log('loopcore: 14/14 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });

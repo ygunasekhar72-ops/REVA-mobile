@@ -89,6 +89,30 @@
     return Math.max(16000, Math.round(Math.max(1, ctxK) * 1400));
   }
 
+  /* =====================  REPEAT-TOOL GUARD (dsh lesson)  =====================
+     A model stuck in a loop burns rounds and tokens re-running the EXACT
+     same call. repeatGuard(history, name, argsJson): history = the run's
+     recent executed calls as 'name argsJson' strings. 2nd identical call in
+     a row → 'remind' (the result gets a nudge appended); 3rd → 'block' (the
+     tool does not run; the model gets an honest guard message instead).
+     Any different call resets the streak. MAX_STREAK is the block threshold. */
+  var REPEAT_BLOCK_AT = 3;
+  function repeatGuard(history, name, argsJson) {
+    var sig = String(name || '') + ' ' + String(argsJson || '');
+    var streak = 0;
+    for (var i = history.length - 1; i >= 0; i--) {
+      if (history[i] === sig) streak++;
+      else break;
+    }
+    /* the incoming call would be streak+1 in a row */
+    if (streak + 1 >= REPEAT_BLOCK_AT) {
+      return { action: 'block', streak: streak + 1,
+               message: 'Guard: this exact call (' + String(name) + ') already ran ' + streak + ' times in a row with identical arguments and returned the same data. Do NOT repeat it — change your approach, use a different tool/arguments, or finish and report what you have.' };
+    }
+    if (streak + 1 === 2) return { action: 'remind', streak: 2 };
+    return { action: 'allow', streak: 0 };
+  }
+
   /* compact from the END: walk whole groups backwards until keepChars of
      recent context is retained. Returns { kept, dropped } — the caller
      re-attaches its system message and appends the continuation note.
@@ -483,5 +507,5 @@
     return { schemas: chosen, used: used, total: schemas.length, omitted: schemas.length - chosen.length };
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief, buildSotW: buildSotW, pickSchemas: pickSchemas, estimateTokens: estimateTokens, apiTokens: apiTokens, proactiveCompact: proactiveCompact, compactKeepChars: compactKeepChars };
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief, buildSotW: buildSotW, pickSchemas: pickSchemas, estimateTokens: estimateTokens, apiTokens: apiTokens, proactiveCompact: proactiveCompact, compactKeepChars: compactKeepChars, repeatGuard: repeatGuard };
 });
