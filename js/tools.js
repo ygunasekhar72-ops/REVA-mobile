@@ -1778,7 +1778,7 @@
 
   /* ---------- harness console (user terminal + run_command) ---------- */
   var Console = {
-    HELP: 'commands: ls [path] · tree · cat <file> · rm <file> · mkdir <dir> · mv <a> <b> · echo <text> · wc <file> · grep <pat> <file> · date · model · memories · status · clear · help',
+    HELP: 'commands: ls [path] · tree · cat <file> · rm <file> · mkdir <dir> · mv <a> <b> · echo <text> · wc <file> · grep <pat> <file> · def <sym> · refs <sym> · date · model · memories · status · clear · help',
     exec: function (line) {
       line = String(line || '').trim();
       var parts = line.split(/\s+/);
@@ -1825,6 +1825,36 @@
         else if (cmd === 'date') out = new Date().toLocaleString();
         else if (cmd === 'model') out = Store.db.settings.model + ' · ' + Store.activeProvider().name;
         else if (cmd === 'memories') out = Store.db.memories.length ? Store.db.memories.map(function (m) { return m.tag + ' · ' + m.title; }).join('\n') : '(none)';
+        else if (cmd === 'def' || cmd === 'refs') {
+          /* CODE INTELLIGENCE: jump-to-definition / find-references over the
+             chat workspace (code files only). def jumps straight to the best
+             target (same file wins); refs lists path:line rows. */
+          var CI = window.CODEINTEL;
+          if (!CI) out = 'Error: code intelligence engine not loaded';
+          else if (!arg) out = 'usage: ' + cmd + ' <symbol>';
+          else {
+            var filesIx = {}, sIx = WS();
+            Object.keys(sIx.vfs).forEach(function (dir) {
+              (sIx.vfs[dir] || []).forEach(function (f) {
+                if (f.t !== 'dir') filesIx[dir + '/' + f.n] = String(sIx.vfsContent[dir + '/' + f.n] || '');
+              });
+            });
+            var ixc = CI.buildIndex(filesIx);
+            if (cmd === 'def') {
+              var defsAll = CI.definitions(ixc, arg);
+              if (!defsAll.length) out = 'No definition of ' + arg + ' in the workspace.';
+              else {
+                var tgt = CI.jumpTarget(ixc, arg);
+                out = defsAll.map(function (d) { return d.path + ':' + d.line; }).join('\n');
+                return { out: out, open: tgt.path, line: tgt.line };
+              }
+            } else {
+              var refsAll = CI.references(ixc, arg);
+              out = refsAll.length ? refsAll.map(function (d) { return d.path + ':' + d.line; }).join('\n')
+                                   : 'No references to ' + arg + ' (or the symbol is not indexed).';
+            }
+          }
+        }
         else if (cmd === 'servers') out = (Store.db.servers || []).length ? Store.db.servers.map(function (v) { return (v.status === 'running' ? 'RUN ' : 'stop') + ' :' + v.port + ' · ' + v.name + (v.cmd ? ' · ' + v.cmd : ''); }).join('\n') : '(no servers registered)';
         else if (cmd === 'status') out = 'provider ' + Store.activeProvider().name + ' · model ' + Store.db.settings.model + ' · tools ' + (Store.db.settings.tools !== false ? 'on' : 'off') + ' · mode ' + Store.db.settings.mode + ' · effort ' + Store.db.settings.effort;
         else if (cmd === 'clear') return { out: '', clear: true };

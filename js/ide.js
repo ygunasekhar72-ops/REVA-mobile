@@ -945,7 +945,7 @@
     var r = Console.exec(line);
     if (r.clear) { clearOut(); return; }
     if (r.out) print(r.out);
-    if (r.open) loadFile(r.open);
+    if (r.open) { loadFile(r.open); if (r.line) jumpTo(r.line); }
     refreshTree();
   }
 
