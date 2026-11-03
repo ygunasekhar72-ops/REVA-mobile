@@ -163,6 +163,18 @@
   }
   function meterDrop(sessId) { delete METERS[sessId]; }
 
+  /* DURABLE RETRY LEDGER (dsh lesson): every recovery event (key rotation,
+     transient retry, compaction, empty-reply ladder) is a persisted session
+     record — the long-run story survives restarts and is inspectable. */
+  function ledgerRetry(sess, kind, detail) {
+    try {
+      if (!sess) return;
+      sess.retryLedger = (sess.retryLedger || []).slice(-39);
+      sess.retryLedger.push({ at: Date.now(), kind: kind, detail: String(detail || '').slice(0, 120) });
+      Store.save();
+    } catch (e) { /* the ledger must never break the run */ }
+  }
+
   /* ================= skills: real progressive disclosure ================= */
   function skillSlug(nm) { return String(nm || '').replace(/[^\w.-]+/g, '-'); }
   function skillBody(nm) {
@@ -417,7 +429,7 @@
         else sys = sys.replace(/User memory \(from the private AI workspace\):[\s\S]*?(?=\n\n|$)/, 'No memories are relevant to this request (use memory_search if unsure).');
       }
     } catch (e) { }
-    return [{ role: 'system', content: sys }].concat(
+    var out = [{ role: 'system', content: sys }].concat(
       vis.map(function (m) {
         if (m.role === 'user' && m.image) {
           // vision: multipart content carries the image to the model
@@ -429,6 +441,13 @@
         return { role: m.role, content: m.content };
       })
     );
+    /* CRASH REPAIR (dsh lesson): a transcript torn mid-tool-round would 400
+       on strict providers — every unanswered tool_call gets a synthetic
+       result at the outbound boundary. No-op on clean transcripts. */
+    if (window.LoopCore && LoopCore.repairToolCalls) {
+      return LoopCore.repairToolCalls(out);
+    }
+    return out;
   }
   function histTokens() {
     return visibleMessages().reduce(function (a, m) { return a + H.tok(m.content); }, 0);
@@ -497,6 +516,8 @@
   App.ctxFor = ctxFor;
   App.modelVision = modelVision;
   App.streamingSid = function () { return state.streamingSid || null; };
+  /* the durable retry ledger of the active chat (durability observability) */
+  App.retryLog = function () { var s = Store.active(); return (s && s.retryLedger) || []; };
   App.newProjectChat = function (libId) {
     var p = Store.lib.get(libId);
     if (!p) { H.toast('Project not found'); return; }
@@ -1204,7 +1225,7 @@
             try {
               var feedMeter = meterFor(s);
               if (feedMeter) {
-                if (res && res.usage) feedMeter.add(res.usage);
+                if (res && res.usage) feedMeter.add(res.usage, LoopCore.apiTokens ? LoopCore.apiTokens(apiMsgs) : 0);
                 else feedMeter.add({ in: (LoopCore.apiTokens ? LoopCore.apiTokens(apiMsgs) : 0), out: 0 });
                 if (res) feedMeter.generated(LoopCore.estimateTokens ? LoopCore.estimateTokens((res.content || '') + (res.reasoning || '')) : 0);
               }
@@ -1219,6 +1240,7 @@
                keeps the semantic thread; the trim is still group-safe. */
             if (window.LoopCore && LoopCore.isContextError(e) && cTry < 2) {
               cTry++;
+              ledgerRetry(s, 'context-compact', 'round ' + iters + ' — reactive compaction ' + cTry + '/2' + (e.failure ? ' [' + e.failure.code + ']' : ''));
               var keepChars = Math.max(16000, Math.round(ctxFor(db.settings.model) * 1400));
               var c = LoopCore.compactTranscript(apiMsgs.slice(1), keepChars);
               var droppedMsgs = apiMsgs.slice(1, apiMsgs.length - c.kept.length);
@@ -1278,11 +1300,13 @@
                the quota finishes" */
             if (AI.isQuotaError(e) && AI.rotateKey(prov)) {
               H.toast('Quota hit — switched to API key ' + ((prov._keyIdx || 0) + 1) + '/' + AI.keyList(prov).length + ', continuing');
+              ledgerRetry(s, 'quota-key-rotate', prov.name + ' → key ' + ((prov._keyIdx || 0) + 1) + (e.failure ? ' [' + e.failure.code + ']' : ''));
               continue;
             }
             if (AI.isTransientError(e) && tTry < 2) {
               tTry++;
               H.toast('Connection hiccup — retrying (' + tTry + '/2)');
+              ledgerRetry(s, 'transient-retry', tTry + '/2 ' + (e.failure ? '[' + e.failure.code + '] ' : '') + String(e.message || '').slice(0, 60));
               await new Promise(function (r) { setTimeout(r, 1500 * tTry); });
               continue;
             }
@@ -1401,7 +1425,7 @@
           }));
           for (var pj = 0; pj < res.toolCalls.length; pj++) {
             var trcQ = apiMsgs.filter(function (m) { return m.role === 'tool'; }).length;
-            apiMsgs.push({ role: 'tool', tool_call_id: res.toolCalls[pj].id, content: String(pOut[pj]).slice(0, trcQ > 5 ? 600 : 4000) });
+            apiMsgs.push({ role: 'tool', tool_call_id: res.toolCalls[pj].id, content: LoopCore.pruneToolResult ? LoopCore.pruneToolResult(String(pOut[pj]), trcQ > 5 ? 600 : 4000) : String(pOut[pj]).slice(0, trcQ > 5 ? 600 : 4000) });
             fireHook('PostToolUse', { name: res.toolCalls[pj].function.name, args: {}, result: String(pOut[pj]).slice(0, 500) }, res.toolCalls[pj].function.name);
           }
           acc = ''; contentEl = null;
@@ -1501,7 +1525,7 @@
             Store.save();
           }
           var toolResultCount2 = apiMsgs.filter(function (m) { return m.role === 'tool'; }).length;
-          apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: String(result).slice(0, toolResultCount2 > 5 ? 600 : 4000) });
+          apiMsgs.push({ role: 'tool', tool_call_id: tc.id, content: LoopCore.pruneToolResult ? LoopCore.pruneToolResult(String(result), toolResultCount2 > 5 ? 600 : 4000) : String(result).slice(0, toolResultCount2 > 5 ? 600 : 4000) });
           /* L2a VISION TOOL-RESULTS: after run_check/screenshot, a vision-capable
              model SEES the newest screenshot (hidden user turn with the image) —
              visual verification without the user opening anything. */
@@ -1536,6 +1560,7 @@
         if (streamRetries < 2) {
           streamRetries++;
           setStatus('Thinking hit the token budget — retrying ' + streamRetries + '/2…');
+          ledgerRetry(s, 'empty-reply-retry', 'budget retry ' + streamRetries + '/2 (finishReason ' + (res.finishReason || 'length') + ')');
           acc = ''; contentEl = null;
           continue;
         }

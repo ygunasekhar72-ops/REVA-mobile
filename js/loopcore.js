@@ -113,6 +113,57 @@
     return { action: 'allow', streak: 0 };
   }
 
+  /* =====================  TOOL-RESULT PRUNER (dsh lesson)  =====================
+     A flat head-slice loses the END of tool output — and errors live at the
+     end. pruneToolResult(text, budget): keep the head (~60% of budget), the
+     tail (~30%), and an honest middle marker. Short text passes untouched. */
+  function pruneToolResult(text, budget) {
+    var s = String(text == null ? '' : text);
+    var cap = Math.max(200, budget || 4000);
+    if (s.length <= cap) return s;
+    var headLen = Math.round(cap * 0.6);
+    var tailLen = Math.round(cap * 0.3);
+    var dropped = s.length - headLen - tailLen;
+    return s.slice(0, headLen) +
+      '\n[… ' + dropped + ' chars of middle output dropped — the result was oversized. Re-read a narrower range if you need the middle.]' +
+      s.slice(s.length - tailLen);
+  }
+
+  /* =====================  CRASH REPAIR (dsh lesson)  =====================
+     A transcript torn mid-tool-round (assistant tool_calls with results
+     missing) is unanswerable on strict providers. repairToolCalls(msgs)
+     returns a copy where every unanswered tool_call id gets a synthetic
+     tool result ('interrupted — treat as not executed') placed after the
+     answered ones, BEFORE the next non-tool message. Pure; a safety net at
+     the outbound boundary. */
+  function repairToolCalls(msgs) {
+    var out = [];
+    var i = 0;
+    while (i < (msgs || []).length) {
+      var m = msgs[i];
+      out.push(m);
+      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length) {
+        var answered = {};
+        var j = i + 1;
+        while (j < msgs.length && msgs[j].role === 'tool') {
+          answered[msgs[j].tool_call_id] = 1;
+          out.push(msgs[j]);
+          j++;
+        }
+        m.tool_calls.forEach(function (tc) {
+          if (tc && tc.id && !answered[tc.id]) {
+            out.push({ role: 'tool', tool_call_id: tc.id,
+                       content: '(interrupted before this call ran — treat it as NOT executed; re-issue it if still needed)' });
+          }
+        });
+        i = j;
+        continue;
+      }
+      i++;
+    }
+    return out;
+  }
+
   /* compact from the END: walk whole groups backwards until keepChars of
      recent context is retained. Returns { kept, dropped } — the caller
      re-attaches its system message and appends the continuation note.
@@ -507,5 +558,5 @@
     return { schemas: chosen, used: used, total: schemas.length, omitted: schemas.length - chosen.length };
   }
 
-  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief, buildSotW: buildSotW, pickSchemas: pickSchemas, estimateTokens: estimateTokens, apiTokens: apiTokens, proactiveCompact: proactiveCompact, compactKeepChars: compactKeepChars, repeatGuard: repeatGuard };
+  return { isContextError: isContextError, groupify: groupify, compactTranscript: compactTranscript, isParallelSafe: isParallelSafe, rgArgs: rgArgs, parseRg: parseRg, injectThreeMap: injectThreeMap, withBudget: withBudget, makeToolHealth: makeToolHealth, DEFAULT_BUDGETS: DEFAULT_BUDGETS, editLadder: editLadder, flatWs: flatWs, simScore: simScore, fuzzyBest: fuzzyBest, snapshotRun: snapshotRun, validRunState: validRunState, resumeBrief: resumeBrief, buildSotW: buildSotW, pickSchemas: pickSchemas, estimateTokens: estimateTokens, apiTokens: apiTokens, proactiveCompact: proactiveCompact, compactKeepChars: compactKeepChars, repeatGuard: repeatGuard, pruneToolResult: pruneToolResult, repairToolCalls: repairToolCalls };
 });

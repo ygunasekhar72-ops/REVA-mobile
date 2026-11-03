@@ -216,16 +216,29 @@
     var limit = opts.limit || 0;
     var stats = { calls: 0, in: 0, out: 0, cached: 0, reasoning: 0, peakIn: 0 };
     var lastIn = 0, outSince = 0;
-    function add(u) {
+    /* add(usage, estimatedIn): the anchor-honest gate (dsh lesson). Provider
+       usage is trusted UNLESS an independent estimate is supplied and the two
+       wildly disagree (usage 0, or < 1/2, or > 3x the estimate) — then the
+       estimate wins and the raw reading is kept as `rawIn`. Compaction
+       re-baselines explicitly, so genuine drops still pass when no estimate
+       is offered. */
+    function add(u, estimatedIn) {
       if (u) {
+        var use = u;
+        if (estimatedIn && estimatedIn > 0) {
+          var rawIn = u.in || 0;
+          if (rawIn === 0 || rawIn < estimatedIn * 0.5 || rawIn > estimatedIn * 3) {
+            use = Object.assign({}, u, { in: Math.round(estimatedIn), rawIn: rawIn });
+          }
+        }
         stats.calls++;
-        stats.in += u.in || 0;
-        stats.out += u.out || 0;
-        stats.cached += u.cached || 0;
-        stats.reasoning += u.reasoning || 0;
-        if ((u.in || 0) > stats.peakIn) stats.peakIn = u.in || 0;
-        lastIn = u.in || lastIn;
-        outSince = u.out || 0; /* the output just generated rides forward into the next input */
+        stats.in += use.in || 0;
+        stats.out += use.out || 0;
+        stats.cached += use.cached || 0;
+        stats.reasoning += use.reasoning || 0;
+        if ((use.in || 0) > stats.peakIn) stats.peakIn = use.in || 0;
+        lastIn = use.in || lastIn;
+        outSince = use.out || 0; /* the output just generated rides forward into the next input */
       }
       return stats;
     }

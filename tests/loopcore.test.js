@@ -302,6 +302,27 @@ const PC = require('../js/providercore.js'); /* TokenMeter for RunState v2 */
   assert.strictEqual(LoopCore.repeatGuard(['read_file {"path":"a.js"}'], 'write_file', '{"path":"a.js"}').action, 'allow', 'different tool resets');
   assert.strictEqual(LoopCore.repeatGuard([], 'x', '{}').action, 'allow', 'empty history allows');
 
-  console.log('loopcore: 14/14 scenarios PASS');
+  // 15. durability: tool-result pruner + crash repair
+  const prunedOut = LoopCore.pruneToolResult('A'.repeat(3000) + 'B'.repeat(2000) + 'ERROR: disk full at the very end', 1000);
+  assert.ok(prunedOut.length <= 1100, 'pruned within budget+marker');
+  assert.ok(prunedOut[0] === 'A' && prunedOut.includes('ERROR: disk full at the very end'), 'head AND tail preserved (errors live at the end)');
+  assert.ok(/chars of middle output dropped/.test(prunedOut), 'honest middle marker');
+  assert.strictEqual(LoopCore.pruneToolResult('tiny', 4000), 'tiny', 'short text untouched');
+  assert.ok(LoopCore.pruneToolResult(null, 4000) === '', 'null safe');
+  const torn = [
+    { role: 'user', content: 'do it' },
+    { role: 'assistant', content: '', tool_calls: [{ id: 't1', function: { name: 'a' } }, { id: 't2', function: { name: 'b' } }] },
+    { role: 'tool', tool_call_id: 't1', content: 'ok' },
+    { role: 'assistant', content: 'next' }
+  ];
+  const fixed = LoopCore.repairToolCalls(torn);
+  const t2syn = fixed.find(m => m.tool_call_id === 't2');
+  assert.ok(t2syn && /interrupted before this call ran/.test(t2syn.content), 'unanswered tool_call gets a synthetic result');
+  assert.ok(fixed.some(m => m.tool_call_id === 't1' && m.content === 'ok'), 'answered result preserved');
+  assert.strictEqual(fixed[fixed.length - 1].content, 'next', 'synthetics land BEFORE the next assistant message');
+  assert.strictEqual(LoopCore.repairToolCalls([{ role: 'user', content: 'clean' }]).length, 1, 'clean transcript passes through');
+  assert.strictEqual(LoopCore.repairToolCalls(torn).find(m => m.role === 'assistant' && m.content === 'next'), torn[3], 'original messages untouched (copy)');
+
+  console.log('loopcore: 15/15 scenarios PASS');
   process.exit(0);
 })().catch(e => { console.error('FAIL:', e.message); process.exit(1); });
